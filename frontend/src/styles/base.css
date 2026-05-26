@@ -164,6 +164,10 @@ button:disabled {
     @apply m-0 text-base font-bold text-stone-950;
   }
 
+  .node-address {
+    @apply mt-1 mb-0 font-mono text-xs text-stone-500;
+  }
+
   .result-actions {
     @apply flex items-center gap-2;
   }

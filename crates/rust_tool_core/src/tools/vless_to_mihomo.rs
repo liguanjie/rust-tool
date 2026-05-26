@@ -247,12 +247,15 @@ pub fn convert_vless_to_yaml(
     if let Some(proxy_name) = normalize_custom_name(options.proxy_name.as_deref()) {
         proxy.name = proxy_name;
     }
+    let proxy_server = proxy.server.clone();
+    let proxy_port = proxy.port;
 
-    let yaml = match options.output_mode {
+    let mut yaml = match options.output_mode {
         OutputMode::FullConfig => serde_yaml::to_string(&build_config(proxy, options.template_mode)),
         OutputMode::ProxyOnly => serde_yaml::to_string(&proxy),
     }
     .map_err(|error| ConvertError::YamlSerializeFailed(error.to_string()))?;
+    yaml.insert_str(0, &format!("# 节点地址: {proxy_server}:{proxy_port}\n"));
 
     Ok(yaml)
 }
@@ -732,6 +735,7 @@ mod tests {
 
         let yaml = convert_vless_to_yaml(input, ConvertOptions::default()).unwrap();
 
+        assert!(yaml.starts_with("# 节点地址: example.com:443\n"));
         assert!(yaml.contains("mixed-port: 7890"));
         assert!(yaml.contains("type: vless"));
         assert!(yaml.contains("servername: www.microsoft.com"));

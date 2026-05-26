@@ -6,6 +6,7 @@ defineProps<{
   yaml: string
   copied: boolean
   filename: string
+  nodeAddress: string
 }>()
 
 const emit = defineEmits<{
@@ -16,7 +17,10 @@ const emit = defineEmits<{
 <template>
   <section class="result-panel">
     <header class="result-header">
-      <h3>YAML 结果</h3>
+      <div>
+        <h3>YAML 结果</h3>
+        <p v-if="nodeAddress" class="node-address">节点地址：{{ nodeAddress }}</p>
+      </div>
       <div class="result-actions">
         <span v-if="copied" class="copy-status">已复制</span>
         <CopyButton :text="yaml" @copied="emit('copied')" />

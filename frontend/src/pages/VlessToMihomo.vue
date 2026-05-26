@@ -85,6 +85,7 @@ const tool = useVlessToMihomoStore()
           :yaml="tool.yaml"
           :copied="tool.copied"
           :filename="tool.downloadFilename"
+          :node-address="tool.nodeAddress"
           @copied="tool.markCopied"
         />
 

@@ -20,6 +20,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
   const canConvert = computed(() => input.value.trim().length > 0 && !loading.value)
   const downloadFilename = computed(() => normalizeYamlFilename(downloadName.value))
   const proxyName = computed(() => stripYamlExtension(downloadName.value.trim() || 'mihomo'))
+  const nodeAddress = computed(() => extractVlessAddress(input.value))
 
   watch(input, (value) => {
     if (downloadNameEdited.value) return
@@ -66,6 +67,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
     mode,
     template,
     proxyName,
+    nodeAddress,
     downloadName,
     downloadFilename,
     updateDownloadName,
@@ -104,4 +106,25 @@ function extractVlessName(value: string) {
       return raw.slice(hashIndex + 1).trim()
     }
   }
+}
+
+function extractVlessAddress(value: string) {
+  const raw = value.trim()
+  if (!raw.toLowerCase().startsWith('vless://')) return ''
+
+  try {
+    const url = new URL(raw)
+    const host = url.hostname
+    if (!host) return ''
+
+    const port = url.port || (isTlsVless(url) ? '443' : '80')
+    return `${host}:${port}`
+  } catch {
+    return ''
+  }
+}
+
+function isTlsVless(url: URL) {
+  const security = url.searchParams.get('security')?.toLowerCase()
+  return security === 'tls' || security === 'reality'
 }

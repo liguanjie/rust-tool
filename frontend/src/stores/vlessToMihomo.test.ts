@@ -51,6 +51,15 @@ describe('useVlessToMihomoStore', () => {
     expect(store.downloadName).toBe('My-Reality')
     expect(store.downloadFilename).toBe('My-Reality.yaml')
     expect(store.proxyName).toBe('My-Reality')
+    expect(store.nodeAddress).toBe('example.com:443')
+  })
+
+  it('defaults node address port by security type', () => {
+    const store = useVlessToMihomoStore()
+
+    store.input = 'vless://11111111-1111-1111-1111-111111111111@example.com?security=reality'
+
+    expect(store.nodeAddress).toBe('example.com:443')
   })
 
   it('sends edited download name as proxy name', async () => {
