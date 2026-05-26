@@ -1,0 +1,13 @@
+[package]
+name = "rust_tool_cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "rust-tool"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+rust_tool_core.workspace = true

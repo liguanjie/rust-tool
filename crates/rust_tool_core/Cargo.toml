@@ -1,0 +1,15 @@
+[package]
+name = "rust_tool_core"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_yaml.workspace = true
+percent-encoding.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

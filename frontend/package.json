@@ -1,0 +1,31 @@
+{
+  "name": "rust-tool-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.2.2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.16.0",
+    "pinia": "^3.0.2",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.7",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^26.1.0",
+    "tailwindcss": "^4.1.7",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^3.1.4",
+    "vue-tsc": "^2.2.0"
+  }
+}

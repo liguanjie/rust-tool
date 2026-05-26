@@ -1,0 +1,856 @@
+use serde::Serialize;
+use std::collections::BTreeMap;
+use thiserror::Error;
+use url::{ParseError, Url};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OutputMode {
+    FullConfig,
+    ProxyOnly,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemplateMode {
+    Minimal,
+    Standard,
+    FullRules,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConvertOptions {
+    pub output_mode: OutputMode,
+    pub template_mode: TemplateMode,
+    pub proxy_name: Option<String>,
+}
+
+impl Default for ConvertOptions {
+    fn default() -> Self {
+        Self {
+            output_mode: OutputMode::FullConfig,
+            template_mode: TemplateMode::Standard,
+            proxy_name: None,
+        }
+    }
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum ConvertError {
+    #[error("请输入 vless:// 链接")]
+    EmptyInput,
+    #[error("链接必须以 vless:// 开头")]
+    InvalidScheme,
+    #[error("缺少 UUID")]
+    MissingUuid,
+    #[error("缺少服务器地址")]
+    MissingServer,
+    #[error("端口非法")]
+    InvalidPort,
+    #[error("YAML 序列化失败: {0}")]
+    YamlSerializeFailed(String),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct MihomoConfig {
+    #[serde(rename = "mixed-port")]
+    mixed_port: u16,
+    #[serde(rename = "allow-lan")]
+    allow_lan: bool,
+    #[serde(rename = "bind-address")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bind_address: Option<String>,
+    mode: String,
+    #[serde(rename = "log-level")]
+    log_level: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dns: Option<DnsConfig>,
+    proxies: Vec<Proxy>,
+    #[serde(rename = "proxy-groups")]
+    proxy_groups: Vec<ProxyGroup>,
+    #[serde(rename = "rule-providers")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rule_providers: Option<BTreeMap<String, RuleProvider>>,
+    rules: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProxyGroup {
+    name: String,
+    #[serde(rename = "type")]
+    group_type: String,
+    proxies: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    interval: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tolerance: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct DnsConfig {
+    enable: bool,
+    ipv6: bool,
+    enhanced_mode: String,
+    fake_ip_range: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_algorithm: Option<String>,
+    default_nameserver: Vec<String>,
+    nameserver: Vec<String>,
+    fallback: Vec<String>,
+    fallback_filter: DnsFallbackFilter,
+    respect_rules: bool,
+    proxy_server_nameserver: Vec<String>,
+    fake_ip_filter: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct DnsFallbackFilter {
+    geoip: bool,
+    geoip_code: String,
+    geosite: Vec<String>,
+    ipcidr: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct RuleProvider {
+    #[serde(rename = "type")]
+    provider_type: String,
+    behavior: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    interval: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct Proxy {
+    name: String,
+    #[serde(rename = "type")]
+    proxy_type: String,
+    server: String,
+    port: u16,
+    uuid: String,
+    udp: bool,
+    tls: bool,
+    network: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flow: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    servername: Option<String>,
+    #[serde(rename = "client-fingerprint")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_fingerprint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    alpn: Option<Vec<String>>,
+    #[serde(rename = "skip-cert-verify")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skip_cert_verify: Option<bool>,
+    #[serde(rename = "reality-opts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reality_opts: Option<RealityOptions>,
+    #[serde(rename = "packet-encoding")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    packet_encoding: Option<String>,
+    #[serde(rename = "ws-opts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ws_opts: Option<WebSocketOptions>,
+    #[serde(rename = "grpc-opts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    grpc_opts: Option<GrpcOptions>,
+    #[serde(rename = "httpupgrade-opts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    httpupgrade_opts: Option<HttpUpgradeOptions>,
+    #[serde(rename = "xhttp-opts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    xhttp_opts: Option<XHttpOptions>,
+    #[serde(rename = "h2-opts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    h2_opts: Option<H2Options>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct RealityOptions {
+    #[serde(rename = "public-key")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    public_key: Option<String>,
+    #[serde(rename = "short-id")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    short_id: Option<String>,
+    #[serde(rename = "spider-x")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    spider_x: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct WebSocketOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    headers: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct GrpcOptions {
+    #[serde(rename = "grpc-service-name")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    grpc_service_name: Option<String>,
+    #[serde(rename = "grpc-mode")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    grpc_mode: Option<String>,
+    #[serde(rename = "grpc-authority")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    grpc_authority: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HttpUpgradeOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct XHttpOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mode: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct H2Options {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<Vec<String>>,
+}
+
+pub fn convert_vless_to_yaml(
+    input: &str,
+    options: ConvertOptions,
+) -> Result<String, ConvertError> {
+    let mut proxy = parse_vless(input)?;
+    if let Some(proxy_name) = normalize_custom_name(options.proxy_name.as_deref()) {
+        proxy.name = proxy_name;
+    }
+
+    let yaml = match options.output_mode {
+        OutputMode::FullConfig => serde_yaml::to_string(&build_config(proxy, options.template_mode)),
+        OutputMode::ProxyOnly => serde_yaml::to_string(&proxy),
+    }
+    .map_err(|error| ConvertError::YamlSerializeFailed(error.to_string()))?;
+
+    Ok(yaml)
+}
+
+fn parse_vless(input: &str) -> Result<Proxy, ConvertError> {
+    let raw = input.trim();
+    if raw.is_empty() {
+        return Err(ConvertError::EmptyInput);
+    }
+
+    if !raw.to_ascii_lowercase().starts_with("vless://") {
+        return Err(ConvertError::InvalidScheme);
+    }
+
+    let url = Url::parse(raw).map_err(|error| match error {
+        ParseError::InvalidPort => ConvertError::InvalidPort,
+        _ => ConvertError::InvalidScheme,
+    })?;
+    if url.scheme() != "vless" {
+        return Err(ConvertError::InvalidScheme);
+    }
+
+    let uuid = url.username();
+    if uuid.is_empty() {
+        return Err(ConvertError::MissingUuid);
+    }
+
+    let server = url
+        .host_str()
+        .filter(|host| !host.is_empty())
+        .ok_or(ConvertError::MissingServer)?
+        .to_string();
+
+    let params: BTreeMap<String, String> = url.query_pairs().into_owned().collect();
+    let security = first_value(&params, &["security"])
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let tls = matches!(security.as_str(), "tls" | "reality");
+    let network = normalize_network(first_value(&params, &["type", "network"]));
+    let port = url
+        .port()
+        .or(Some(if tls { 443 } else { 80 }))
+        .ok_or(ConvertError::InvalidPort)?;
+
+    let mut proxy = Proxy {
+        name: url
+            .fragment()
+            .filter(|fragment| !fragment.is_empty())
+            .map(percent_decode)
+            .unwrap_or_else(|| server.clone()),
+        proxy_type: "vless".to_string(),
+        server,
+        port,
+        uuid: uuid.to_string(),
+        udp: true,
+        tls,
+        network,
+        flow: first_value(&params, &["flow"]),
+        servername: first_value(&params, &["sni", "servername", "peer"]),
+        client_fingerprint: first_value(
+            &params,
+            &["fp", "fingerprint", "client-fingerprint"],
+        ),
+        alpn: parse_alpn(first_value(&params, &["alpn"])),
+        skip_cert_verify: parse_bool(first_value(
+            &params,
+            &["allowInsecure", "skip-cert-verify"],
+        )),
+        reality_opts: None,
+        packet_encoding: first_value(&params, &["packetEncoding", "packet-encoding"]),
+        ws_opts: None,
+        grpc_opts: None,
+        httpupgrade_opts: None,
+        xhttp_opts: None,
+        h2_opts: None,
+    };
+
+    if security == "reality" {
+        let reality_opts = RealityOptions {
+            public_key: first_value(&params, &["pbk", "public-key"]),
+            short_id: first_value(&params, &["sid", "short-id"]),
+            spider_x: first_value(&params, &["spx", "spider-x"]),
+        };
+        if reality_opts.has_values() {
+            proxy.reality_opts = Some(reality_opts);
+        }
+    }
+
+    apply_network_options(&mut proxy, &params);
+
+    Ok(proxy)
+}
+
+fn build_config(proxy: Proxy, template_mode: TemplateMode) -> MihomoConfig {
+    let proxy_name = proxy.name.clone();
+    let include_standard = matches!(template_mode, TemplateMode::Standard | TemplateMode::FullRules);
+    let include_full_rules = matches!(template_mode, TemplateMode::FullRules);
+    let proxy_groups = build_proxy_groups(&proxy_name, &template_mode);
+
+    MihomoConfig {
+        mixed_port: 7890,
+        allow_lan: false,
+        bind_address: include_standard.then(|| "*".to_string()),
+        mode: "rule".to_string(),
+        log_level: "info".to_string(),
+        dns: include_standard.then(build_dns_config),
+        proxies: vec![proxy],
+        proxy_groups,
+        rule_providers: include_full_rules.then(build_rule_providers),
+        rules: build_rules(&template_mode),
+    }
+}
+
+fn build_proxy_groups(proxy_name: &str, template_mode: &TemplateMode) -> Vec<ProxyGroup> {
+    match template_mode {
+        TemplateMode::Minimal => vec![select_group("PROXY", vec![proxy_name, "DIRECT"])],
+        TemplateMode::Standard => vec![
+            select_group("PROXY", vec![proxy_name, "AUTO", "DIRECT"]),
+            url_test_group("AUTO", vec![proxy_name]),
+        ],
+        TemplateMode::FullRules => vec![
+            select_group("PROXY", vec![proxy_name, "AUTO", "DIRECT"]),
+            url_test_group("AUTO", vec![proxy_name]),
+            select_group("AI", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
+            select_group("Google", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
+            select_group("Telegram", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
+            select_group("TikTok", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
+        ],
+    }
+}
+
+fn select_group(name: &str, proxies: Vec<&str>) -> ProxyGroup {
+    ProxyGroup {
+        name: name.to_string(),
+        group_type: "select".to_string(),
+        proxies: proxies.into_iter().map(ToOwned::to_owned).collect(),
+        url: None,
+        interval: None,
+        tolerance: None,
+    }
+}
+
+fn url_test_group(name: &str, proxies: Vec<&str>) -> ProxyGroup {
+    ProxyGroup {
+        name: name.to_string(),
+        group_type: "url-test".to_string(),
+        proxies: proxies.into_iter().map(ToOwned::to_owned).collect(),
+        url: Some("https://www.gstatic.com/generate_204".to_string()),
+        interval: Some(300),
+        tolerance: Some(50),
+    }
+}
+
+fn build_dns_config() -> DnsConfig {
+    DnsConfig {
+        enable: true,
+        ipv6: true,
+        enhanced_mode: "fake-ip".to_string(),
+        fake_ip_range: "198.18.0.1/16".to_string(),
+        cache_algorithm: Some("arc".to_string()),
+        default_nameserver: vec![
+            "223.5.5.5".to_string(),
+            "119.29.29.29".to_string(),
+            "114.114.114.114".to_string(),
+        ],
+        nameserver: vec![
+            "https://doh.pub/dns-query".to_string(),
+            "https://dns.alidns.com/dns-query".to_string(),
+        ],
+        fallback: vec![
+            "tls://1.1.1.1".to_string(),
+            "tls://8.8.8.8".to_string(),
+            "https://doh.pub/dns-query".to_string(),
+        ],
+        fallback_filter: DnsFallbackFilter {
+            geoip: true,
+            geoip_code: "CN".to_string(),
+            geosite: vec!["gfw".to_string()],
+            ipcidr: vec![
+                "240.0.0.0/4".to_string(),
+                "0.0.0.0/32".to_string(),
+                "127.0.0.1/8".to_string(),
+            ],
+        },
+        respect_rules: false,
+        proxy_server_nameserver: vec![
+            "https://doh.pub/dns-query".to_string(),
+            "https://dns.alidns.com/dns-query".to_string(),
+        ],
+        fake_ip_filter: vec![
+            "*.lan".to_string(),
+            "*.localdomain".to_string(),
+            "*.localhost".to_string(),
+            "*.local".to_string(),
+            "time.*.com".to_string(),
+            "ntp.*.com".to_string(),
+            "+.pool.ntp.org".to_string(),
+            "+.msftconnecttest.com".to_string(),
+            "+.msftncsi.com".to_string(),
+            "localhost.ptlogin2.qq.com".to_string(),
+            "localhost.sec.qq.com".to_string(),
+            "mtalk.google.com".to_string(),
+        ],
+    }
+}
+
+fn build_rule_providers() -> BTreeMap<String, RuleProvider> {
+    let mut providers = BTreeMap::new();
+    providers.insert(
+        "google_domain".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google.mrs",
+        ),
+    );
+    providers.insert(
+        "google_ip".to_string(),
+        http_rule_provider(
+            "ipcidr",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/google.mrs",
+        ),
+    );
+    providers.insert("AI".to_string(), inline_rule_provider(ai_rules()));
+    providers.insert("Telegram".to_string(), inline_rule_provider(telegram_rules()));
+    providers.insert("TikTok".to_string(), inline_rule_provider(tiktok_rules()));
+    providers
+}
+
+fn http_rule_provider(behavior: &str, url: &str) -> RuleProvider {
+    RuleProvider {
+        provider_type: "http".to_string(),
+        behavior: behavior.to_string(),
+        format: Some("mrs".to_string()),
+        interval: Some(86400),
+        url: Some(url.to_string()),
+        payload: None,
+    }
+}
+
+fn inline_rule_provider(payload: Vec<&str>) -> RuleProvider {
+    RuleProvider {
+        provider_type: "inline".to_string(),
+        behavior: "classical".to_string(),
+        format: None,
+        interval: None,
+        url: None,
+        payload: Some(payload.into_iter().map(ToOwned::to_owned).collect()),
+    }
+}
+
+fn build_rules(template_mode: &TemplateMode) -> Vec<String> {
+    match template_mode {
+        TemplateMode::Minimal => vec!["MATCH,PROXY".to_string()],
+        TemplateMode::Standard => vec![
+            "GEOIP,CN,DIRECT".to_string(),
+            "MATCH,PROXY".to_string(),
+        ],
+        TemplateMode::FullRules => vec![
+            "RULE-SET,AI,AI".to_string(),
+            "RULE-SET,Telegram,Telegram".to_string(),
+            "RULE-SET,TikTok,TikTok".to_string(),
+            "RULE-SET,google_domain,Google".to_string(),
+            "RULE-SET,google_ip,Google,no-resolve".to_string(),
+            "GEOIP,CN,DIRECT".to_string(),
+            "MATCH,PROXY".to_string(),
+        ],
+    }
+}
+
+fn ai_rules() -> Vec<&'static str> {
+    vec![
+        "DOMAIN-KEYWORD,openai",
+        "DOMAIN-KEYWORD,anthropic",
+        "DOMAIN-KEYWORD,claude",
+        "DOMAIN-SUFFIX,chatgpt.com",
+        "DOMAIN-SUFFIX,openai.com",
+        "DOMAIN-SUFFIX,oaistatic.com",
+        "DOMAIN-SUFFIX,oaiusercontent.com",
+        "DOMAIN-SUFFIX,claude.ai",
+        "DOMAIN-SUFFIX,claude.com",
+        "DOMAIN-SUFFIX,anthropic.com",
+        "DOMAIN-SUFFIX,perplexity.ai",
+        "DOMAIN-SUFFIX,sora.com",
+        "DOMAIN-SUFFIX,cursor.com",
+        "DOMAIN-SUFFIX,cursor.sh",
+        "DOMAIN,api.githubcopilot.com",
+        "DOMAIN-SUFFIX,copilot.microsoft.com",
+        "DOMAIN-SUFFIX,copilot.cloud.microsoft",
+    ]
+}
+
+fn telegram_rules() -> Vec<&'static str> {
+    vec![
+        "DOMAIN-SUFFIX,t.me",
+        "DOMAIN-SUFFIX,tdesktop.com",
+        "DOMAIN-SUFFIX,telegra.ph",
+        "DOMAIN-SUFFIX,telegram.me",
+        "DOMAIN-SUFFIX,telegram.org",
+        "DOMAIN-SUFFIX,telesco.pe",
+        "IP-CIDR,91.108.0.0/16,no-resolve",
+        "IP-CIDR,149.154.160.0/20,no-resolve",
+        "IP-CIDR6,2001:67c:4e8::/48,no-resolve",
+        "IP-CIDR6,2001:b28:f23d::/48,no-resolve",
+    ]
+}
+
+fn tiktok_rules() -> Vec<&'static str> {
+    vec![
+        "DOMAIN-KEYWORD,tiktok",
+        "DOMAIN-KEYWORD,musical.ly",
+        "DOMAIN-SUFFIX,tiktok.com",
+        "DOMAIN-SUFFIX,tiktokcdn.com",
+        "DOMAIN-SUFFIX,tiktokv.com",
+        "DOMAIN-SUFFIX,tiktokd.net",
+        "DOMAIN-SUFFIX,byteoversea.com",
+        "DOMAIN-SUFFIX,ibyteimg.com",
+        "DOMAIN-SUFFIX,ibytedtos.com",
+        "DOMAIN-SUFFIX,ttwebview.com",
+        "PROCESS-NAME,com.zhiliaoapp.musically",
+    ]
+}
+
+fn normalize_network(network: Option<String>) -> String {
+    let network = network.map(|value| value.to_ascii_lowercase());
+    match network.as_deref() {
+        Some("websocket") => "ws".to_string(),
+        Some("http") => "h2".to_string(),
+        Some(value) if !value.is_empty() => value.to_string(),
+        _ => "tcp".to_string(),
+    }
+}
+
+fn apply_network_options(proxy: &mut Proxy, params: &BTreeMap<String, String>) {
+    match proxy.network.as_str() {
+        "ws" => {
+            let headers = first_value(params, &["host"]).map(|host| {
+                let mut headers = BTreeMap::new();
+                headers.insert("Host".to_string(), host);
+                headers
+            });
+
+            let ws_opts = WebSocketOptions {
+                path: first_value(params, &["path"]),
+                headers,
+            };
+            if ws_opts.has_values() {
+                proxy.ws_opts = Some(ws_opts);
+            }
+        }
+        "grpc" => {
+            let grpc_opts = GrpcOptions {
+                grpc_service_name: first_value(
+                    params,
+                    &["serviceName", "service-name", "path"],
+                ),
+                grpc_mode: first_value(params, &["mode"]),
+                grpc_authority: first_value(params, &["authority", "host"]),
+            };
+            if grpc_opts.has_values() {
+                proxy.grpc_opts = Some(grpc_opts);
+            }
+        }
+        "httpupgrade" => {
+            let httpupgrade_opts = HttpUpgradeOptions {
+                path: first_value(params, &["path"]),
+                host: first_value(params, &["host"]).map(|host| vec![host]),
+            };
+            if httpupgrade_opts.has_values() {
+                proxy.httpupgrade_opts = Some(httpupgrade_opts);
+            }
+        }
+        "xhttp" => {
+            let xhttp_opts = XHttpOptions {
+                path: first_value(params, &["path"]),
+                host: first_value(params, &["host"]),
+                mode: first_value(params, &["mode"]),
+            };
+            if xhttp_opts.has_values() {
+                proxy.xhttp_opts = Some(xhttp_opts);
+            }
+        }
+        "h2" => {
+            let h2_opts = H2Options {
+                path: first_value(params, &["path"]),
+                host: first_value(params, &["host"]).map(|host| vec![host]),
+            };
+            if h2_opts.has_values() {
+                proxy.h2_opts = Some(h2_opts);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn first_value(params: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
+    names.iter().find_map(|name| {
+        params
+            .get(*name)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    })
+}
+
+fn parse_bool(value: Option<String>) -> Option<bool> {
+    value.map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+}
+
+fn parse_alpn(value: Option<String>) -> Option<Vec<String>> {
+    value
+        .map(|value| {
+            value
+                .split(',')
+                .filter(|part| !part.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty())
+}
+
+fn percent_decode(value: &str) -> String {
+    percent_encoding::percent_decode_str(value)
+        .decode_utf8_lossy()
+        .into_owned()
+}
+
+fn normalize_custom_name(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+impl RealityOptions {
+    fn has_values(&self) -> bool {
+        self.public_key.is_some() || self.short_id.is_some() || self.spider_x.is_some()
+    }
+}
+
+impl WebSocketOptions {
+    fn has_values(&self) -> bool {
+        self.path.is_some() || self.headers.is_some()
+    }
+}
+
+impl GrpcOptions {
+    fn has_values(&self) -> bool {
+        self.grpc_service_name.is_some() || self.grpc_mode.is_some() || self.grpc_authority.is_some()
+    }
+}
+
+impl HttpUpgradeOptions {
+    fn has_values(&self) -> bool {
+        self.path.is_some() || self.host.is_some()
+    }
+}
+
+impl XHttpOptions {
+    fn has_values(&self) -> bool {
+        self.path.is_some() || self.host.is_some() || self.mode.is_some()
+    }
+}
+
+impl H2Options {
+    fn has_values(&self) -> bool {
+        self.path.is_some() || self.host.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_yaml::Value;
+
+    #[test]
+    fn converts_reality_tcp_to_full_config() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123&fp=chrome&sni=www.microsoft.com&sid=abcd&flow=xtls-rprx-vision#test-reality";
+
+        let yaml = convert_vless_to_yaml(input, ConvertOptions::default()).unwrap();
+
+        assert!(yaml.contains("mixed-port: 7890"));
+        assert!(yaml.contains("type: vless"));
+        assert!(yaml.contains("servername: www.microsoft.com"));
+        assert!(yaml.contains("client-fingerprint: chrome"));
+        assert!(yaml.contains("public-key: abc123"));
+        assert!(yaml.contains("short-id: abcd"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn converts_standard_template_with_dns_and_auto_group() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123&fp=chrome&sni=www.microsoft.com&sid=abcd&flow=xtls-rprx-vision#test-reality";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::Standard,
+                proxy_name: None,
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("dns:"));
+        assert!(yaml.contains("enhanced-mode: fake-ip"));
+        assert!(yaml.contains("name: AUTO"));
+        assert!(yaml.contains("type: url-test"));
+        assert!(yaml.contains("GEOIP,CN,DIRECT"));
+        assert!(!yaml.contains("rule-providers:"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn converts_full_rules_template_with_rule_providers() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123&fp=chrome&sni=www.microsoft.com&sid=abcd&flow=xtls-rprx-vision#test-reality";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::FullRules,
+                proxy_name: None,
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("rule-providers:"));
+        assert!(yaml.contains("AI:"));
+        assert!(yaml.contains("Telegram:"));
+        assert!(yaml.contains("TikTok:"));
+        assert!(yaml.contains("RULE-SET,AI,AI"));
+        assert!(yaml.contains("GEOIP,CN,DIRECT"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn converts_ws_to_proxy_only() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=ws&security=tls&path=%2Fws&host=cdn.example.com&sni=cdn.example.com#test-ws";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::ProxyOnly,
+                template_mode: TemplateMode::Minimal,
+                proxy_name: None,
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("network: ws"));
+        assert!(yaml.contains("path: /ws"));
+        assert!(yaml.contains("Host: cdn.example.com"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn converts_grpc_to_proxy_only() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=grpc&security=tls&serviceName=my-grpc&sni=example.com#test-grpc";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::ProxyOnly,
+                template_mode: TemplateMode::Minimal,
+                proxy_name: None,
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("network: grpc"));
+        assert!(yaml.contains("grpc-service-name: my-grpc"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_vless_links() {
+        let error = convert_vless_to_yaml("https://example.com", ConvertOptions::default())
+            .unwrap_err();
+
+        assert_eq!(error, ConvertError::InvalidScheme);
+    }
+
+    #[test]
+    fn overrides_proxy_name_when_custom_name_is_present() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#original-name";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::Standard,
+                proxy_name: Some("my-node".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("name: my-node"));
+        assert!(yaml.contains("- my-node"));
+        assert!(!yaml.contains("original-name"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+}
