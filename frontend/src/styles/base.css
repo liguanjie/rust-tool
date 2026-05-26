@@ -176,6 +176,14 @@ button:disabled {
     @apply text-sm text-emerald-800;
   }
 
+  .download-action {
+    @apply relative inline-flex items-center;
+  }
+
+  .download-message {
+    @apply absolute right-0 top-[calc(100%+6px)] z-10 max-w-[360px] whitespace-nowrap rounded-lg border border-emerald-900/15 bg-white px-2.5 py-1.5 text-xs text-emerald-800 shadow-sm;
+  }
+
   .icon-button {
     @apply inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-sm font-medium text-stone-900 transition hover:border-emerald-800;
   }

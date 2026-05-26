@@ -1,0 +1,22 @@
+[package]
+name = "rust_tool_desktop"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+name = "rust_tool_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "RustTool"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+rust_tool_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true

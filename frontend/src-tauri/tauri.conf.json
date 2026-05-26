@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RustTool",
+  "version": "0.1.0",
+  "identifier": "com.ben.rusttool",
+  "build": {
+    "beforeDevCommand": "pnpm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "pnpm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "RustTool",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 680,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}

@@ -22,6 +22,14 @@ export interface ApiErrorResponse {
 export async function convertVlessToMihomo(
   payload: ConvertVlessRequest,
 ): Promise<ConvertVlessResponse> {
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    const { invoke } = tauriCore
+    return await invoke<ConvertVlessResponse>('convert_vless_to_mihomo', {
+      request: payload,
+    })
+  }
+
   const response = await fetch('/api/tools/vless-to-mihomo', {
     method: 'POST',
     headers: {
