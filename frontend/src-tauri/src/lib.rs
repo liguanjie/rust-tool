@@ -1,8 +1,14 @@
+use rusqlite::{params, Connection, OptionalExtension};
 use rust_tool_core::{convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
+
+mod workbench;
+
+const VLESS_TOOL_SETTINGS_KEY: &str = "toolbox.vless_to_mihomo.settings";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +31,7 @@ struct ConvertVlessRequest {
     mode: Option<VlessOutputMode>,
     template: Option<VlessTemplateMode>,
     proxy_name: Option<String>,
+    direct_domains: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,6 +42,28 @@ struct ConvertVlessResponse {
 #[derive(Debug, Serialize)]
 struct SaveYamlResponse {
     path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+struct VlessToolSettings {
+    input: String,
+    mode: String,
+    template: String,
+    download_name: String,
+    direct_domains: String,
+}
+
+impl Default for VlessToolSettings {
+    fn default() -> Self {
+        Self {
+            input: String::new(),
+            mode: "full_config".to_string(),
+            template: "full_rules".to_string(),
+            download_name: "mihomo".to_string(),
+            direct_domains: String::new(),
+        }
+    }
 }
 
 #[tauri::command]
@@ -55,10 +84,51 @@ fn convert_vless_to_mihomo(request: ConvertVlessRequest) -> Result<ConvertVlessR
             output_mode,
             template_mode,
             proxy_name: request.proxy_name,
+            direct_domains: request.direct_domains.unwrap_or_default(),
         },
     )
     .map(|yaml| ConvertVlessResponse { yaml })
     .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_vless_tool_settings(app: tauri::AppHandle) -> Result<VlessToolSettings, String> {
+    let conn = open_app_db(&app)?;
+    ensure_app_settings_schema(&conn)?;
+    let value = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            params![VLESS_TOOL_SETTINGS_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("读取 VLESS 工具配置失败: {error}"))?;
+
+    match value {
+        Some(value) => serde_json::from_str(&value)
+            .map_err(|error| format!("解析 VLESS 工具配置失败: {error}")),
+        None => Ok(VlessToolSettings::default()),
+    }
+}
+
+#[tauri::command]
+fn save_vless_tool_settings(
+    app: tauri::AppHandle,
+    settings: VlessToolSettings,
+) -> Result<VlessToolSettings, String> {
+    let conn = open_app_db(&app)?;
+    ensure_app_settings_schema(&conn)?;
+    let value = serde_json::to_string(&settings)
+        .map_err(|error| format!("序列化 VLESS 工具配置失败: {error}"))?;
+    conn.execute(
+        "INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![VLESS_TOOL_SETTINGS_KEY, value, now_text()],
+    )
+    .map_err(|error| format!("保存 VLESS 工具配置失败: {error}"))?;
+
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -84,14 +154,128 @@ fn save_yaml_file(
     })
 }
 
+#[tauri::command]
+fn get_workbench_config(app: tauri::AppHandle) -> Result<workbench::WorkbenchConfig, String> {
+    workbench::get_config(&app)
+}
+
+#[tauri::command]
+fn save_workbench_config(
+    app: tauri::AppHandle,
+    config: workbench::WorkbenchConfig,
+) -> Result<workbench::WorkbenchConfig, String> {
+    workbench::save_config(&app, config)
+}
+
+#[tauri::command]
+fn detect_docker() -> workbench::DockerDetection {
+    workbench::detect_docker()
+}
+
+#[tauri::command]
+fn select_workbench_file(kind: workbench::WorkbenchPathKind) -> Result<Option<String>, String> {
+    workbench::select_workbench_file(kind)
+}
+
+#[tauri::command]
+fn select_workbench_directory() -> Result<Option<String>, String> {
+    workbench::select_workbench_directory()
+}
+
+#[tauri::command]
+fn get_docker_status(app: tauri::AppHandle) -> Result<workbench::DockerStatus, String> {
+    workbench::get_docker_status(&app)
+}
+
+#[tauri::command]
+fn start_docker(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
+    workbench::start_docker(&app)
+}
+
+#[tauri::command]
+fn stop_docker(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
+    workbench::stop_docker(&app)
+}
+
+#[tauri::command]
+fn restart_docker(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
+    workbench::restart_docker(&app)
+}
+
+#[tauri::command]
+fn run_sub2api_task(
+    app: tauri::AppHandle,
+    task: workbench::Sub2apiTask,
+) -> Result<workbench::TaskRun, String> {
+    workbench::run_sub2api_task(&app, task)
+}
+
+#[tauri::command]
+fn check_sub2api_health(app: tauri::AppHandle) -> Result<workbench::HealthStatus, String> {
+    workbench::check_sub2api_health(&app)
+}
+
+#[tauri::command]
+fn list_task_runs(
+    app: tauri::AppHandle,
+    limit: Option<u32>,
+) -> Result<Vec<workbench::TaskRun>, String> {
+    workbench::list_task_runs(&app, limit)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             convert_vless_to_mihomo,
-            save_yaml_file
+            save_yaml_file,
+            get_vless_tool_settings,
+            save_vless_tool_settings,
+            get_workbench_config,
+            save_workbench_config,
+            detect_docker,
+            select_workbench_file,
+            select_workbench_directory,
+            get_docker_status,
+            start_docker,
+            stop_docker,
+            restart_docker,
+            run_sub2api_task,
+            check_sub2api_health,
+            list_task_runs
         ])
         .run(tauri::generate_context!())
         .expect("failed to run RustTool desktop app");
+}
+
+fn open_app_db(app: &tauri::AppHandle) -> Result<Connection, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("无法定位应用数据目录: {error}"))?;
+    fs::create_dir_all(&data_dir).map_err(|error| format!("创建应用数据目录失败: {error}"))?;
+    Connection::open(data_dir.join("rusttool.sqlite"))
+        .map_err(|error| format!("打开本地数据库失败: {error}"))
+}
+
+fn ensure_app_settings_schema(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|error| format!("初始化配置表失败: {error}"))?;
+
+    Ok(())
+}
+
+fn now_text() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
 }
 
 fn sanitize_yaml_filename(filename: &str) -> String {

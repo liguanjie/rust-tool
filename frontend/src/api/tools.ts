@@ -6,6 +6,7 @@ export interface ConvertVlessRequest {
   mode: VlessOutputMode
   template: VlessTemplateMode
   proxy_name?: string
+  direct_domains?: string[]
 }
 
 export interface ConvertVlessResponse {
@@ -16,6 +17,26 @@ export interface ApiErrorResponse {
   error?: {
     code?: string
     message?: string
+  }
+}
+
+export interface VlessToolSettings {
+  input: string
+  mode: VlessOutputMode
+  template: VlessTemplateMode
+  downloadName: string
+  directDomains: string
+}
+
+const VLESS_TOOL_SETTINGS_STORAGE_KEY = 'rusttool:vless-to-mihomo:settings'
+
+export function defaultVlessToolSettings(): VlessToolSettings {
+  return {
+    input: '',
+    mode: 'full_config',
+    template: 'full_rules',
+    downloadName: 'mihomo',
+    directDomains: '',
   }
 }
 
@@ -50,4 +71,39 @@ export async function convertVlessToMihomo(
   }
 
   return (await response.json()) as ConvertVlessResponse
+}
+
+export async function getVlessToolSettings(): Promise<VlessToolSettings> {
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    const { invoke } = tauriCore
+    return await invoke<VlessToolSettings>('get_vless_tool_settings')
+  }
+
+  const raw = window.localStorage.getItem(VLESS_TOOL_SETTINGS_STORAGE_KEY)
+  if (!raw) return defaultVlessToolSettings()
+
+  try {
+    return {
+      ...defaultVlessToolSettings(),
+      ...(JSON.parse(raw) as Partial<VlessToolSettings>),
+    }
+  } catch {
+    return defaultVlessToolSettings()
+  }
+}
+
+export async function saveVlessToolSettings(
+  settings: VlessToolSettings,
+): Promise<VlessToolSettings> {
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    const { invoke } = tauriCore
+    return await invoke<VlessToolSettings>('save_vless_tool_settings', {
+      settings,
+    })
+  }
+
+  window.localStorage.setItem(VLESS_TOOL_SETTINGS_STORAGE_KEY, JSON.stringify(settings))
+  return settings
 }

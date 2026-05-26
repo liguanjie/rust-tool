@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 use url::{ParseError, Url};
 
@@ -21,6 +21,7 @@ pub struct ConvertOptions {
     pub output_mode: OutputMode,
     pub template_mode: TemplateMode,
     pub proxy_name: Option<String>,
+    pub direct_domains: Vec<String>,
 }
 
 impl Default for ConvertOptions {
@@ -29,23 +30,24 @@ impl Default for ConvertOptions {
             output_mode: OutputMode::FullConfig,
             template_mode: TemplateMode::Standard,
             proxy_name: None,
+            direct_domains: Vec::new(),
         }
     }
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ConvertError {
-    #[error("请输入 vless:// 链接")]
+    #[error("please input a vless:// link")]
     EmptyInput,
-    #[error("链接必须以 vless:// 开头")]
+    #[error("link must start with vless://")]
     InvalidScheme,
-    #[error("缺少 UUID")]
+    #[error("missing UUID")]
     MissingUuid,
-    #[error("缺少服务器地址")]
+    #[error("missing server address")]
     MissingServer,
-    #[error("端口非法")]
+    #[error("invalid port")]
     InvalidPort,
-    #[error("YAML 序列化失败: {0}")]
+    #[error("failed to serialize YAML: {0}")]
     YamlSerializeFailed(String),
 }
 
@@ -242,23 +244,51 @@ struct H2Options {
 }
 
 pub fn convert_vless_to_yaml(input: &str, options: ConvertOptions) -> Result<String, ConvertError> {
-    let mut proxy = parse_vless(input)?;
-    if let Some(proxy_name) = normalize_custom_name(options.proxy_name.as_deref()) {
-        proxy.name = proxy_name;
-    }
-    let proxy_server = proxy.server.clone();
-    let proxy_port = proxy.port;
-
-    let mut yaml = match options.output_mode {
-        OutputMode::FullConfig => {
-            serde_yaml::to_string(&build_config(proxy, options.template_mode))
+    let mut proxies = parse_vless_links(input)?;
+    if proxies.len() == 1 {
+        if let Some(proxy_name) = normalize_custom_name(options.proxy_name.as_deref()) {
+            proxies[0].name = proxy_name;
         }
-        OutputMode::ProxyOnly => serde_yaml::to_string(&proxy),
+    }
+    ensure_unique_proxy_names(&mut proxies);
+    let output_mode = options.output_mode;
+    let template_mode = options.template_mode;
+    let direct_domains = options.direct_domains;
+    let node_addresses = proxies
+        .iter()
+        .map(|proxy| format!("{}:{}", proxy.server, proxy.port))
+        .collect::<Vec<_>>();
+
+    let mut yaml = match output_mode {
+        OutputMode::FullConfig => {
+            serde_yaml::to_string(&build_config(proxies, template_mode, &direct_domains))
+        }
+        OutputMode::ProxyOnly => {
+            if proxies.len() == 1 {
+                serde_yaml::to_string(&proxies[0])
+            } else {
+                serde_yaml::to_string(&proxies)
+            }
+        }
     }
     .map_err(|error| ConvertError::YamlSerializeFailed(error.to_string()))?;
-    yaml.insert_str(0, &format!("# 节点地址: {proxy_server}:{proxy_port}\n"));
+    yaml.insert_str(0, &format_node_addresses_comment(&node_addresses));
 
     Ok(yaml)
+}
+
+fn parse_vless_links(input: &str) -> Result<Vec<Proxy>, ConvertError> {
+    let links = input
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+
+    if links.is_empty() {
+        return Err(ConvertError::EmptyInput);
+    }
+
+    links.into_iter().map(parse_vless).collect()
 }
 
 fn parse_vless(input: &str) -> Result<Proxy, ConvertError> {
@@ -344,14 +374,21 @@ fn parse_vless(input: &str) -> Result<Proxy, ConvertError> {
     Ok(proxy)
 }
 
-fn build_config(proxy: Proxy, template_mode: TemplateMode) -> MihomoConfig {
-    let proxy_name = proxy.name.clone();
+fn build_config(
+    proxies: Vec<Proxy>,
+    template_mode: TemplateMode,
+    direct_domains: &[String],
+) -> MihomoConfig {
+    let proxy_names = proxies
+        .iter()
+        .map(|proxy| proxy.name.clone())
+        .collect::<Vec<_>>();
     let include_standard = matches!(
         template_mode,
         TemplateMode::Standard | TemplateMode::FullRules
     );
     let include_full_rules = matches!(template_mode, TemplateMode::FullRules);
-    let proxy_groups = build_proxy_groups(&proxy_name, &template_mode);
+    let proxy_groups = build_proxy_groups(&proxy_names, &template_mode);
 
     MihomoConfig {
         mixed_port: 7890,
@@ -360,49 +397,62 @@ fn build_config(proxy: Proxy, template_mode: TemplateMode) -> MihomoConfig {
         mode: "rule".to_string(),
         log_level: "info".to_string(),
         dns: include_standard.then(build_dns_config),
-        proxies: vec![proxy],
+        proxies,
         proxy_groups,
         rule_providers: include_full_rules.then(build_rule_providers),
-        rules: build_rules(&template_mode),
+        rules: build_rules(&template_mode, direct_domains),
     }
 }
 
-fn build_proxy_groups(proxy_name: &str, template_mode: &TemplateMode) -> Vec<ProxyGroup> {
+fn build_proxy_groups(proxy_names: &[String], template_mode: &TemplateMode) -> Vec<ProxyGroup> {
+    let mut proxy_choices = proxy_names.to_vec();
+    proxy_choices.push("AUTO".to_string());
+    proxy_choices.push("DIRECT".to_string());
+
+    let mut category_choices = vec!["PROXY".to_string()];
+    category_choices.extend(proxy_names.iter().cloned());
+    category_choices.push("AUTO".to_string());
+    category_choices.push("DIRECT".to_string());
+
     match template_mode {
-        TemplateMode::Minimal => vec![select_group("PROXY", vec![proxy_name, "DIRECT"])],
+        TemplateMode::Minimal => {
+            let mut choices = proxy_names.to_vec();
+            choices.push("DIRECT".to_string());
+            vec![select_group("PROXY", choices)]
+        }
         TemplateMode::Standard => vec![
-            select_group("PROXY", vec![proxy_name, "AUTO", "DIRECT"]),
-            url_test_group("AUTO", vec![proxy_name]),
+            select_group("PROXY", proxy_choices),
+            url_test_group("AUTO", proxy_names.to_vec()),
         ],
         TemplateMode::FullRules => vec![
-            select_group("PROXY", vec![proxy_name, "AUTO", "DIRECT"]),
-            url_test_group("AUTO", vec![proxy_name]),
-            select_group("AI", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
-            select_group("Media", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
-            select_group("Google", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
-            select_group("Telegram", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
-            select_group("TikTok", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
-            select_group("Ads", vec!["REJECT", "DIRECT"]),
+            select_group("PROXY", proxy_choices),
+            url_test_group("AUTO", proxy_names.to_vec()),
+            select_group("AI", category_choices.clone()),
+            select_group("Media", category_choices.clone()),
+            select_group("Google", category_choices.clone()),
+            select_group("Telegram", category_choices.clone()),
+            select_group("TikTok", category_choices),
+            select_group("Ads", vec!["REJECT".to_string(), "DIRECT".to_string()]),
         ],
     }
 }
 
-fn select_group(name: &str, proxies: Vec<&str>) -> ProxyGroup {
+fn select_group(name: &str, proxies: Vec<String>) -> ProxyGroup {
     ProxyGroup {
         name: name.to_string(),
         group_type: "select".to_string(),
-        proxies: proxies.into_iter().map(ToOwned::to_owned).collect(),
+        proxies,
         url: None,
         interval: None,
         tolerance: None,
     }
 }
 
-fn url_test_group(name: &str, proxies: Vec<&str>) -> ProxyGroup {
+fn url_test_group(name: &str, proxies: Vec<String>) -> ProxyGroup {
     ProxyGroup {
         name: name.to_string(),
         group_type: "url-test".to_string(),
-        proxies: proxies.into_iter().map(ToOwned::to_owned).collect(),
+        proxies,
         url: Some("https://www.gstatic.com/generate_204".to_string()),
         interval: Some(300),
         tolerance: Some(50),
@@ -567,34 +617,40 @@ fn http_rule_provider(behavior: &str, url: &str, path: &str) -> RuleProvider {
     }
 }
 
-fn build_rules(template_mode: &TemplateMode) -> Vec<String> {
+fn build_rules(template_mode: &TemplateMode, direct_domains: &[String]) -> Vec<String> {
     match template_mode {
-        TemplateMode::Minimal => with_local_direct_rules(vec!["MATCH,PROXY"]),
-        TemplateMode::Standard => with_local_direct_rules(vec!["GEOIP,CN,DIRECT", "MATCH,PROXY"]),
-        TemplateMode::FullRules => with_local_direct_rules(vec![
-            "RULE-SET,reject,Ads",
-            "RULE-SET,openai,AI",
-            "RULE-SET,youtube,Media",
-            "RULE-SET,netflix,Media",
-            "RULE-SET,telegram,Telegram",
-            "RULE-SET,tiktok,TikTok",
-            "RULE-SET,google_domain,Google",
-            "RULE-SET,google_ip,Google,no-resolve",
-            "RULE-SET,geolocation_not_cn,PROXY",
-            "RULE-SET,cn_domain,DIRECT",
-            "RULE-SET,cn_ip,DIRECT,no-resolve",
-            "GEOIP,CN,DIRECT",
-            "MATCH,PROXY",
-        ]),
+        TemplateMode::Minimal => with_local_direct_rules(vec!["MATCH,PROXY"], direct_domains),
+        TemplateMode::Standard => {
+            with_local_direct_rules(vec!["GEOIP,CN,DIRECT", "MATCH,PROXY"], direct_domains)
+        }
+        TemplateMode::FullRules => with_local_direct_rules(
+            vec![
+                "RULE-SET,reject,Ads",
+                "RULE-SET,openai,AI",
+                "RULE-SET,youtube,Media",
+                "RULE-SET,netflix,Media",
+                "RULE-SET,telegram,Telegram",
+                "RULE-SET,tiktok,TikTok",
+                "RULE-SET,google_domain,Google",
+                "RULE-SET,google_ip,Google,no-resolve",
+                "RULE-SET,geolocation_not_cn,PROXY",
+                "RULE-SET,cn_domain,DIRECT",
+                "RULE-SET,cn_ip,DIRECT,no-resolve",
+                "GEOIP,CN,DIRECT",
+                "MATCH,PROXY",
+            ],
+            direct_domains,
+        ),
     }
 }
 
-fn with_local_direct_rules(rules: Vec<&'static str>) -> Vec<String> {
+fn with_local_direct_rules(rules: Vec<&'static str>, direct_domains: &[String]) -> Vec<String> {
     let mut merged = vec![
         "DOMAIN,localhost,DIRECT",
         "DOMAIN-SUFFIX,localhost,DIRECT",
         "DOMAIN-SUFFIX,local,DIRECT",
         "DOMAIN-SUFFIX,lan,DIRECT",
+        "DST-PORT,22,DIRECT",
         "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
         "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
         "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
@@ -609,8 +665,66 @@ fn with_local_direct_rules(rules: Vec<&'static str>) -> Vec<String> {
     .map(ToOwned::to_owned)
     .collect::<Vec<_>>();
 
+    let mut seen = merged.iter().cloned().collect::<BTreeSet<_>>();
+    for rule in build_custom_direct_domain_rules(direct_domains) {
+        if seen.insert(rule.clone()) {
+            merged.push(rule);
+        }
+    }
+
     merged.extend(rules.into_iter().map(ToOwned::to_owned));
     merged
+}
+
+fn build_custom_direct_domain_rules(direct_domains: &[String]) -> Vec<String> {
+    direct_domains
+        .iter()
+        .filter_map(|domain| normalize_direct_domain(domain))
+        .map(|domain| format!("DOMAIN-SUFFIX,{domain},DIRECT"))
+        .collect()
+}
+
+fn normalize_direct_domain(value: &str) -> Option<String> {
+    let without_comment = value.split('#').next().unwrap_or_default().trim();
+    if without_comment.is_empty() {
+        return None;
+    }
+
+    let host = if without_comment.contains("://") {
+        Url::parse(without_comment)
+            .ok()
+            .and_then(|url| url.host_str().map(ToOwned::to_owned))
+            .unwrap_or_default()
+    } else {
+        without_comment
+            .split('/')
+            .next()
+            .unwrap_or_default()
+            .split('?')
+            .next()
+            .unwrap_or_default()
+            .split(':')
+            .next()
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    let normalized = host
+        .trim()
+        .trim_start_matches("*.")
+        .trim_start_matches("+.")
+        .trim_start_matches('.')
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+
+    if normalized.is_empty()
+        || normalized.contains(',')
+        || normalized.chars().any(char::is_whitespace)
+    {
+        None
+    } else {
+        Some(normalized)
+    }
 }
 
 fn normalize_network(network: Option<String>) -> String {
@@ -725,6 +839,35 @@ fn normalize_custom_name(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn ensure_unique_proxy_names(proxies: &mut [Proxy]) {
+    let mut used = BTreeSet::new();
+    for proxy in proxies {
+        if used.insert(proxy.name.clone()) {
+            continue;
+        }
+
+        let base_name = proxy.name.clone();
+        for index in 2.. {
+            let candidate = format!("{base_name}-{index}");
+            if used.insert(candidate.clone()) {
+                proxy.name = candidate;
+                break;
+            }
+        }
+    }
+}
+
+fn format_node_addresses_comment(node_addresses: &[String]) -> String {
+    if node_addresses.len() <= 1 {
+        return format!(
+            "# 节点地址: {}\n",
+            node_addresses.first().cloned().unwrap_or_default()
+        );
+    }
+
+    format!("# 节点地址: {}\n", node_addresses.join(", "))
+}
+
 impl RealityOptions {
     fn has_values(&self) -> bool {
         self.public_key.is_some() || self.short_id.is_some() || self.spider_x.is_some()
@@ -794,6 +937,7 @@ mod tests {
                 output_mode: OutputMode::FullConfig,
                 template_mode: TemplateMode::Standard,
                 proxy_name: None,
+                direct_domains: Vec::new(),
             },
         )
         .unwrap();
@@ -803,11 +947,31 @@ mod tests {
         assert!(yaml.contains("name: AUTO"));
         assert!(yaml.contains("type: url-test"));
         assert!(yaml.contains("DOMAIN,localhost,DIRECT"));
+        assert!(yaml.contains("DST-PORT,22,DIRECT"));
         assert!(yaml.contains("IP-CIDR,127.0.0.0/8,DIRECT,no-resolve"));
+        assert!(yaml.contains("IP-CIDR6,::1/128,DIRECT,no-resolve"));
+        assert!(yaml.find("DST-PORT,22,DIRECT") < yaml.find("MATCH,PROXY"));
         assert!(yaml.find("IP-CIDR,127.0.0.0/8,DIRECT,no-resolve") < yaml.find("MATCH,PROXY"));
+        assert!(yaml.find("IP-CIDR6,::1/128,DIRECT,no-resolve") < yaml.find("MATCH,PROXY"));
         assert!(yaml.contains("GEOIP,CN,DIRECT"));
         assert!(!yaml.contains("rule-providers:"));
         serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn keeps_ssh_port_direct_rule_before_ip_family_rules_and_fallback() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#test-reality";
+
+        let yaml = convert_vless_to_yaml(input, ConvertOptions::default()).unwrap();
+
+        assert!(yaml.contains("DST-PORT,22,DIRECT"));
+        assert!(yaml.contains("IP-CIDR,127.0.0.0/8,DIRECT,no-resolve"));
+        assert!(yaml.contains("IP-CIDR6,::1/128,DIRECT,no-resolve"));
+        assert!(
+            yaml.find("DST-PORT,22,DIRECT") < yaml.find("IP-CIDR,127.0.0.0/8,DIRECT,no-resolve")
+        );
+        assert!(yaml.find("DST-PORT,22,DIRECT") < yaml.find("IP-CIDR6,::1/128,DIRECT,no-resolve"));
+        assert!(yaml.find("DST-PORT,22,DIRECT") < yaml.find("MATCH,PROXY"));
     }
 
     #[test]
@@ -820,6 +984,7 @@ mod tests {
                 output_mode: OutputMode::FullConfig,
                 template_mode: TemplateMode::FullRules,
                 proxy_name: None,
+                direct_domains: Vec::new(),
             },
         )
         .unwrap();
@@ -836,6 +1001,52 @@ mod tests {
     }
 
     #[test]
+    fn converts_multiple_vless_links_into_one_full_config() {
+        let input = [
+            "vless://11111111-1111-1111-1111-111111111111@example-a.com:443?type=tcp&security=reality&pbk=abc123#node-a",
+            "vless://22222222-2222-2222-2222-222222222222@example-b.com:8443?type=tcp&security=reality&pbk=def456#node-b",
+        ]
+        .join("\n");
+
+        let yaml = convert_vless_to_yaml(
+            &input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::FullRules,
+                proxy_name: Some("ignored-for-multiple".to_string()),
+                direct_domains: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.starts_with("# 节点地址: example-a.com:443, example-b.com:8443\n"));
+        assert!(yaml.contains("server: example-a.com"));
+        assert!(yaml.contains("server: example-b.com"));
+        assert!(yaml.contains("- node-a"));
+        assert!(yaml.contains("- node-b"));
+        assert!(yaml.contains("name: AUTO"));
+        assert!(yaml.contains("RULE-SET,openai,AI"));
+        assert!(!yaml.contains("ignored-for-multiple"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn keeps_duplicate_proxy_names_unique() {
+        let input = [
+            "vless://11111111-1111-1111-1111-111111111111@example-a.com:443?type=tcp&security=reality&pbk=abc123#same",
+            "vless://22222222-2222-2222-2222-222222222222@example-b.com:443?type=tcp&security=reality&pbk=def456#same",
+        ]
+        .join("\n");
+
+        let yaml = convert_vless_to_yaml(&input, ConvertOptions::default()).unwrap();
+
+        assert!(yaml.contains("name: same"));
+        assert!(yaml.contains("name: same-2"));
+        assert!(yaml.contains("same-2"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
     fn converts_ws_to_proxy_only() {
         let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=ws&security=tls&path=%2Fws&host=cdn.example.com&sni=cdn.example.com#test-ws";
 
@@ -845,6 +1056,7 @@ mod tests {
                 output_mode: OutputMode::ProxyOnly,
                 template_mode: TemplateMode::Minimal,
                 proxy_name: None,
+                direct_domains: Vec::new(),
             },
         )
         .unwrap();
@@ -865,6 +1077,7 @@ mod tests {
                 output_mode: OutputMode::ProxyOnly,
                 template_mode: TemplateMode::Minimal,
                 proxy_name: None,
+                direct_domains: Vec::new(),
             },
         )
         .unwrap();
@@ -892,6 +1105,7 @@ mod tests {
                 output_mode: OutputMode::FullConfig,
                 template_mode: TemplateMode::Standard,
                 proxy_name: Some("my-node".to_string()),
+                direct_domains: Vec::new(),
             },
         )
         .unwrap();
@@ -899,6 +1113,36 @@ mod tests {
         assert!(yaml.contains("name: my-node"));
         assert!(yaml.contains("- my-node"));
         assert!(!yaml.contains("original-name"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn adds_custom_direct_domains_before_proxy_fallback() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#test-reality";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::FullRules,
+                proxy_name: None,
+                direct_domains: vec![
+                    "github.com".to_string(),
+                    "https://example.org/docs".to_string(),
+                    "*.internal.test".to_string(),
+                ],
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("DOMAIN-SUFFIX,github.com,DIRECT"));
+        assert!(yaml.contains("DOMAIN-SUFFIX,example.org,DIRECT"));
+        assert!(yaml.contains("DOMAIN-SUFFIX,internal.test,DIRECT"));
+        assert!(
+            yaml.find("DOMAIN-SUFFIX,github.com,DIRECT")
+                < yaml.find("RULE-SET,geolocation_not_cn,PROXY")
+        );
+        assert!(yaml.find("DOMAIN-SUFFIX,github.com,DIRECT") < yaml.find("MATCH,PROXY"));
         serde_yaml::from_str::<Value>(&yaml).unwrap();
     }
 }

@@ -2,6 +2,7 @@
 defineProps<{
   title: string
   description: string
+  eyebrow?: string
 }>()
 </script>
 
@@ -9,7 +10,7 @@ defineProps<{
   <article class="tool-shell">
     <header class="tool-header">
       <div>
-        <p class="eyebrow">转换工具</p>
+        <p class="eyebrow">{{ eyebrow || '工具箱' }}</p>
         <h2>{{ title }}</h2>
         <p>{{ description }}</p>
       </div>

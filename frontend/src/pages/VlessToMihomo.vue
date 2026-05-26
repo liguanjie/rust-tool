@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { ExternalLink } from '@lucide/vue'
 import ResultPanel from '../components/ResultPanel.vue'
 import ToolShell from '../components/ToolShell.vue'
 import { useVlessToMihomoStore } from '../stores/vlessToMihomo'
 
 const tool = useVlessToMihomoStore()
+
+onMounted(() => {
+  void tool.load()
+})
 </script>
 
 <template>
@@ -20,8 +25,9 @@ const tool = useVlessToMihomoStore()
           v-model="tool.input"
           class="vless-input"
           spellcheck="false"
-          placeholder="vless://uuid@example.com:443?type=tcp&security=reality..."
+          placeholder="每行一个 vless:// 链接&#10;vless://uuid@example.com:443?type=tcp&security=reality..."
         />
+        <small class="field-hint">支持单条或多条 VLESS 链接；多条时会生成多个节点并加入同一份 Mihomo 配置。</small>
 
         <label class="field-control file-name-field" for="download-name">
           <span class="field-label">下载文件名</span>
@@ -72,6 +78,18 @@ const tool = useVlessToMihomoStore()
             </label>
           </div>
         </div>
+
+        <label v-if="tool.mode === 'full_config'" class="field-control direct-domain-field" for="direct-domains">
+          <span class="field-label">特殊直连域名</span>
+          <textarea
+            id="direct-domains"
+            v-model="tool.directDomains"
+            class="direct-domain-input"
+            spellcheck="false"
+            placeholder="github.com&#10;example.com"
+          />
+          <small class="field-hint">每行一条；会生成 DOMAIN-SUFFIX 直连规则，并优先于代理兜底匹配。</small>
+        </label>
 
         <button class="primary-button" type="button" :disabled="!tool.canConvert" @click="tool.convert">
           {{ tool.loading ? '转换中...' : '转换' }}

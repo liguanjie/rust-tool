@@ -23,6 +23,7 @@ pub struct VlessToMihomoRequest {
     mode: Option<VlessOutputMode>,
     template: Option<VlessTemplateMode>,
     proxy_name: Option<String>,
+    direct_domains: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -60,6 +61,7 @@ pub async fn vless_to_mihomo(
             output_mode,
             template_mode,
             proxy_name: request.proxy_name,
+            direct_domains: request.direct_domains.unwrap_or_default(),
         },
     )
     .map(|yaml| Json(VlessToMihomoResponse { yaml }))

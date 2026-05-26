@@ -100,6 +100,7 @@ fn run() -> Result<(), String> {
                     output_mode,
                     template_mode,
                     proxy_name,
+                    direct_domains: Vec::new(),
                 },
             )
             .map_err(|error| error.to_string())?;
