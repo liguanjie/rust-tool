@@ -1,6 +1,10 @@
 export interface WorkbenchConfig {
   dockerDesktopPath: string
   dockerCliPath: string
+  clashPartyPath: string
+  clashPartyDataDir: string
+  clashPartyApiUrl: string
+  clashPartyApiSecret: string
   sub2apiStartScript: string
   sub2apiStopScript: string
   sub2apiUpgradeScript: string
@@ -26,6 +30,65 @@ export interface DockerStatus {
   message: string
 }
 
+export interface ClashPartyDetection {
+  clashPartyPath: string
+  clashPartyDataDir: string
+  clashPartyApiUrl: string
+}
+
+export interface ClashPartyStatus {
+  configured: boolean
+  running: boolean
+  path: string
+  message: string
+}
+
+export interface ClashPartySubscription {
+  id: string
+  name: string
+  profileType: string
+  path: string
+  active: boolean
+  nodeCount: number
+  groupCount: number
+  updatedAt: string
+  usedBytes: number | null
+  totalBytes: number | null
+  expireAt: number | null
+}
+
+export interface ClashPartyNode {
+  name: string
+  nodeType: string
+  server: string
+  port: number | null
+  delay: number | null
+  active: boolean
+}
+
+export interface ClashPartyProxyGroup {
+  name: string
+  groupType: string
+  selected: string
+  nodes: ClashPartyNode[]
+}
+
+export interface ClashPartyManagerState {
+  dataDir: string
+  profileIndexPath: string
+  apiUrl: string
+  activeSubscriptionId: string
+  subscriptions: ClashPartySubscription[]
+  groups: ClashPartyProxyGroup[]
+  apiAvailable: boolean
+  message: string
+}
+
+export interface ClashPartySwitchResult {
+  ok: boolean
+  message: string
+}
+
 export type Sub2apiTask = 'start' | 'stop' | 'upgrade'
 
 export type WorkbenchPathKind = 'executable' | 'script'
@@ -41,6 +104,16 @@ export interface TaskRun {
   stderr: string
 }
 
+export interface OperationLog {
+  id: number
+  module: string
+  action: string
+  status: string
+  message: string
+  detail: string
+  createdAt: string
+}
+
 export interface HealthStatus {
   ok: boolean
   message: string
@@ -50,6 +123,10 @@ export function defaultWorkbenchConfig(): WorkbenchConfig {
   return {
     dockerDesktopPath: '',
     dockerCliPath: '',
+    clashPartyPath: '',
+    clashPartyDataDir: '',
+    clashPartyApiUrl: 'http://127.0.0.1:9090',
+    clashPartyApiSecret: '',
     sub2apiStartScript: '',
     sub2apiStopScript: '',
     sub2apiUpgradeScript: '',
@@ -71,6 +148,10 @@ export async function saveWorkbenchConfig(config: WorkbenchConfig) {
 
 export async function detectDocker() {
   return await invokeWorkbench<DockerDetection>('detect_docker')
+}
+
+export async function detectClashParty() {
+  return await invokeWorkbench<ClashPartyDetection>('detect_clash_party')
 }
 
 export async function selectWorkbenchFile(kind: WorkbenchPathKind) {
@@ -97,6 +178,34 @@ export async function restartDocker() {
   return await invokeWorkbench<TaskRun>('restart_docker')
 }
 
+export async function getClashPartyStatus() {
+  return await invokeWorkbench<ClashPartyStatus>('get_clash_party_status')
+}
+
+export async function startClashParty() {
+  return await invokeWorkbench<TaskRun>('start_clash_party')
+}
+
+export async function stopClashParty() {
+  return await invokeWorkbench<TaskRun>('stop_clash_party')
+}
+
+export async function getClashPartyManagerState() {
+  return await invokeWorkbench<ClashPartyManagerState>('get_clash_party_manager_state')
+}
+
+export async function switchClashPartySubscription(subscriptionId: string) {
+  return await invokeWorkbench<ClashPartySwitchResult>('switch_clash_party_subscription', { subscriptionId })
+}
+
+export async function switchClashPartyNode(groupName: string, nodeName: string) {
+  return await invokeWorkbench<ClashPartySwitchResult>('switch_clash_party_node', { groupName, nodeName })
+}
+
+export async function shutdownWindows() {
+  return await invokeWorkbench<TaskRun>('shutdown_windows')
+}
+
 export async function runSub2apiTask(task: Sub2apiTask) {
   return await invokeWorkbench<TaskRun>('run_sub2api_task', { task })
 }
@@ -107,6 +216,10 @@ export async function checkSub2apiHealth() {
 
 export async function listTaskRuns(limit = 20) {
   return await invokeWorkbench<TaskRun[]>('list_task_runs', { limit })
+}
+
+export async function listOperationLogs(limit = 80) {
+  return await invokeWorkbench<OperationLog[]>('list_operation_logs', { limit })
 }
 
 async function invokeWorkbench<T>(command: string, args?: Record<string, unknown>) {
