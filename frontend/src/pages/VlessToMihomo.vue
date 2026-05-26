@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ExternalLink } from '@lucide/vue'
 import ResultPanel from '../components/ResultPanel.vue'
 import ToolShell from '../components/ToolShell.vue'
 import { useVlessToMihomoStore } from '../stores/vlessToMihomo'
@@ -79,12 +80,34 @@ const tool = useVlessToMihomoStore()
         <p v-if="tool.error" class="error-message">{{ tool.error }}</p>
       </section>
 
-      <ResultPanel
-        :yaml="tool.yaml"
-        :copied="tool.copied"
-        :filename="tool.downloadFilename"
-        @copied="tool.markCopied"
-      />
+      <div class="result-column">
+        <ResultPanel
+          :yaml="tool.yaml"
+          :copied="tool.copied"
+          :filename="tool.downloadFilename"
+          @copied="tool.markCopied"
+        />
+
+        <section class="guide-panel" aria-labelledby="clash-party-guide">
+          <h3 id="clash-party-guide">导入到 Clash Party</h3>
+          <ol>
+            <li>粘贴 3x-ui 生成的 vless:// 链接</li>
+            <li>转换并下载 YAML 文件</li>
+            <li>打开 Clash Party，将 YAML 作为本地配置导入</li>
+          </ol>
+          <p>这里生成的是本地配置文件，不是订阅服务。</p>
+          <div class="guide-links">
+            <a href="https://clashparty.org/" target="_blank" rel="noreferrer">
+              <span>Clash Party 官网</span>
+              <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+            <a href="https://github.com/mihomo-party-org/clash-party" target="_blank" rel="noreferrer">
+              <span>GitHub 项目</span>
+              <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </div>
+        </section>
+      </div>
     </div>
   </ToolShell>
 </template>
