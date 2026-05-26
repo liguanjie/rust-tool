@@ -96,7 +96,11 @@ pub fn run() {
 
 fn sanitize_yaml_filename(filename: &str) -> String {
     let trimmed = filename.trim();
-    let raw_name = if trimmed.is_empty() { "mihomo" } else { trimmed };
+    let raw_name = if trimmed.is_empty() {
+        "mihomo"
+    } else {
+        trimmed
+    };
     let safe_name = raw_name
         .chars()
         .map(|character| match character {

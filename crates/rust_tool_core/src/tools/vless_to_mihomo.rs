@@ -127,6 +127,8 @@ struct RuleProvider {
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     payload: Option<Vec<String>>,
 }
 
@@ -239,10 +241,7 @@ struct H2Options {
     host: Option<Vec<String>>,
 }
 
-pub fn convert_vless_to_yaml(
-    input: &str,
-    options: ConvertOptions,
-) -> Result<String, ConvertError> {
+pub fn convert_vless_to_yaml(input: &str, options: ConvertOptions) -> Result<String, ConvertError> {
     let mut proxy = parse_vless(input)?;
     if let Some(proxy_name) = normalize_custom_name(options.proxy_name.as_deref()) {
         proxy.name = proxy_name;
@@ -251,7 +250,9 @@ pub fn convert_vless_to_yaml(
     let proxy_port = proxy.port;
 
     let mut yaml = match options.output_mode {
-        OutputMode::FullConfig => serde_yaml::to_string(&build_config(proxy, options.template_mode)),
+        OutputMode::FullConfig => {
+            serde_yaml::to_string(&build_config(proxy, options.template_mode))
+        }
         OutputMode::ProxyOnly => serde_yaml::to_string(&proxy),
     }
     .map_err(|error| ConvertError::YamlSerializeFailed(error.to_string()))?;
@@ -315,15 +316,9 @@ fn parse_vless(input: &str) -> Result<Proxy, ConvertError> {
         network,
         flow: first_value(&params, &["flow"]),
         servername: first_value(&params, &["sni", "servername", "peer"]),
-        client_fingerprint: first_value(
-            &params,
-            &["fp", "fingerprint", "client-fingerprint"],
-        ),
+        client_fingerprint: first_value(&params, &["fp", "fingerprint", "client-fingerprint"]),
         alpn: parse_alpn(first_value(&params, &["alpn"])),
-        skip_cert_verify: parse_bool(first_value(
-            &params,
-            &["allowInsecure", "skip-cert-verify"],
-        )),
+        skip_cert_verify: parse_bool(first_value(&params, &["allowInsecure", "skip-cert-verify"])),
         reality_opts: None,
         packet_encoding: first_value(&params, &["packetEncoding", "packet-encoding"]),
         ws_opts: None,
@@ -351,7 +346,10 @@ fn parse_vless(input: &str) -> Result<Proxy, ConvertError> {
 
 fn build_config(proxy: Proxy, template_mode: TemplateMode) -> MihomoConfig {
     let proxy_name = proxy.name.clone();
-    let include_standard = matches!(template_mode, TemplateMode::Standard | TemplateMode::FullRules);
+    let include_standard = matches!(
+        template_mode,
+        TemplateMode::Standard | TemplateMode::FullRules
+    );
     let include_full_rules = matches!(template_mode, TemplateMode::FullRules);
     let proxy_groups = build_proxy_groups(&proxy_name, &template_mode);
 
@@ -380,9 +378,11 @@ fn build_proxy_groups(proxy_name: &str, template_mode: &TemplateMode) -> Vec<Pro
             select_group("PROXY", vec![proxy_name, "AUTO", "DIRECT"]),
             url_test_group("AUTO", vec![proxy_name]),
             select_group("AI", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
+            select_group("Media", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
             select_group("Google", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
             select_group("Telegram", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
             select_group("TikTok", vec!["PROXY", proxy_name, "AUTO", "DIRECT"]),
+            select_group("Ads", vec!["REJECT", "DIRECT"]),
         ],
     }
 }
@@ -465,117 +465,152 @@ fn build_dns_config() -> DnsConfig {
 fn build_rule_providers() -> BTreeMap<String, RuleProvider> {
     let mut providers = BTreeMap::new();
     providers.insert(
+        "reject".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ads-all.yaml",
+            "./ruleset/reject.yaml",
+        ),
+    );
+    providers.insert(
+        "openai".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/openai.yaml",
+            "./ruleset/openai.yaml",
+        ),
+    );
+    providers.insert(
+        "youtube".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/youtube.yaml",
+            "./ruleset/youtube.yaml",
+        ),
+    );
+    providers.insert(
+        "netflix".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/netflix.yaml",
+            "./ruleset/netflix.yaml",
+        ),
+    );
+    providers.insert(
+        "telegram".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/telegram.yaml",
+            "./ruleset/telegram.yaml",
+        ),
+    );
+    providers.insert(
+        "tiktok".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/tiktok.yaml",
+            "./ruleset/tiktok.yaml",
+        ),
+    );
+    providers.insert(
         "google_domain".to_string(),
         http_rule_provider(
             "domain",
-            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google.mrs",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google.yaml",
+            "./ruleset/google-domain.yaml",
         ),
     );
     providers.insert(
         "google_ip".to_string(),
         http_rule_provider(
             "ipcidr",
-            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/google.mrs",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/google.yaml",
+            "./ruleset/google-ip.yaml",
         ),
     );
-    providers.insert("AI".to_string(), inline_rule_provider(ai_rules()));
-    providers.insert("Telegram".to_string(), inline_rule_provider(telegram_rules()));
-    providers.insert("TikTok".to_string(), inline_rule_provider(tiktok_rules()));
+    providers.insert(
+        "geolocation_not_cn".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.yaml",
+            "./ruleset/geolocation-not-cn.yaml",
+        ),
+    );
+    providers.insert(
+        "cn_domain".to_string(),
+        http_rule_provider(
+            "domain",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.yaml",
+            "./ruleset/cn-domain.yaml",
+        ),
+    );
+    providers.insert(
+        "cn_ip".to_string(),
+        http_rule_provider(
+            "ipcidr",
+            "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cn.yaml",
+            "./ruleset/cn-ip.yaml",
+        ),
+    );
     providers
 }
 
-fn http_rule_provider(behavior: &str, url: &str) -> RuleProvider {
+fn http_rule_provider(behavior: &str, url: &str, path: &str) -> RuleProvider {
     RuleProvider {
         provider_type: "http".to_string(),
         behavior: behavior.to_string(),
-        format: Some("mrs".to_string()),
+        format: Some("yaml".to_string()),
         interval: Some(86400),
         url: Some(url.to_string()),
+        path: Some(path.to_string()),
         payload: None,
-    }
-}
-
-fn inline_rule_provider(payload: Vec<&str>) -> RuleProvider {
-    RuleProvider {
-        provider_type: "inline".to_string(),
-        behavior: "classical".to_string(),
-        format: None,
-        interval: None,
-        url: None,
-        payload: Some(payload.into_iter().map(ToOwned::to_owned).collect()),
     }
 }
 
 fn build_rules(template_mode: &TemplateMode) -> Vec<String> {
     match template_mode {
-        TemplateMode::Minimal => vec!["MATCH,PROXY".to_string()],
-        TemplateMode::Standard => vec![
-            "GEOIP,CN,DIRECT".to_string(),
-            "MATCH,PROXY".to_string(),
-        ],
-        TemplateMode::FullRules => vec![
-            "RULE-SET,AI,AI".to_string(),
-            "RULE-SET,Telegram,Telegram".to_string(),
-            "RULE-SET,TikTok,TikTok".to_string(),
-            "RULE-SET,google_domain,Google".to_string(),
-            "RULE-SET,google_ip,Google,no-resolve".to_string(),
-            "GEOIP,CN,DIRECT".to_string(),
-            "MATCH,PROXY".to_string(),
-        ],
+        TemplateMode::Minimal => with_local_direct_rules(vec!["MATCH,PROXY"]),
+        TemplateMode::Standard => with_local_direct_rules(vec!["GEOIP,CN,DIRECT", "MATCH,PROXY"]),
+        TemplateMode::FullRules => with_local_direct_rules(vec![
+            "RULE-SET,reject,Ads",
+            "RULE-SET,openai,AI",
+            "RULE-SET,youtube,Media",
+            "RULE-SET,netflix,Media",
+            "RULE-SET,telegram,Telegram",
+            "RULE-SET,tiktok,TikTok",
+            "RULE-SET,google_domain,Google",
+            "RULE-SET,google_ip,Google,no-resolve",
+            "RULE-SET,geolocation_not_cn,PROXY",
+            "RULE-SET,cn_domain,DIRECT",
+            "RULE-SET,cn_ip,DIRECT,no-resolve",
+            "GEOIP,CN,DIRECT",
+            "MATCH,PROXY",
+        ]),
     }
 }
 
-fn ai_rules() -> Vec<&'static str> {
-    vec![
-        "DOMAIN-KEYWORD,openai",
-        "DOMAIN-KEYWORD,anthropic",
-        "DOMAIN-KEYWORD,claude",
-        "DOMAIN-SUFFIX,chatgpt.com",
-        "DOMAIN-SUFFIX,openai.com",
-        "DOMAIN-SUFFIX,oaistatic.com",
-        "DOMAIN-SUFFIX,oaiusercontent.com",
-        "DOMAIN-SUFFIX,claude.ai",
-        "DOMAIN-SUFFIX,claude.com",
-        "DOMAIN-SUFFIX,anthropic.com",
-        "DOMAIN-SUFFIX,perplexity.ai",
-        "DOMAIN-SUFFIX,sora.com",
-        "DOMAIN-SUFFIX,cursor.com",
-        "DOMAIN-SUFFIX,cursor.sh",
-        "DOMAIN,api.githubcopilot.com",
-        "DOMAIN-SUFFIX,copilot.microsoft.com",
-        "DOMAIN-SUFFIX,copilot.cloud.microsoft",
+fn with_local_direct_rules(rules: Vec<&'static str>) -> Vec<String> {
+    let mut merged = vec![
+        "DOMAIN,localhost,DIRECT",
+        "DOMAIN-SUFFIX,localhost,DIRECT",
+        "DOMAIN-SUFFIX,local,DIRECT",
+        "DOMAIN-SUFFIX,lan,DIRECT",
+        "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+        "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+        "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
+        "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+        "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+        "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+        "IP-CIDR6,::1/128,DIRECT,no-resolve",
+        "IP-CIDR6,fc00::/7,DIRECT,no-resolve",
+        "IP-CIDR6,fe80::/10,DIRECT,no-resolve",
     ]
-}
+    .into_iter()
+    .map(ToOwned::to_owned)
+    .collect::<Vec<_>>();
 
-fn telegram_rules() -> Vec<&'static str> {
-    vec![
-        "DOMAIN-SUFFIX,t.me",
-        "DOMAIN-SUFFIX,tdesktop.com",
-        "DOMAIN-SUFFIX,telegra.ph",
-        "DOMAIN-SUFFIX,telegram.me",
-        "DOMAIN-SUFFIX,telegram.org",
-        "DOMAIN-SUFFIX,telesco.pe",
-        "IP-CIDR,91.108.0.0/16,no-resolve",
-        "IP-CIDR,149.154.160.0/20,no-resolve",
-        "IP-CIDR6,2001:67c:4e8::/48,no-resolve",
-        "IP-CIDR6,2001:b28:f23d::/48,no-resolve",
-    ]
-}
-
-fn tiktok_rules() -> Vec<&'static str> {
-    vec![
-        "DOMAIN-KEYWORD,tiktok",
-        "DOMAIN-KEYWORD,musical.ly",
-        "DOMAIN-SUFFIX,tiktok.com",
-        "DOMAIN-SUFFIX,tiktokcdn.com",
-        "DOMAIN-SUFFIX,tiktokv.com",
-        "DOMAIN-SUFFIX,tiktokd.net",
-        "DOMAIN-SUFFIX,byteoversea.com",
-        "DOMAIN-SUFFIX,ibyteimg.com",
-        "DOMAIN-SUFFIX,ibytedtos.com",
-        "DOMAIN-SUFFIX,ttwebview.com",
-        "PROCESS-NAME,com.zhiliaoapp.musically",
-    ]
+    merged.extend(rules.into_iter().map(ToOwned::to_owned));
+    merged
 }
 
 fn normalize_network(network: Option<String>) -> String {
@@ -607,10 +642,7 @@ fn apply_network_options(proxy: &mut Proxy, params: &BTreeMap<String, String>) {
         }
         "grpc" => {
             let grpc_opts = GrpcOptions {
-                grpc_service_name: first_value(
-                    params,
-                    &["serviceName", "service-name", "path"],
-                ),
+                grpc_service_name: first_value(params, &["serviceName", "service-name", "path"]),
                 grpc_mode: first_value(params, &["mode"]),
                 grpc_authority: first_value(params, &["authority", "host"]),
             };
@@ -660,7 +692,12 @@ fn first_value(params: &BTreeMap<String, String>, names: &[&str]) -> Option<Stri
 }
 
 fn parse_bool(value: Option<String>) -> Option<bool> {
-    value.map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+    value.map(|value| {
+        matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 fn parse_alpn(value: Option<String>) -> Option<Vec<String>> {
@@ -702,7 +739,9 @@ impl WebSocketOptions {
 
 impl GrpcOptions {
     fn has_values(&self) -> bool {
-        self.grpc_service_name.is_some() || self.grpc_mode.is_some() || self.grpc_authority.is_some()
+        self.grpc_service_name.is_some()
+            || self.grpc_mode.is_some()
+            || self.grpc_authority.is_some()
     }
 }
 
@@ -763,6 +802,9 @@ mod tests {
         assert!(yaml.contains("enhanced-mode: fake-ip"));
         assert!(yaml.contains("name: AUTO"));
         assert!(yaml.contains("type: url-test"));
+        assert!(yaml.contains("DOMAIN,localhost,DIRECT"));
+        assert!(yaml.contains("IP-CIDR,127.0.0.0/8,DIRECT,no-resolve"));
+        assert!(yaml.find("IP-CIDR,127.0.0.0/8,DIRECT,no-resolve") < yaml.find("MATCH,PROXY"));
         assert!(yaml.contains("GEOIP,CN,DIRECT"));
         assert!(!yaml.contains("rule-providers:"));
         serde_yaml::from_str::<Value>(&yaml).unwrap();
@@ -783,10 +825,12 @@ mod tests {
         .unwrap();
 
         assert!(yaml.contains("rule-providers:"));
-        assert!(yaml.contains("AI:"));
-        assert!(yaml.contains("Telegram:"));
-        assert!(yaml.contains("TikTok:"));
-        assert!(yaml.contains("RULE-SET,AI,AI"));
+        assert!(yaml.contains("openai:"));
+        assert!(yaml.contains("youtube:"));
+        assert!(yaml.contains("geolocation_not_cn:"));
+        assert!(yaml.contains("RULE-SET,openai,AI"));
+        assert!(yaml.contains("RULE-SET,geolocation_not_cn,PROXY"));
+        assert!(yaml.contains("RULE-SET,cn_ip,DIRECT,no-resolve"));
         assert!(yaml.contains("GEOIP,CN,DIRECT"));
         serde_yaml::from_str::<Value>(&yaml).unwrap();
     }
@@ -832,8 +876,8 @@ mod tests {
 
     #[test]
     fn rejects_non_vless_links() {
-        let error = convert_vless_to_yaml("https://example.com", ConvertOptions::default())
-            .unwrap_err();
+        let error =
+            convert_vless_to_yaml("https://example.com", ConvertOptions::default()).unwrap_err();
 
         assert_eq!(error, ConvertError::InvalidScheme);
     }

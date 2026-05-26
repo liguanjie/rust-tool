@@ -102,12 +102,11 @@ fn run() -> Result<(), String> {
                     proxy_name,
                 },
             )
-                .map_err(|error| error.to_string())?;
+            .map_err(|error| error.to_string())?;
 
             if let Some(path) = output {
-                fs::write(&path, yaml).map_err(|error| {
-                    format!("写入文件 {} 失败: {error}", path.display())
-                })?;
+                fs::write(&path, yaml)
+                    .map_err(|error| format!("写入文件 {} 失败: {error}", path.display()))?;
             } else {
                 print!("{yaml}");
             }

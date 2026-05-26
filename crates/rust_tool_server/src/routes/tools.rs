@@ -62,16 +62,16 @@ pub async fn vless_to_mihomo(
             proxy_name: request.proxy_name,
         },
     )
-        .map(|yaml| Json(VlessToMihomoResponse { yaml }))
-        .map_err(|error| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: ErrorBody {
-                        code: "invalid_vless_url",
-                        message: error.to_string(),
-                    },
-                }),
-            )
-        })
+    .map(|yaml| Json(VlessToMihomoResponse { yaml }))
+    .map_err(|error| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ErrorBody {
+                    code: "invalid_vless_url",
+                    message: error.to_string(),
+                },
+            }),
+        )
+    })
 }

@@ -29,10 +29,10 @@ describe('useVlessToMihomoStore', () => {
     expect(store.error).toBe('')
   })
 
-  it('defaults to standard template', () => {
+  it('defaults to full rules template', () => {
     const store = useVlessToMihomoStore()
 
-    expect(store.template).toBe('standard')
+    expect(store.template).toBe('full_rules')
   })
 
   it('normalizes download filename with yaml extension', () => {

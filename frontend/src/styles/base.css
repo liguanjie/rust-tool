@@ -177,11 +177,51 @@ button:disabled {
   }
 
   .download-action {
-    @apply relative inline-flex items-center;
+    @apply inline-flex items-center;
   }
 
-  .download-message {
-    @apply absolute right-0 top-[calc(100%+6px)] z-10 max-w-[360px] whitespace-nowrap rounded-lg border border-emerald-900/15 bg-white px-2.5 py-1.5 text-xs text-emerald-800 shadow-sm;
+  .toast-message {
+    width: min(420px, calc(100vw - 32px));
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    @apply fixed right-5 top-5 z-50 grid items-start gap-3 rounded-lg border bg-white px-3 py-3 shadow-lg;
+  }
+
+  .toast-message--success {
+    @apply border-emerald-200 text-emerald-900;
+  }
+
+  .toast-message--error {
+    @apply border-red-200 text-red-900;
+  }
+
+  .toast-icon {
+    @apply mt-0.5 h-5 w-5 shrink-0;
+  }
+
+  .toast-copy {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .toast-copy strong {
+    @apply text-sm font-bold;
+  }
+
+  .toast-copy small {
+    @apply block truncate font-mono text-xs text-stone-500;
+  }
+
+  .toast-close {
+    @apply -mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent p-0 text-stone-400 hover:text-stone-700;
+  }
+
+  .toast-enter-active,
+  .toast-leave-active {
+    @apply transition duration-150 ease-out;
+  }
+
+  .toast-enter-from,
+  .toast-leave-to {
+    @apply translate-y-[-6px] opacity-0;
   }
 
   .icon-button {

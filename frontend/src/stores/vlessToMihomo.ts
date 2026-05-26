@@ -9,7 +9,7 @@ import {
 export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
   const input = ref('')
   const mode = ref<VlessOutputMode>('full_config')
-  const template = ref<VlessTemplateMode>('standard')
+  const template = ref<VlessTemplateMode>('full_rules')
   const downloadName = ref('mihomo')
   const downloadNameEdited = ref(false)
   const yaml = ref('')

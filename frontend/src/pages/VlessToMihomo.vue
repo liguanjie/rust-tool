@@ -50,24 +50,24 @@ const tool = useVlessToMihomoStore()
           <p class="field-label">配置模板</p>
           <div class="template-options" role="radiogroup" aria-label="配置模板">
             <label class="template-option">
-              <input v-model="tool.template" type="radio" value="minimal" />
+              <input v-model="tool.template" type="radio" value="full_rules" />
               <span>
-                <strong>最小配置</strong>
-                <small>所有流量走代理</small>
+                <strong>多节点分流模板</strong>
+                <small>引用社区规则集，覆盖广告、AI、媒体、Google、Telegram、国内直连；单节点下各分类最终仍会走同一个代理。</small>
               </span>
             </label>
             <label class="template-option">
               <input v-model="tool.template" type="radio" value="standard" />
               <span>
                 <strong>基础分流</strong>
-                <small>国内直连，其他代理</small>
+                <small>本机/局域网/国内直连，其他代理</small>
               </span>
             </label>
             <label class="template-option">
-              <input v-model="tool.template" type="radio" value="full_rules" />
+              <input v-model="tool.template" type="radio" value="minimal" />
               <span>
-                <strong>多节点分流模板</strong>
-                <small>适合未来多个节点/订阅源使用；单个 VLESS 节点下，各分类最终仍会走同一个代理节点。</small>
+                <strong>最小配置</strong>
+                <small>所有流量走代理</small>
               </span>
             </label>
           </div>
@@ -81,14 +81,6 @@ const tool = useVlessToMihomoStore()
       </section>
 
       <div class="result-column">
-        <ResultPanel
-          :yaml="tool.yaml"
-          :copied="tool.copied"
-          :filename="tool.downloadFilename"
-          :node-address="tool.nodeAddress"
-          @copied="tool.markCopied"
-        />
-
         <section class="guide-panel" aria-labelledby="clash-party-guide">
           <h3 id="clash-party-guide">导入到 Clash Party</h3>
           <ol>
@@ -108,6 +100,14 @@ const tool = useVlessToMihomoStore()
             </a>
           </div>
         </section>
+
+        <ResultPanel
+          :yaml="tool.yaml"
+          :copied="tool.copied"
+          :filename="tool.downloadFilename"
+          :node-address="tool.nodeAddress"
+          @copied="tool.markCopied"
+        />
       </div>
     </div>
   </ToolShell>
