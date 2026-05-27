@@ -3,11 +3,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 use tauri::{AppHandle, Manager};
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 const SETTINGS_KEY: &str = "windows_workbench.config";
 const OPERATION_LOG_RETENTION_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -341,7 +346,7 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
             });
         }
 
-        let output = Command::new(&config.docker_cli_path)
+        let output = hidden_command(&config.docker_cli_path)
             .arg("--version")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -369,7 +374,7 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
             });
         }
 
-        let engine_output = Command::new(&config.docker_cli_path)
+        let engine_output = hidden_command(&config.docker_cli_path)
             .args(["info", "--format", "{{.ServerVersion}}"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -873,7 +878,7 @@ fn check_sub2api_api_health(url: &str, api_key: &str) -> Result<Sub2apiCheckResu
     }
 
     let script = build_sub2api_health_script(url, (!api_key.is_empty()).then_some(api_key));
-    let output = Command::new("powershell")
+    let output = hidden_command("powershell")
         .args(["-NoProfile", "-Command", &script])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -942,7 +947,7 @@ fn check_sub2api_login(config: &WorkbenchConfig) -> Result<Sub2apiCheckResult, S
         escape_powershell_single_quoted(login_url),
     );
 
-    let output = Command::new("powershell")
+    let output = hidden_command("powershell")
         .args(["-NoProfile", "-Command", &script])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1142,6 +1147,19 @@ pub fn record_operation(
     log_operation(app, module, action, status, message, detail);
 }
 
+fn hidden_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    hide_command_window(&mut command);
+    command
+}
+
+fn hide_command_window(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
 fn run_process(
     app: &AppHandle,
     task_key: &str,
@@ -1171,15 +1189,15 @@ fn run_process(
         .to_ascii_lowercase();
 
     let mut command = if use_shell_for_scripts && matches!(extension.as_str(), "bat" | "cmd") {
-        let mut command = Command::new("cmd");
+        let mut command = hidden_command("cmd");
         command.args(["/C", program]);
         command
     } else if use_shell_for_scripts && extension == "ps1" {
-        let mut command = Command::new("powershell");
+        let mut command = hidden_command("powershell");
         command.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", program]);
         command
     } else {
-        let mut command = Command::new(program);
+        let mut command = hidden_command(program);
         command.args(args);
         command
     };
@@ -1272,15 +1290,15 @@ fn spawn_process(
         .to_ascii_lowercase();
 
     let mut command = if use_shell_for_scripts && matches!(extension.as_str(), "bat" | "cmd") {
-        let mut command = Command::new("cmd");
+        let mut command = hidden_command("cmd");
         command.args(["/C", program]);
         command
     } else if use_shell_for_scripts && extension == "ps1" {
-        let mut command = Command::new("powershell");
+        let mut command = hidden_command("powershell");
         command.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", program]);
         command
     } else {
-        let mut command = Command::new(program);
+        let mut command = hidden_command(program);
         command.args(args);
         command
     };
@@ -1863,7 +1881,7 @@ fn call_clash_party_api(
         body_arg
     );
 
-    let output = Command::new("powershell")
+    let output = hidden_command("powershell")
         .args(["-NoProfile", "-Command", &script])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1922,7 +1940,7 @@ fn first_existing_path(paths: &[&str]) -> Option<String> {
 }
 
 fn find_docker_in_path() -> Option<String> {
-    let output = Command::new("where")
+    let output = hidden_command("where")
         .arg("docker")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2005,7 +2023,7 @@ fn default_clash_party_api_url() -> String {
 }
 
 fn find_executable_in_path(name: &str) -> Option<String> {
-    let output = Command::new("where")
+    let output = hidden_command("where")
         .arg(name)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2069,7 +2087,7 @@ fn powershell_single_quoted(value: &str) -> String {
 }
 
 fn is_windows_process_running(image_name: &str) -> bool {
-    let output = Command::new("tasklist")
+    let output = hidden_command("tasklist")
         .args(["/FI", &format!("IMAGENAME eq {image_name}"), "/NH"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2087,7 +2105,7 @@ fn is_windows_process_running(image_name: &str) -> bool {
 }
 
 fn run_selection_dialog(script: &str) -> Result<Option<String>, String> {
-    let output = Command::new("powershell")
+    let output = hidden_command("powershell")
         .args(["-NoProfile", "-STA", "-Command", script])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
