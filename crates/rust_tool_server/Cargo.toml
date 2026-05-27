@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 axum.workspace = true
+clap.workspace = true
 http.workspace = true
 mime_guess.workspace = true
 rust_tool_core.workspace = true

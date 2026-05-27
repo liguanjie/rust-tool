@@ -28,6 +28,9 @@ const selectedSubscription = computed(() =>
 )
 
 const selectedGroupNodes = computed(() => workbench.selectedClashPartyGroup?.nodes ?? [])
+const selectedNode = computed(() =>
+  selectedGroupNodes.value.find((node) => node.name === workbench.selectedClashPartyNodeName),
+)
 
 const subscriptionItems = computed<SmartSelectItem[]>(() =>
   (workbench.clashPartyManager?.subscriptions ?? []).map((subscription) => ({
@@ -52,11 +55,22 @@ const nodeItems = computed<SmartSelectItem[]>(() =>
   selectedGroupNodes.value.map((node) => ({
     value: node.name,
     label: node.displayName || node.name,
-    description: node.server ? `${node.nodeType} · ${node.server}${node.port ? `:${node.port}` : ''}` : node.nodeType,
-    badge: node.delay !== null && node.delay !== undefined ? `${node.delay}ms` : node.nodeType,
+    description: node.checkMessage
+      ? `${node.nodeType} · ${node.checkMessage}`
+      : node.server
+        ? `${node.nodeType} · ${node.server}${node.port ? `:${node.port}` : ''}`
+        : node.nodeType,
+    badge: node.available === false
+      ? '超时'
+      : node.delay !== null && node.delay !== undefined
+        ? `${node.delay}ms`
+        : node.nodeType,
     active: node.active,
+    disabled: node.available === false,
   })),
 )
+
+const selectedNodeBlocked = computed(() => selectedNode.value?.available === false)
 
 const clashPartyApiState = computed(() => {
   if (workbench.clashPartyManager?.apiAvailable) return { label: 'API 已连接', tone: 'good' }
@@ -257,7 +271,16 @@ onMounted(() => {
             <button
               class="secondary-button"
               type="button"
-              :disabled="!workbench.selectedClashPartyGroupName || !workbench.selectedClashPartyNodeName || workbench.loading === 'clash-party-switch-node'"
+              :disabled="!workbench.selectedClashPartyNodeName || workbench.loading === 'clash-party-check-node'"
+              @click="workbench.checkSelectedClashPartyNode"
+            >
+              <RefreshCw class="h-4 w-4" aria-hidden="true" />
+              <span>检测节点</span>
+            </button>
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="!workbench.selectedClashPartyGroupName || !workbench.selectedClashPartyNodeName || selectedNodeBlocked || workbench.loading === 'clash-party-switch-node'"
               @click="workbench.switchNode()"
             >
               <GitBranch class="h-4 w-4" aria-hidden="true" />

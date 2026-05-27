@@ -65,6 +65,8 @@ export interface ClashPartyNode {
   server: string
   port: number | null
   delay: number | null
+  available: boolean | null
+  checkMessage: string
   active: boolean
 }
 
@@ -90,6 +92,16 @@ export interface ClashPartyManagerState {
 
 export interface ClashPartySwitchResult {
   ok: boolean
+  message: string
+}
+
+export interface ClashPartyNodeCheckResult {
+  ok: boolean
+  available: boolean
+  nodeName: string
+  delay: number | null
+  timeoutMs: number
+  testUrl: string
   message: string
 }
 
@@ -213,6 +225,10 @@ export async function switchClashPartySubscription(subscriptionId: string) {
 
 export async function switchClashPartyNode(groupName: string, nodeName: string) {
   return await invokeWorkbench<ClashPartySwitchResult>('switch_clash_party_node', { groupName, nodeName })
+}
+
+export async function checkClashPartyNode(nodeName: string) {
+  return await invokeWorkbench<ClashPartyNodeCheckResult>('check_clash_party_node', { nodeName })
 }
 
 export async function shutdownWindows() {

@@ -156,11 +156,9 @@ fn save_yaml_file(
 
 #[tauri::command]
 async fn get_workbench_config(app: tauri::AppHandle) -> Result<workbench::WorkbenchConfig, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::get_config(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::get_config(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
@@ -168,18 +166,17 @@ async fn save_workbench_config(
     app: tauri::AppHandle,
     config: workbench::WorkbenchConfig,
 ) -> Result<workbench::WorkbenchConfig, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::save_config(&app, config)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::save_config(&app, config))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn detect_docker(app: tauri::AppHandle) -> Result<workbench::DockerDetection, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let detection = workbench::detect_docker();
-        let found = !detection.docker_desktop_path.is_empty() || !detection.docker_cli_path.is_empty();
+        let found =
+            !detection.docker_desktop_path.is_empty() || !detection.docker_cli_path.is_empty();
         workbench::record_operation(
             &app,
             "Docker",
@@ -199,7 +196,9 @@ async fn detect_docker(app: tauri::AppHandle) -> Result<workbench::DockerDetecti
 }
 
 #[tauri::command]
-async fn detect_clash_party(app: tauri::AppHandle) -> Result<workbench::ClashPartyDetection, String> {
+async fn detect_clash_party(
+    app: tauri::AppHandle,
+) -> Result<workbench::ClashPartyDetection, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let detection = workbench::detect_clash_party();
         let found =
@@ -246,9 +245,14 @@ async fn select_workbench_file(
                 "已取消选择文件",
                 "",
             ),
-            Err(error) => {
-                workbench::record_operation(&app, "工作台", "选择文件", "failed", "选择文件失败", error)
-            }
+            Err(error) => workbench::record_operation(
+                &app,
+                "工作台",
+                "选择文件",
+                "failed",
+                "选择文件失败",
+                error,
+            ),
         }
         result
     })
@@ -277,9 +281,14 @@ async fn select_workbench_directory(app: tauri::AppHandle) -> Result<Option<Stri
                 "已取消选择目录",
                 "",
             ),
-            Err(error) => {
-                workbench::record_operation(&app, "工作台", "选择目录", "failed", "选择目录失败", error)
-            }
+            Err(error) => workbench::record_operation(
+                &app,
+                "工作台",
+                "选择目录",
+                "failed",
+                "选择目录失败",
+                error,
+            ),
         }
         result
     })
@@ -289,76 +298,62 @@ async fn select_workbench_directory(app: tauri::AppHandle) -> Result<Option<Stri
 
 #[tauri::command]
 async fn get_docker_status(app: tauri::AppHandle) -> Result<workbench::DockerStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::get_docker_status(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::get_docker_status(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn start_docker(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::start_docker(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::start_docker(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn stop_docker(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::stop_docker(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::stop_docker(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn restart_docker(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::restart_docker(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::restart_docker(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
-async fn get_clash_party_status(app: tauri::AppHandle) -> Result<workbench::ClashPartyStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::get_clash_party_status(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+async fn get_clash_party_status(
+    app: tauri::AppHandle,
+) -> Result<workbench::ClashPartyStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || workbench::get_clash_party_status(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn start_clash_party(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::start_clash_party(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::start_clash_party(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn stop_clash_party(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::stop_clash_party(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::stop_clash_party(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn get_clash_party_manager_state(
     app: tauri::AppHandle,
 ) -> Result<workbench::ClashPartyManagerState, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::get_clash_party_manager_state(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::get_clash_party_manager_state(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
@@ -387,12 +382,20 @@ async fn switch_clash_party_node(
 }
 
 #[tauri::command]
+async fn check_clash_party_node(
+    app: tauri::AppHandle,
+    node_name: String,
+) -> Result<workbench::ClashPartyNodeCheckResult, String> {
+    tauri::async_runtime::spawn_blocking(move || workbench::check_clash_party_node(&app, node_name))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
+}
+
+#[tauri::command]
 async fn shutdown_windows(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::shutdown_windows(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::shutdown_windows(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
@@ -400,20 +403,16 @@ async fn run_sub2api_task(
     app: tauri::AppHandle,
     task: workbench::Sub2apiTask,
 ) -> Result<workbench::TaskRun, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::run_sub2api_task(&app, task)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::run_sub2api_task(&app, task))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn check_sub2api_health(app: tauri::AppHandle) -> Result<workbench::HealthStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::check_sub2api_health(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::check_sub2api_health(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
@@ -421,11 +420,9 @@ async fn list_task_runs(
     app: tauri::AppHandle,
     limit: Option<u32>,
 ) -> Result<Vec<workbench::TaskRun>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::list_task_runs(&app, limit)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::list_task_runs(&app, limit))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
@@ -434,20 +431,16 @@ async fn list_operation_logs(
     page: Option<u32>,
     query: Option<String>,
 ) -> Result<workbench::OperationLogPage, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::list_operation_logs(&app, page, query)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::list_operation_logs(&app, page, query))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 #[tauri::command]
 async fn clear_operation_logs(app: tauri::AppHandle) -> Result<u64, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        workbench::clear_operation_logs(&app)
-    })
-    .await
-    .map_err(|error| format!("异步执行失败: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || workbench::clear_operation_logs(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
 }
 
 pub fn run() {
@@ -473,6 +466,7 @@ pub fn run() {
             get_clash_party_manager_state,
             switch_clash_party_subscription,
             switch_clash_party_node,
+            check_clash_party_node,
             shutdown_windows,
             run_sub2api_task,
             check_sub2api_health,

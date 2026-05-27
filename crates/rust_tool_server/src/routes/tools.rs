@@ -33,13 +33,13 @@ pub struct VlessToMihomoResponse {
 
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
-    error: ErrorBody,
+    pub error: ErrorBody,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ErrorBody {
-    code: &'static str,
-    message: String,
+    pub code: &'static str,
+    pub message: String,
 }
 
 pub async fn vless_to_mihomo(

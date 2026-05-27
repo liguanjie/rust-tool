@@ -10,7 +10,13 @@ if not exist "target\release\rust_tool_server.exe" (
 )
 
 echo [RustTool] Starting release server...
-echo [RustTool] Open http://127.0.0.1:8080
-target\release\rust_tool_server.exe
+if "%RUSTTOOL_SERVER_PORT%"=="" (
+  set "RUSTTOOL_SERVER_PORT=8080"
+)
+if "%RUSTTOOL_SERVER_HOST%"=="" (
+  set "RUSTTOOL_SERVER_HOST=127.0.0.1"
+)
+echo [RustTool] Open http://%RUSTTOOL_SERVER_HOST%:%RUSTTOOL_SERVER_PORT%
+target\release\rust_tool_server.exe %*
 
 endlocal

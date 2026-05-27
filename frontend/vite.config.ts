@@ -2,6 +2,9 @@ import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
+const backendPort = process.env.RUSTTOOL_SERVER_PORT || '8080'
+const backendHost = process.env.RUSTTOOL_SERVER_HOST || '127.0.0.1'
+
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   clearScreen: false,
@@ -10,7 +13,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: `http://${backendHost}:${backendPort}`,
         changeOrigin: true,
       },
     },

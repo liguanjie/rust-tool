@@ -29,7 +29,8 @@ call "%~dp0scripts\dev_desktop.bat"
 exit /b %errorlevel%
 
 :server
-call "%~dp0scripts\dev_server.bat"
+shift /1
+call "%~dp0scripts\dev_server.bat" %*
 exit /b %errorlevel%
 
 :frontend
@@ -49,7 +50,8 @@ call "%~dp0scripts\build_desktop.bat"
 exit /b %errorlevel%
 
 :run
-call "%~dp0scripts\run_release_server.bat"
+shift /1
+call "%~dp0scripts\run_release_server.bat" %*
 exit /b %errorlevel%
 
 :clean

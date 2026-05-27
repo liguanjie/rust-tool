@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import {
+  checkClashPartyNode,
   checkSub2apiHealth,
   clearOperationLogs,
   defaultWorkbenchConfig,
@@ -24,6 +25,7 @@ import {
   switchClashPartyNode,
   switchClashPartySubscription,
   type ClashPartyManagerState,
+  type ClashPartyNodeCheckResult,
   type ClashPartyProxyGroup,
   type ClashPartyStatus,
   type DockerStatus,
@@ -418,6 +420,20 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
     })
   }
 
+  async function checkSelectedClashPartyNode() {
+    const nodeName = selectedClashPartyNodeName.value
+    if (!nodeName) {
+      showToast('error', '请选择节点', '需要先选择一个目标节点')
+      return
+    }
+
+    await withLoading('clash-party-check-node', async () => {
+      const result = await checkClashPartyNode(nodeName)
+      applyNodeCheckResult(result)
+      showToast(result.available ? 'success' : 'error', '节点检测完成', result.message)
+    })
+  }
+
   async function requestWindowsShutdown() {
     requestConfirm({
       title: '确认关闭 Windows？',
@@ -658,12 +674,24 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
       selectedClashPartyNodeName.value = ''
       return
     }
-    if (group.nodes.some((node) => node.name === selectedClashPartyNodeName.value)) {
+    if (group.nodes.some((node) => node.name === selectedClashPartyNodeName.value && node.available !== false)) {
       return
     }
-    selectedClashPartyNodeName.value = group.nodes.some((node) => node.name === group.selected)
+    const selectableNodes = group.nodes.filter((node) => node.available !== false)
+    selectedClashPartyNodeName.value = selectableNodes.some((node) => node.name === group.selected)
       ? group.selected
-      : group.nodes[0]?.name || ''
+      : selectableNodes[0]?.name || ''
+  }
+
+  function applyNodeCheckResult(result: ClashPartyNodeCheckResult) {
+    const groups = clashPartyManager.value?.groups ?? []
+    for (const group of groups) {
+      const node = group.nodes.find((item) => item.name === result.nodeName)
+      if (!node) continue
+      node.delay = result.delay
+      node.available = result.available
+      node.checkMessage = result.message
+    }
   }
 
   function showToast(type: 'success' | 'error', title: string, detail: string) {
@@ -725,6 +753,7 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
     refreshClashPartyManager,
     switchSubscription,
     switchNode,
+    checkSelectedClashPartyNode,
     requestWindowsShutdown,
     closeConfirm,
     confirmPendingAction,
@@ -769,12 +798,12 @@ function isRunOk(run: TaskRun) {
 
 function chooseProxyGroupName(groups: ClashPartyProxyGroup[], current: string) {
   if (!groups.length) return null
-  if (groups.some((group) => group.name === current)) return current
-  return (
-    groups.find((group) => group.name.toUpperCase() === 'PROXY')?.name ??
-    groups.find((group) => group.name.toUpperCase() === 'GLOBAL')?.name ??
-    groups[0].name
-  )
+  const primary = groups[0].name
+  if (!current.trim()) return primary
+  const exact = groups.find((group) => group.name === current)
+  if (!exact) return primary
+  if (exact.name.toUpperCase() === 'GLOBAL' && primary.toUpperCase() !== 'GLOBAL') return primary
+  return exact.name
 }
 
 function parentDirectory(path: string) {

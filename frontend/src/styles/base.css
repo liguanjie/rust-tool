@@ -532,6 +532,14 @@ button:disabled {
     @apply flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-emerald-50;
   }
 
+  .smart-select-option--disabled {
+    @apply cursor-not-allowed opacity-55 hover:bg-transparent;
+  }
+
+  .smart-select-option--disabled .smart-select-badge {
+    @apply bg-rose-50 text-rose-600;
+  }
+
   .smart-select-option--selected {
     @apply bg-emerald-50 text-emerald-950;
   }

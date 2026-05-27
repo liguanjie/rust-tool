@@ -8,7 +8,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::routes::{health, tools};
+use crate::routes::{clash_party, health, tools};
 use crate::static_files;
 
 pub fn build_app() -> Router {
@@ -23,6 +23,20 @@ pub fn build_app() -> Router {
     Router::new()
         .route("/api/health", get(health::health))
         .route("/api/tools/vless-to-mihomo", post(tools::vless_to_mihomo))
+        .route("/api/clash-party/state", get(clash_party::state))
+        .route("/api/clash-party/health", get(clash_party::health))
+        .route(
+            "/api/clash-party/nodes/check",
+            post(clash_party::check_node),
+        )
+        .route(
+            "/api/clash-party/subscriptions/switch",
+            post(clash_party::switch_subscription),
+        )
+        .route(
+            "/api/clash-party/nodes/switch",
+            post(clash_party::switch_node),
+        )
         .fallback(static_files::serve_static)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

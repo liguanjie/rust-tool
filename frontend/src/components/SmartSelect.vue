@@ -8,6 +8,7 @@ export interface SmartSelectItem {
   description?: string
   badge?: string
   active?: boolean
+  disabled?: boolean
 }
 
 const props = withDefaults(
@@ -46,6 +47,8 @@ const filteredItems = computed(() => {
 })
 
 function selectItem(value: string) {
+  const item = props.items.find((next) => next.value === value)
+  if (item?.disabled) return
   emit('update:modelValue', value)
   open.value = false
   query.value = ''
@@ -88,8 +91,13 @@ onBeforeUnmount(() => {
           v-for="item in filteredItems"
           :key="item.value"
           class="smart-select-option"
-          :class="{ 'smart-select-option--selected': item.value === modelValue, 'smart-select-option--active': item.active }"
+          :class="{
+            'smart-select-option--selected': item.value === modelValue,
+            'smart-select-option--active': item.active,
+            'smart-select-option--disabled': item.disabled,
+          }"
           type="button"
+          :disabled="item.disabled"
           @click="selectItem(item.value)"
         >
           <span class="smart-select-option-copy">
