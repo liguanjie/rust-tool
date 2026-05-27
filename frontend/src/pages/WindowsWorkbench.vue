@@ -170,7 +170,7 @@ onMounted(() => {
           </div>
           <div>
             <dt>最近状态</dt>
-            <dd>{{ workbench.sub2apiHealth?.message || '待检测' }}</dd>
+            <dd class="service-status-text">{{ workbench.sub2apiHealth?.message || '待检测' }}</dd>
           </div>
         </dl>
 

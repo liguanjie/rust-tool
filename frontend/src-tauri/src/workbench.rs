@@ -3,11 +3,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::TcpStream;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 use tauri::{AppHandle, Manager};
 
@@ -94,6 +96,7 @@ pub struct ClashPartySubscription {
 #[serde(rename_all = "camelCase")]
 pub struct ClashPartyNode {
     pub name: String,
+    pub display_name: String,
     pub node_type: String,
     pub server: String,
     pub port: Option<u16>,
@@ -105,8 +108,10 @@ pub struct ClashPartyNode {
 #[serde(rename_all = "camelCase")]
 pub struct ClashPartyProxyGroup {
     pub name: String,
+    pub display_name: String,
     pub group_type: String,
     pub selected: String,
+    pub selected_display_name: String,
     pub nodes: Vec<ClashPartyNode>,
 }
 
@@ -359,9 +364,13 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
 
         if !cli_available {
             let message = if stderr.is_empty() {
-                "docker CLI 检测失败".to_string()
+                "docker CLI 无法执行，请确认配置的是 docker.exe，而不是 Docker Desktop.exe。"
+                    .to_string()
             } else {
-                stderr
+                format!(
+                    "docker CLI 无法执行，请确认 docker.exe 路径是否正确。{}",
+                    friendly_detail_suffix(&stderr)
+                )
             };
             return Ok(DockerStatus {
                 desktop_configured,
@@ -407,11 +416,7 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
             } else {
                 "docker info 未返回可用状态".to_string()
             };
-            if desktop_running {
-                format!("Docker Desktop 已启动，但 Engine 尚未就绪: {detail}")
-            } else {
-                format!("Docker Engine 未运行: {detail}")
-            }
+            friendly_docker_engine_message(desktop_running, &detail)
         };
 
         Ok(DockerStatus {
@@ -823,7 +828,7 @@ pub fn check_sub2api_health(app: &AppHandle) -> Result<HealthStatus, String> {
 
         if url.is_empty() {
             ok = false;
-            messages.push("API 接口未检查: 未配置健康检查地址".to_string());
+            messages.push("API 接口未检查：还没有配置健康检查地址。".to_string());
         } else {
             let api_result = check_sub2api_api_health(url, config.sub2api_api_key.trim())?;
             ok &= api_result.ok;
@@ -838,7 +843,7 @@ pub fn check_sub2api_health(app: &AppHandle) -> Result<HealthStatus, String> {
 
         Ok(HealthStatus {
             ok,
-            message: messages.join("；"),
+            message: messages.join(" "),
         })
     })();
 
@@ -873,7 +878,8 @@ fn check_sub2api_api_health(url: &str, api_key: &str) -> Result<Sub2apiCheckResu
     if sub2api_health_requires_api_key(url) && api_key.is_empty() {
         return Ok(Sub2apiCheckResult {
             ok: false,
-            message: "API 接口未检查: /v1 接口需要填写 sub2api API Key".to_string(),
+            message: "API 接口未检查：/v1 接口需要 API Key，请在 sub2api 配置里填写后再检测。"
+                .to_string(),
         });
     }
 
@@ -887,23 +893,24 @@ fn check_sub2api_api_health(url: &str, api_key: &str) -> Result<Sub2apiCheckResu
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let ok = output.status.success() && stdout.starts_with('2');
-    let detail = if ok {
-        format!("HTTP {stdout}")
-    } else if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        "未返回状态".to_string()
-    };
+    let probe = parse_sub2api_probe(&stdout, &stderr);
+    let ok = output.status.success()
+        && probe
+            .status_code
+            .is_some_and(|code| (200..300).contains(&code));
 
     Ok(Sub2apiCheckResult {
         ok,
         message: if ok {
-            format!("API 接口通过: {detail}")
+            format!(
+                "API 接口正常（HTTP {}）。",
+                probe.status_code.unwrap_or(200)
+            )
         } else {
-            format!("API 接口失败: {detail}")
+            format!(
+                "API 接口未通过：{}",
+                describe_sub2api_probe_failure(Sub2apiProbeTarget::Api, url, &probe)
+            )
         },
     })
 }
@@ -920,7 +927,7 @@ fn check_sub2api_login(config: &WorkbenchConfig) -> Result<Sub2apiCheckResult, S
     if login_url.is_empty() || email.is_empty() || password.is_empty() {
         return Ok(Sub2apiCheckResult {
             ok: false,
-            message: "后台登录未检查: 登录地址、邮箱和密码需要同时填写".to_string(),
+            message: "后台登录未检查：登录地址、邮箱和密码需要同时填写；如果暂时不想校验后台登录，可以先清空邮箱和密码。".to_string(),
         });
     }
 
@@ -930,19 +937,13 @@ fn check_sub2api_login(config: &WorkbenchConfig) -> Result<Sub2apiCheckResult, S
     })
     .to_string();
     let script = format!(
-        "$ErrorActionPreference = 'Stop'; \
+        "{} \
          try {{ \
            $body = '{}'; \
            $response = Invoke-WebRequest -Method Post -UseBasicParsing -Uri '{}' -ContentType 'application/json' -Body $body -TimeoutSec 8; \
-           [Console]::Out.Write($response.StatusCode) \
-         }} catch {{ \
-           if ($_.Exception.Response) {{ \
-             [Console]::Error.Write(('HTTP ' + [int]$_.Exception.Response.StatusCode + ': ' + $_.Exception.Message)) \
-           }} else {{ \
-             [Console]::Error.Write($_.Exception.Message) \
-           }}; \
-           exit 1 \
-         }}",
+           [Console]::Out.Write('HTTP_STATUS=' + [int]$response.StatusCode) \
+         }} catch {{ Write-Sub2apiProbeError $_ }}",
+        sub2api_probe_powershell_preamble(),
         escape_powershell_single_quoted(&body),
         escape_powershell_single_quoted(login_url),
     );
@@ -956,23 +957,24 @@ fn check_sub2api_login(config: &WorkbenchConfig) -> Result<Sub2apiCheckResult, S
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let ok = output.status.success() && stdout.starts_with('2');
-    let detail = if ok {
-        format!("HTTP {stdout}")
-    } else if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        "未返回状态".to_string()
-    };
+    let probe = parse_sub2api_probe(&stdout, &stderr);
+    let ok = output.status.success()
+        && probe
+            .status_code
+            .is_some_and(|code| (200..300).contains(&code));
 
     Ok(Sub2apiCheckResult {
         ok,
         message: if ok {
-            format!("后台登录通过: {detail}")
+            format!(
+                "后台登录正常（HTTP {}）。",
+                probe.status_code.unwrap_or(200)
+            )
         } else {
-            format!("后台登录失败: {detail}")
+            format!(
+                "后台登录未通过：{}",
+                describe_sub2api_probe_failure(Sub2apiProbeTarget::Login, login_url, &probe)
+            )
         },
     })
 }
@@ -980,18 +982,159 @@ fn check_sub2api_login(config: &WorkbenchConfig) -> Result<Sub2apiCheckResult, S
 fn build_sub2api_health_script(url: &str, token: Option<&str>) -> String {
     match token {
         Some(token) => format!(
-            "try {{ \
+            "{} \
+             try {{ \
                $headers = @{{ Authorization = 'Bearer {}' }}; \
-               (Invoke-WebRequest -UseBasicParsing -Uri '{}' -Headers $headers -TimeoutSec 5).StatusCode \
-             }} catch {{ $_.Exception.Message }}",
+               $response = Invoke-WebRequest -UseBasicParsing -Uri '{}' -Headers $headers -TimeoutSec 5; \
+               [Console]::Out.Write('HTTP_STATUS=' + [int]$response.StatusCode) \
+             }} catch {{ Write-Sub2apiProbeError $_ }}",
+            sub2api_probe_powershell_preamble(),
             escape_powershell_single_quoted(token),
             escape_powershell_single_quoted(url),
         ),
         None => format!(
-            "try {{ (Invoke-WebRequest -UseBasicParsing -Uri '{}' -TimeoutSec 5).StatusCode }} catch {{ $_.Exception.Message }}",
+            "{} \
+             try {{ \
+               $response = Invoke-WebRequest -UseBasicParsing -Uri '{}' -TimeoutSec 5; \
+               [Console]::Out.Write('HTTP_STATUS=' + [int]$response.StatusCode) \
+             }} catch {{ Write-Sub2apiProbeError $_ }}",
+            sub2api_probe_powershell_preamble(),
             escape_powershell_single_quoted(url),
         ),
     }
+}
+
+#[derive(Default)]
+struct Sub2apiProbe {
+    status_code: Option<u16>,
+    error_kind: String,
+    error_message: String,
+}
+
+enum Sub2apiProbeTarget {
+    Api,
+    Login,
+}
+
+fn sub2api_probe_powershell_preamble() -> &'static str {
+    "$ErrorActionPreference = 'Stop'; \
+     $utf8 = New-Object System.Text.UTF8Encoding($false); \
+     [Console]::OutputEncoding = $utf8; \
+     $OutputEncoding = $utf8; \
+     function Write-Sub2apiProbeError($record) { \
+       $status = $null; \
+       if ($record.Exception.Response) { \
+         try { $status = [int]$record.Exception.Response.StatusCode } catch { } \
+       }; \
+       if ($null -ne $status) { [Console]::Error.Write('HTTP_STATUS=' + $status + \"`n\") }; \
+       [Console]::Error.Write('ERROR_KIND=' + $record.Exception.GetType().FullName + \"`n\"); \
+       [Console]::Error.Write('ERROR_MESSAGE=' + $record.Exception.Message); \
+       exit 1 \
+     };"
+}
+
+fn parse_sub2api_probe(stdout: &str, stderr: &str) -> Sub2apiProbe {
+    let mut probe = Sub2apiProbe::default();
+    let mut raw_messages = Vec::new();
+
+    for line in stdout.lines().chain(stderr.lines()).map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("HTTP_STATUS=") {
+            probe.status_code = value.trim().parse::<u16>().ok();
+        } else if let Some(value) = line.strip_prefix("ERROR_KIND=") {
+            probe.error_kind = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("ERROR_MESSAGE=") {
+            probe.error_message = value.trim().to_string();
+        } else {
+            raw_messages.push(line.to_string());
+        }
+    }
+
+    if probe.status_code.is_none() {
+        probe.status_code = stdout.trim().parse::<u16>().ok();
+    }
+    if probe.error_message.is_empty() && !raw_messages.is_empty() {
+        probe.error_message = raw_messages.join(" ");
+    }
+
+    probe
+}
+
+fn describe_sub2api_probe_failure(
+    target: Sub2apiProbeTarget,
+    url: &str,
+    probe: &Sub2apiProbe,
+) -> String {
+    if let Some(status_code) = probe.status_code {
+        return match (target, status_code) {
+            (Sub2apiProbeTarget::Api, 401 | 403) => {
+                "服务有响应，但 API Key 没通过鉴权。请检查 sub2api 配置里的 API Key 是否正确。"
+                    .to_string()
+            }
+            (Sub2apiProbeTarget::Login, 401 | 403) => {
+                "服务有响应，但邮箱或密码没有通过验证。请检查后台登录信息。".to_string()
+            }
+            (Sub2apiProbeTarget::Api, 404) => {
+                "服务有响应，但健康检查接口不存在。请确认地址是否类似 http://127.0.0.1:9999/v1/models。"
+                    .to_string()
+            }
+            (Sub2apiProbeTarget::Login, 404) => {
+                "服务有响应，但登录接口不存在。请确认登录地址是否类似 http://127.0.0.1:9999/api/auth/login。"
+                    .to_string()
+            }
+            (_, 405) => "服务有响应，但当前接口不接受这类请求。请检查配置的接口地址。".to_string(),
+            (_, 429) => "服务有响应，但请求过于频繁。请稍等一会儿再检测。".to_string(),
+            (_, 500..=599) => {
+                format!("sub2api 已响应，但服务端返回 HTTP {status_code}。请查看 sub2api 后台日志。")
+            }
+            (_, code) => format!("服务有响应，但返回 HTTP {code}。请检查地址和鉴权配置。"),
+        };
+    }
+
+    let error_message = probe.error_message.trim();
+    let normalized = error_message.to_ascii_lowercase();
+    if normalized.contains("actively refused")
+        || normalized.contains("connection refused")
+        || normalized.contains("unable to connect")
+        || normalized.contains("no connection could be made")
+        || normalized.contains("无法连接")
+        || normalized.contains("由于目标计算机积极拒绝")
+    {
+        return format!("没有连接到 sub2api 服务。请先启动 sub2api，并确认它正在监听 {url}。");
+    }
+    if normalized.contains("timed out")
+        || normalized.contains("timeout")
+        || normalized.contains("超时")
+    {
+        return "请求超时。sub2api 可能正在启动、卡住，或当前地址不可达。".to_string();
+    }
+    if normalized.contains("invalid uri")
+        || normalized.contains("not a valid")
+        || normalized.contains("无效")
+    {
+        return "健康检查地址格式不正确，请确认以 http:// 或 https:// 开头。".to_string();
+    }
+    if normalized.contains("name resolution")
+        || normalized.contains("no such host")
+        || normalized.contains("无法解析")
+    {
+        return "地址里的域名无法解析。请检查主机名或改用 127.0.0.1。".to_string();
+    }
+    if normalized.contains("certificate")
+        || normalized.contains("ssl")
+        || normalized.contains("tls")
+        || normalized.contains("证书")
+    {
+        return "HTTPS 证书校验失败。请检查证书配置，或在本机服务场景下改用 http:// 地址。"
+            .to_string();
+    }
+
+    format!(
+        "请求没有拿到有效响应。请确认 sub2api 已启动，并检查地址是否正确。{}",
+        friendly_detail_suffix(error_message)
+    )
 }
 
 fn sub2api_health_requires_api_key(url: &str) -> bool {
@@ -1043,8 +1186,10 @@ pub fn list_operation_logs(
     let keyword = query.trim();
 
     let total: u64 = if keyword.is_empty() {
-        conn.query_row("SELECT COUNT(*) FROM operation_logs", [], |row| row.get::<_, u64>(0))
-            .map_err(|error| format!("统计操作日志失败: {error}"))?
+        conn.query_row("SELECT COUNT(*) FROM operation_logs", [], |row| {
+            row.get::<_, u64>(0)
+        })
+        .map_err(|error| format!("统计操作日志失败: {error}"))?
     } else {
         let pattern = format!("%{}%", keyword);
         conn.query_row(
@@ -1076,7 +1221,10 @@ pub fn list_operation_logs(
             )
             .map_err(|error| format!("读取操作日志失败: {error}"))?;
         let rows = statement
-            .query_map(params![OPERATION_LOG_PAGE_SIZE, offset], operation_log_from_row)
+            .query_map(
+                params![OPERATION_LOG_PAGE_SIZE, offset],
+                operation_log_from_row,
+            )
             .map_err(|error| format!("读取操作日志失败: {error}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|error| format!("读取操作日志失败: {error}"))?
@@ -1092,7 +1240,10 @@ pub fn list_operation_logs(
             )
             .map_err(|error| format!("读取操作日志失败: {error}"))?;
         let rows = statement
-            .query_map(params![pattern, OPERATION_LOG_PAGE_SIZE, offset], operation_log_from_row)
+            .query_map(
+                params![pattern, OPERATION_LOG_PAGE_SIZE, offset],
+                operation_log_from_row,
+            )
             .map_err(|error| format!("读取操作日志失败: {error}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|error| format!("读取操作日志失败: {error}"))?
@@ -1756,6 +1907,7 @@ fn get_clash_party_runtime_groups(
         .get("proxies")
         .and_then(JsonValue::as_object)
         .ok_or_else(|| "Mihomo API 未返回 proxies 字段".to_string())?;
+    let profile_names = read_current_clash_profile_names(config).unwrap_or_default();
 
     let mut proxy_detail = HashMap::new();
     for (name, proxy) in proxies {
@@ -1775,6 +1927,7 @@ fn get_clash_party_runtime_groups(
             .and_then(JsonValue::as_str)
             .unwrap_or_default()
             .to_string();
+        let selected_display_name = clash_display_name(&selected, &profile_names);
         let group_type = proxy
             .get("type")
             .and_then(JsonValue::as_str)
@@ -1785,8 +1938,10 @@ fn get_clash_party_runtime_groups(
             .filter_map(JsonValue::as_str)
             .map(|node_name| {
                 let detail = proxy_detail.get(node_name);
+                let display_name = clash_display_name(node_name, &profile_names);
                 ClashPartyNode {
                     name: node_name.to_string(),
+                    display_name,
                     node_type: detail
                         .and_then(|value| value.get("type"))
                         .and_then(JsonValue::as_str)
@@ -1808,8 +1963,10 @@ fn get_clash_party_runtime_groups(
             .collect();
         groups.push(ClashPartyProxyGroup {
             name: name.clone(),
+            display_name: clash_display_name(name, &profile_names),
             group_type,
             selected,
+            selected_display_name,
             nodes,
         });
     }
@@ -1828,6 +1985,91 @@ fn read_proxy_delay(detail: Option<&JsonValue>) -> Option<i64> {
         .filter(|delay| *delay >= 0)
 }
 
+fn read_current_clash_profile_names(
+    config: &WorkbenchConfig,
+) -> Result<HashMap<String, String>, String> {
+    let data_dir = resolve_clash_party_data_dir(config)?;
+    let profile_index = read_clash_profile_index(&data_dir.join("profile.yaml"))?;
+    if profile_index.current.trim().is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let profile_path = clash_profile_path(&data_dir, &profile_index.current);
+    let content = fs::read_to_string(&profile_path)
+        .map_err(|error| format!("读取当前订阅配置失败: {error}"))?;
+    let yaml: YamlValue =
+        serde_yaml::from_str(&content).map_err(|error| format!("解析当前订阅配置失败: {error}"))?;
+
+    let mut names = HashMap::new();
+    collect_clash_named_items(&yaml, "proxies", &mut names);
+    collect_clash_named_items(&yaml, "proxy-groups", &mut names);
+    Ok(names)
+}
+
+fn collect_clash_named_items(yaml: &YamlValue, key: &str, names: &mut HashMap<String, String>) {
+    let Some(items) = yaml.get(key).and_then(YamlValue::as_sequence) else {
+        return;
+    };
+    for item in items {
+        let Some(name) = item.get("name").and_then(YamlValue::as_str) else {
+            continue;
+        };
+        names.insert(name.to_string(), name.to_string());
+        if let Some(mojibake) = utf8_mojibake_key(name) {
+            names.entry(mojibake).or_insert_with(|| name.to_string());
+        }
+    }
+}
+
+fn clash_display_name(raw_name: &str, profile_names: &HashMap<String, String>) -> String {
+    profile_names
+        .get(raw_name)
+        .cloned()
+        .or_else(|| repair_utf8_mojibake(raw_name))
+        .unwrap_or_else(|| raw_name.to_string())
+}
+
+fn utf8_mojibake_key(value: &str) -> Option<String> {
+    if value.is_ascii() {
+        return None;
+    }
+    Some(
+        value
+            .as_bytes()
+            .iter()
+            .map(|byte| *byte as char)
+            .collect::<String>(),
+    )
+}
+
+fn repair_utf8_mojibake(value: &str) -> Option<String> {
+    if !looks_like_utf8_mojibake(value) {
+        return None;
+    }
+    let bytes: Vec<u8> = value
+        .chars()
+        .map(|character| u32::from(character))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(u8::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    let repaired = String::from_utf8(bytes).ok()?;
+    (repaired != value).then_some(repaired)
+}
+
+fn looks_like_utf8_mojibake(value: &str) -> bool {
+    value.contains('Ã')
+        || value.contains('Â')
+        || value.contains('ä')
+        || value.contains('å')
+        || value.contains('æ')
+        || value.contains('ç')
+        || value.contains('è')
+        || value.contains('é')
+        || value.contains('ï')
+}
+
 fn call_clash_party_api(
     config: &WorkbenchConfig,
     method: &str,
@@ -1835,67 +2077,206 @@ fn call_clash_party_api(
     body: Option<JsonValue>,
 ) -> Result<String, String> {
     let base_url = normalized_clash_party_api_url(config);
-    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
-        return Err("Clash Party API 地址必须以 http:// 或 https:// 开头".to_string());
-    }
-    let url = format!(
-        "{}/{}",
-        base_url.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    );
-    let headers = if config.clash_party_api_secret.trim().is_empty() {
-        String::new()
-    } else {
-        format!(
-            "$headers = @{{ Authorization = 'Bearer {}' }};",
-            escape_powershell_single_quoted(config.clash_party_api_secret.trim())
-        )
-    };
-    let headers_arg = if headers.is_empty() {
-        ""
-    } else {
-        "-Headers $headers"
-    };
-    let body_script = body.map_or_else(String::new, |value| {
-        format!(
-            "$body = '{}';",
-            escape_powershell_single_quoted(&value.to_string())
-        )
-    });
-    let body_arg = if body_script.is_empty() {
-        ""
-    } else {
-        "-ContentType 'application/json' -Body $body"
-    };
-    let script = format!(
-        "$ErrorActionPreference = 'Stop'; \
-         {}; \
-         {}; \
-         $response = Invoke-RestMethod -Method {} -UseBasicParsing -Uri '{}' {} {} -TimeoutSec 6; \
-         if ($null -ne $response) {{ $response | ConvertTo-Json -Depth 30 -Compress }}",
-        headers,
-        body_script,
+    let request = ClashHttpRequest::new(
+        &base_url,
         method,
-        escape_powershell_single_quoted(&url),
-        headers_arg,
-        body_arg
-    );
+        path,
+        body,
+        config.clash_party_api_secret.trim(),
+    )?;
+    send_clash_http_request(&request)
+}
 
-    let output = hidden_command("powershell")
-        .args(["-NoProfile", "-Command", &script])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| format!("调用 Clash Party API 失败: {error}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if output.status.success() {
-        Ok(stdout)
-    } else if stderr.is_empty() {
-        Err("Clash Party API 请求失败".to_string())
-    } else {
-        Err(stderr)
+struct ClashHttpRequest {
+    host: String,
+    port: u16,
+    path: String,
+    method: String,
+    body: String,
+    secret: String,
+}
+
+impl ClashHttpRequest {
+    fn new(
+        base_url: &str,
+        method: &str,
+        path: &str,
+        body: Option<JsonValue>,
+        secret: &str,
+    ) -> Result<Self, String> {
+        let trimmed = base_url.trim().trim_end_matches('/');
+        let without_scheme = trimmed.strip_prefix("http://").ok_or_else(|| {
+            "Clash Party API 目前只支持本机 http:// 地址，请将 API 地址配置为 http://127.0.0.1:9998 这类格式。".to_string()
+        })?;
+        if without_scheme.contains('@') {
+            return Err("Clash Party API 地址不支持用户名密码写法".to_string());
+        }
+        let authority = without_scheme
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        let (host, port) = parse_http_authority(authority)?;
+        let request_path = format!("/{}", path.trim_start_matches('/'));
+
+        Ok(Self {
+            host,
+            port,
+            path: request_path,
+            method: method.to_ascii_uppercase(),
+            body: body.map_or_else(String::new, |value| value.to_string()),
+            secret: secret.to_string(),
+        })
     }
+}
+
+fn parse_http_authority(authority: &str) -> Result<(String, u16), String> {
+    if authority.is_empty() {
+        return Err("Clash Party API 地址缺少主机名".to_string());
+    }
+    if let Some(stripped) = authority.strip_prefix('[') {
+        let Some((host, rest)) = stripped.split_once(']') else {
+            return Err("Clash Party API IPv6 地址格式不正确".to_string());
+        };
+        let port = rest
+            .strip_prefix(':')
+            .map(parse_http_port)
+            .transpose()?
+            .unwrap_or(80);
+        return Ok((host.to_string(), port));
+    }
+
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host, parse_http_port(port)?),
+        Some(_) if authority.matches(':').count() > 1 => (authority, 80),
+        _ => (authority, 80),
+    };
+    Ok((host.to_string(), port))
+}
+
+fn parse_http_port(value: &str) -> Result<u16, String> {
+    value
+        .parse::<u16>()
+        .map_err(|_| "Clash Party API 端口不是有效数字".to_string())
+}
+
+fn send_clash_http_request(request: &ClashHttpRequest) -> Result<String, String> {
+    let mut stream = TcpStream::connect((request.host.as_str(), request.port))
+        .map_err(|error| format!("连接 Clash Party API 失败: {error}"))?;
+    let timeout = Some(Duration::from_secs(6));
+    stream
+        .set_read_timeout(timeout)
+        .map_err(|error| format!("设置 Clash Party API 读取超时失败: {error}"))?;
+    stream
+        .set_write_timeout(timeout)
+        .map_err(|error| format!("设置 Clash Party API 写入超时失败: {error}"))?;
+
+    let mut http = format!(
+        "{} {} HTTP/1.1\r\nHost: {}:{}\r\nAccept: application/json\r\nConnection: close\r\n",
+        request.method, request.path, request.host, request.port
+    );
+    if !request.secret.is_empty() {
+        http.push_str("Authorization: Bearer ");
+        http.push_str(&request.secret);
+        http.push_str("\r\n");
+    }
+    if request.body.is_empty() {
+        http.push_str("\r\n");
+    } else {
+        http.push_str("Content-Type: application/json; charset=utf-8\r\n");
+        http.push_str(&format!(
+            "Content-Length: {}\r\n\r\n{}",
+            request.body.as_bytes().len(),
+            request.body
+        ));
+    }
+
+    stream
+        .write_all(http.as_bytes())
+        .map_err(|error| format!("发送 Clash Party API 请求失败: {error}"))?;
+
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .map_err(|error| format!("读取 Clash Party API 响应失败: {error}"))?;
+    parse_clash_http_response(&response)
+}
+
+fn parse_clash_http_response(response: &[u8]) -> Result<String, String> {
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .ok_or_else(|| "Clash Party API 响应格式不完整".to_string())?;
+    let headers = String::from_utf8_lossy(&response[..header_end]);
+    let mut lines = headers.lines();
+    let status_line = lines
+        .next()
+        .ok_or_else(|| "Clash Party API 响应缺少状态行".to_string())?;
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|value| value.parse::<u16>().ok())
+        .ok_or_else(|| "Clash Party API 响应状态码无效".to_string())?;
+    let chunked = lines.clone().any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.eq_ignore_ascii_case("transfer-encoding")
+                && value.to_ascii_lowercase().contains("chunked")
+        })
+    });
+    let body_bytes = &response[header_end + 4..];
+    let body = if chunked {
+        decode_chunked_body(body_bytes)?
+    } else {
+        body_bytes.to_vec()
+    };
+    let text = String::from_utf8(body)
+        .map_err(|_| "Clash Party API 响应不是有效 UTF-8，请检查 Mihomo API 输出编码".to_string())?
+        .trim()
+        .to_string();
+
+    if (200..300).contains(&status_code) {
+        Ok(text)
+    } else if text.is_empty() {
+        Err(format!("Clash Party API 请求失败：HTTP {status_code}"))
+    } else {
+        Err(format!(
+            "Clash Party API 请求失败：HTTP {status_code}，{text}"
+        ))
+    }
+}
+
+fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>, String> {
+    let mut decoded = Vec::new();
+    let mut index = 0;
+    loop {
+        let line_end = find_crlf(body, index)
+            .ok_or_else(|| "Clash Party API chunked 响应格式不完整".to_string())?;
+        let size_text = String::from_utf8_lossy(&body[index..line_end]);
+        let size_hex = size_text.split(';').next().unwrap_or_default().trim();
+        let size = usize::from_str_radix(size_hex, 16)
+            .map_err(|_| "Clash Party API chunked 响应块大小无效".to_string())?;
+        index = line_end + 2;
+        if size == 0 {
+            break;
+        }
+        let chunk_end = index
+            .checked_add(size)
+            .ok_or_else(|| "Clash Party API chunked 响应过大".to_string())?;
+        if chunk_end + 2 > body.len() {
+            return Err("Clash Party API chunked 响应数据不完整".to_string());
+        }
+        decoded.extend_from_slice(&body[index..chunk_end]);
+        index = chunk_end + 2;
+    }
+    Ok(decoded)
+}
+
+fn find_crlf(bytes: &[u8], start: usize) -> Option<usize> {
+    bytes
+        .get(start..)?
+        .windows(2)
+        .position(|window| window == b"\r\n")
+        .map(|offset| start + offset)
 }
 
 fn normalized_clash_party_api_url(config: &WorkbenchConfig) -> String {
@@ -2142,6 +2523,42 @@ fn limit_text(value: &str, limit: usize) -> String {
         trimmed.to_string()
     } else {
         format!("{}...", &trimmed[..limit])
+    }
+}
+
+fn friendly_docker_engine_message(desktop_running: bool, detail: &str) -> String {
+    let normalized = detail.to_ascii_lowercase();
+    let hint = if normalized.contains("dockerdesktoplinuxengine")
+        || normalized.contains("pipe")
+        || normalized.contains("daemon")
+        || normalized.contains("cannot find the file specified")
+        || normalized.contains("system cannot find")
+    {
+        if desktop_running {
+            "Docker Desktop 已启动，但 Docker Engine 还没有准备好。请等几十秒后再检测；如果一直如此，尝试重启 Docker Desktop。"
+        } else {
+            "Docker Engine 未运行。请先启动 Docker Desktop，等状态稳定后再检测。"
+        }
+    } else if normalized.contains("permission")
+        || normalized.contains("access is denied")
+        || normalized.contains("拒绝访问")
+    {
+        "当前用户没有访问 Docker Engine 的权限。请确认 Docker Desktop 已允许当前账号使用，必要时以管理员身份启动。"
+    } else if desktop_running {
+        "Docker Desktop 已启动，但 Docker Engine 暂时不可用。请稍等后重试。"
+    } else {
+        "Docker Engine 未运行。请先启动 Docker Desktop。"
+    };
+
+    format!("{hint}{}", friendly_detail_suffix(detail))
+}
+
+fn friendly_detail_suffix(detail: &str) -> String {
+    let trimmed = detail.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!(" 原始信息：{}", limit_text(trimmed, 240))
     }
 }
 

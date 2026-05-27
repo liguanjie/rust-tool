@@ -60,6 +60,7 @@ export interface ClashPartySubscription {
 
 export interface ClashPartyNode {
   name: string
+  displayName: string
   nodeType: string
   server: string
   port: number | null
@@ -69,8 +70,10 @@ export interface ClashPartyNode {
 
 export interface ClashPartyProxyGroup {
   name: string
+  displayName: string
   groupType: string
   selected: string
+  selectedDisplayName: string
   nodes: ClashPartyNode[]
 }
 

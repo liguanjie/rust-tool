@@ -42,8 +42,8 @@ const subscriptionItems = computed<SmartSelectItem[]>(() =>
 const proxyGroupItems = computed<SmartSelectItem[]>(() =>
   (workbench.clashPartyManager?.groups ?? []).map((group) => ({
     value: group.name,
-    label: group.name,
-    description: group.selected ? `当前节点: ${group.selected}` : group.groupType,
+    label: group.displayName || group.name,
+    description: group.selectedDisplayName ? `当前节点: ${group.selectedDisplayName}` : group.groupType,
     badge: group.groupType,
   })),
 )
@@ -51,7 +51,7 @@ const proxyGroupItems = computed<SmartSelectItem[]>(() =>
 const nodeItems = computed<SmartSelectItem[]>(() =>
   selectedGroupNodes.value.map((node) => ({
     value: node.name,
-    label: node.name,
+    label: node.displayName || node.name,
     description: node.server ? `${node.nodeType} · ${node.server}${node.port ? `:${node.port}` : ''}` : node.nodeType,
     badge: node.delay !== null && node.delay !== undefined ? `${node.delay}ms` : node.nodeType,
     active: node.active,

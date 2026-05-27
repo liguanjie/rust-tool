@@ -424,6 +424,10 @@ button:disabled {
     @apply m-0 truncate font-mono text-xs text-stone-800;
   }
 
+  .service-facts dd.service-status-text {
+    @apply whitespace-normal break-words font-sans leading-5;
+  }
+
   .card-button-row {
     @apply mt-4 flex flex-wrap gap-2;
   }
