@@ -27,6 +27,7 @@ const toolsStore = useToolsStore()
             :to="tool.path"
             class="group flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-left text-sm font-medium text-stone-800 transition hover:border-emerald-800"
             active-class="border-emerald-800 shadow-[inset_3px_0_0_#065f46]"
+            :class="{ 'border-emerald-800 shadow-[inset_3px_0_0_#065f46]': tool.path === '/toolbox' && $route.path.startsWith('/toolbox') }"
           >
             <component :is="tool.icon" class="h-4 w-4 text-emerald-800" aria-hidden="true" />
             <span>{{ tool.name }}</span>

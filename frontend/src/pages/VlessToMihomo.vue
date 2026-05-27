@@ -16,6 +16,10 @@ onMounted(() => {
   <ToolShell
     title="VLESS 转 Mihomo"
     description="将 3x-ui 生成的 vless:// 链接转换为 Clash Party/Mihomo YAML。"
+    :breadcrumbs="[
+      { label: '工具箱', to: '/toolbox' },
+      { label: 'VLESS 转 Mihomo' },
+    ]"
   >
     <div class="tool-grid">
       <section class="input-panel">

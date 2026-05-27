@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { Cable, MonitorCog } from '@lucide/vue'
+import { Cable, MonitorCog, GitBranch, ScrollText } from '@lucide/vue'
 
 export interface ToolItem {
   id: string
@@ -28,6 +28,20 @@ export const useToolsStore = defineStore('tools', () => {
           description: '管理本机 Docker 与 sub2api',
           icon: MonitorCog,
         },
+        {
+          id: 'api-management',
+          name: 'API 管理',
+          path: '/tools/api-management',
+          description: '管理 Clash Party 订阅与节点',
+          icon: GitBranch,
+        },
+        {
+          id: 'operation-logs',
+          name: '操作日志',
+          path: '/tools/operation-logs',
+          description: '记录工作台每步操作日志',
+          icon: ScrollText,
+        },
       ],
     },
     {
@@ -36,9 +50,9 @@ export const useToolsStore = defineStore('tools', () => {
       items: [
         {
           id: 'vless-to-mihomo',
-          name: 'VLESS 转 Mihomo',
-          path: '/toolbox/vless-to-mihomo',
-          description: '转换 3x-ui VLESS 链接',
+          name: '工具箱',
+          path: '/toolbox',
+          description: '本地转换与辅助工具',
           icon: Cable,
         },
       ],

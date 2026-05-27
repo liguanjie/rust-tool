@@ -10,6 +10,7 @@ export interface WorkbenchConfig {
   sub2apiUpgradeScript: string
   sub2apiWorkingDir: string
   sub2apiHealthUrl: string
+  sub2apiApiKey: string
   sub2apiLoginUrl: string
   sub2apiUsername: string
   sub2apiPassword: string
@@ -114,6 +115,14 @@ export interface OperationLog {
   createdAt: string
 }
 
+export interface OperationLogPage {
+  logs: OperationLog[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
 export interface HealthStatus {
   ok: boolean
   message: string
@@ -125,13 +134,14 @@ export function defaultWorkbenchConfig(): WorkbenchConfig {
     dockerCliPath: '',
     clashPartyPath: '',
     clashPartyDataDir: '',
-    clashPartyApiUrl: 'http://127.0.0.1:9090',
+    clashPartyApiUrl: 'http://127.0.0.1:9998',
     clashPartyApiSecret: '',
     sub2apiStartScript: '',
     sub2apiStopScript: '',
     sub2apiUpgradeScript: '',
     sub2apiWorkingDir: '',
     sub2apiHealthUrl: 'http://127.0.0.1:9999/v1/models',
+    sub2apiApiKey: '',
     sub2apiLoginUrl: 'http://127.0.0.1:9999/api/auth/login',
     sub2apiUsername: '',
     sub2apiPassword: '',
@@ -218,8 +228,12 @@ export async function listTaskRuns(limit = 20) {
   return await invokeWorkbench<TaskRun[]>('list_task_runs', { limit })
 }
 
-export async function listOperationLogs(limit = 80) {
-  return await invokeWorkbench<OperationLog[]>('list_operation_logs', { limit })
+export async function listOperationLogs(page = 1, query = '') {
+  return await invokeWorkbench<OperationLogPage>('list_operation_logs', { page, query })
+}
+
+export async function clearOperationLogs() {
+  return await invokeWorkbench<number>('clear_operation_logs')
 }
 
 async function invokeWorkbench<T>(command: string, args?: Record<string, unknown>) {

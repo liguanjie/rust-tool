@@ -4,19 +4,18 @@ import {
   CheckCircle2,
   Cog,
   Container,
-  GitBranch,
   MonitorCog,
   Play,
   Power,
   RefreshCw,
   Rocket,
-  ScrollText,
   Square,
   UploadCloud,
   X,
   XCircle,
 } from '@lucide/vue'
 import { computed, onMounted } from 'vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ToolShell from '../components/ToolShell.vue'
 import { useWindowsWorkbenchStore } from '../stores/windowsWorkbench'
 
@@ -61,44 +60,10 @@ const clashPartyState = computed(() => {
   return { label: '待检测', tone: 'muted' }
 })
 
-const activeSubscription = computed(() =>
-  workbench.clashPartyManager?.subscriptions.find((item) => item.active),
-)
 
-const selectedSubscription = computed(() =>
-  workbench.clashPartyManager?.subscriptions.find(
-    (item) => item.id === workbench.selectedClashPartySubscriptionId,
-  ),
-)
-
-const selectedGroupNodes = computed(() => workbench.selectedClashPartyGroup?.nodes ?? [])
-
-function formatBytes(value: number | null | undefined) {
-  if (!value || value <= 0) return '无'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let next = value
-  let index = 0
-  while (next >= 1024 && index < units.length - 1) {
-    next /= 1024
-    index += 1
-  }
-  return `${next.toFixed(index === 0 ? 0 : 2)} ${units[index]}`
-}
-
-function formatLogTime(value: string) {
-  const epochSeconds = Number(value)
-  if (!Number.isFinite(epochSeconds) || epochSeconds <= 0) return value || '未知时间'
-  return new Date(epochSeconds * 1000).toLocaleString()
-}
-
-function operationLogTone(status: string) {
-  if (['success', 'started'].includes(status)) return 'status-pill--good'
-  if (['failed', 'warn'].includes(status)) return 'status-pill--warn'
-  return 'status-pill--muted'
-}
 
 onMounted(() => {
-  void workbench.load()
+  void workbench.refreshDashboard()
 })
 </script>
 
@@ -314,203 +279,6 @@ onMounted(() => {
       </section>
     </div>
 
-    <section class="clash-manager-panel">
-      <header class="service-card-header">
-        <div class="service-title">
-          <span class="service-icon">
-            <GitBranch class="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div>
-            <h3>Clash Party 管理</h3>
-            <p>读取订阅配置，查看运行时代理组，并通过 Mihomo API 切换订阅和节点。</p>
-          </div>
-        </div>
-        <div class="service-actions">
-          <span class="status-pill" :class="workbench.clashPartyManager?.apiAvailable ? 'status-pill--good' : 'status-pill--warn'">
-            {{ workbench.clashPartyManager?.apiAvailable ? 'API 已连接' : '仅读取文件' }}
-          </span>
-          <button
-            class="icon-button"
-            type="button"
-            :disabled="workbench.loading === 'clash-party-manager'"
-            @click="workbench.refreshClashPartyManager"
-          >
-            <RefreshCw class="h-4 w-4" aria-hidden="true" />
-            <span>刷新</span>
-          </button>
-        </div>
-      </header>
-
-      <p class="service-note">
-        {{ workbench.clashPartyManager?.message || '刷新后会列出 Clash Party profile.yaml 中的订阅；切换节点需要 Clash Party 开放 Mihomo API。' }}
-      </p>
-
-      <div class="clash-manager-grid">
-        <section class="manager-block">
-          <div class="manager-block-header">
-            <h4>订阅</h4>
-            <span>{{ workbench.clashPartyManager?.subscriptions.length ?? 0 }} 个</span>
-          </div>
-
-          <label class="field-control">
-            <span class="field-label">选择订阅</span>
-            <select v-model="workbench.selectedClashPartySubscriptionId" class="text-input">
-              <option value="">请选择订阅</option>
-              <option
-                v-for="subscription in workbench.clashPartyManager?.subscriptions ?? []"
-                :key="subscription.id"
-                :value="subscription.id"
-              >
-                {{ subscription.active ? '当前 - ' : '' }}{{ subscription.name }}
-              </option>
-            </select>
-          </label>
-
-          <dl class="service-facts compact-facts">
-            <div>
-              <dt>当前订阅</dt>
-              <dd>{{ activeSubscription?.name || '未读取' }}</dd>
-            </div>
-            <div>
-              <dt>节点/分组</dt>
-              <dd>{{ selectedSubscription ? `${selectedSubscription.nodeCount}/${selectedSubscription.groupCount}` : '无' }}</dd>
-            </div>
-            <div>
-              <dt>流量</dt>
-              <dd>
-                {{
-                  selectedSubscription
-                    ? `${formatBytes(selectedSubscription.usedBytes)} / ${formatBytes(selectedSubscription.totalBytes)}`
-                    : '无'
-                }}
-              </dd>
-            </div>
-          </dl>
-
-          <div class="card-button-row">
-            <button
-              class="secondary-button"
-              type="button"
-              :disabled="!workbench.selectedClashPartySubscriptionId || workbench.loading === 'clash-party-switch-subscription'"
-              @click="workbench.switchSubscription"
-            >
-              <RefreshCw class="h-4 w-4" aria-hidden="true" />
-              <span>切换订阅</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="manager-block">
-          <div class="manager-block-header">
-            <h4>代理组与节点</h4>
-            <span>{{ workbench.clashPartyManager?.groups.length ?? 0 }} 组</span>
-          </div>
-
-          <label class="field-control">
-            <span class="field-label">代理组</span>
-            <select v-model="workbench.selectedClashPartyGroupName" class="text-input">
-              <option value="">请选择代理组</option>
-              <option v-for="group in workbench.clashPartyManager?.groups ?? []" :key="group.name" :value="group.name">
-                {{ group.name }}{{ group.selected ? ` - ${group.selected}` : '' }}
-              </option>
-            </select>
-          </label>
-
-          <label class="field-control">
-            <span class="field-label">目标节点</span>
-            <select v-model="workbench.selectedClashPartyNodeName" class="text-input">
-              <option value="">请选择节点</option>
-              <option v-for="node in selectedGroupNodes" :key="node.name" :value="node.name">
-                {{ node.active ? '当前 - ' : '' }}{{ node.name }}{{ node.delay ? ` (${node.delay}ms)` : '' }}
-              </option>
-            </select>
-          </label>
-
-          <div class="node-list" v-if="selectedGroupNodes.length">
-            <button
-              v-for="node in selectedGroupNodes.slice(0, 18)"
-              :key="node.name"
-              class="node-chip"
-              :class="{ 'node-chip--active': node.active }"
-              type="button"
-              @click="workbench.switchNode(node.name)"
-            >
-              <span>{{ node.name }}</span>
-              <small>{{ node.delay ? `${node.delay}ms` : node.nodeType }}</small>
-            </button>
-          </div>
-          <p v-else class="empty-state">未读取到可切换节点。请确认 API 地址可用后刷新。</p>
-
-          <div class="card-button-row">
-            <button
-              class="secondary-button"
-              type="button"
-              :disabled="!workbench.selectedClashPartyGroupName || !workbench.selectedClashPartyNodeName || workbench.loading === 'clash-party-switch-node'"
-              @click="workbench.switchNode()"
-            >
-              <GitBranch class="h-4 w-4" aria-hidden="true" />
-              <span>切换节点</span>
-            </button>
-          </div>
-        </section>
-      </div>
-    </section>
-
-    <section class="task-log-panel">
-      <header>
-        <h3>最近任务</h3>
-        <button class="icon-button" type="button" @click="workbench.refreshRuns">
-          <RefreshCw class="h-4 w-4" aria-hidden="true" />
-          <span>刷新</span>
-        </button>
-      </header>
-      <div v-if="workbench.taskRuns.length" class="task-log-list">
-        <article v-for="run in workbench.taskRuns" :key="run.id" class="task-log-item">
-          <div>
-            <strong>{{ run.taskKey }}</strong>
-            <p>{{ run.stderr || run.stdout || '无输出' }}</p>
-          </div>
-          <span class="status-pill" :class="['success', 'started'].includes(run.status) ? 'status-pill--good' : 'status-pill--warn'">
-            {{ run.status }}
-          </span>
-        </article>
-      </div>
-      <p v-else class="empty-state">还没有任务记录。</p>
-    </section>
-
-    <section class="operation-log-panel">
-      <header>
-        <div class="service-title">
-          <span class="service-icon">
-            <ScrollText class="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div>
-            <h3>操作日志</h3>
-            <p>记录工作台每步操作，自动保留最近 7 天。</p>
-          </div>
-        </div>
-        <button class="icon-button" type="button" @click="workbench.refreshOperationLogs">
-          <RefreshCw class="h-4 w-4" aria-hidden="true" />
-          <span>刷新</span>
-        </button>
-      </header>
-      <div v-if="workbench.operationLogs.length" class="task-log-list">
-        <article v-for="log in workbench.operationLogs" :key="log.id" class="task-log-item operation-log-item">
-          <div>
-            <strong>{{ log.module }} / {{ log.action }}</strong>
-            <p>{{ log.message }}</p>
-            <small class="operation-log-meta">
-              {{ formatLogTime(log.createdAt) }}<span v-if="log.detail"> · {{ log.detail }}</span>
-            </small>
-          </div>
-          <span class="status-pill" :class="operationLogTone(log.status)">
-            {{ log.status }}
-          </span>
-        </article>
-      </div>
-      <p v-else class="empty-state">还没有操作日志。</p>
-    </section>
-
     <div v-if="workbench.activeConfig" class="drawer-backdrop" @click.self="workbench.closeConfig">
       <aside class="config-drawer" aria-label="工作台配置">
         <header class="drawer-header">
@@ -579,7 +347,7 @@ onMounted(() => {
           <label class="field-control">
             <span class="field-label">Mihomo API 地址</span>
             <input v-model="workbench.config.clashPartyApiUrl" class="text-input" type="text" />
-            <small class="field-hint">用于切换订阅和节点；默认按 http://127.0.0.1:9090 访问。</small>
+            <small class="field-hint">用于切换订阅和节点；默认按 http://127.0.0.1:9998 访问。</small>
           </label>
           <label class="field-control">
             <span class="field-label">API Secret</span>
@@ -628,18 +396,26 @@ onMounted(() => {
                 选择
               </button>
             </span>
+            <small class="field-hint">选择脚本后会自动填入脚本所在目录；也可以手动覆盖。</small>
           </label>
           <label class="field-control">
             <span class="field-label">健康检查地址</span>
             <input v-model="workbench.config.sub2apiHealthUrl" class="text-input" type="text" />
+            <small class="field-hint">/v1 接口会使用下面的 API Key 进行鉴权。</small>
+          </label>
+          <label class="field-control">
+            <span class="field-label">API Key</span>
+            <input v-model="workbench.config.sub2apiApiKey" class="text-input" type="password" autocomplete="off" />
+            <small class="field-hint">用于 /v1/models 等 OpenAI 兼容接口，通常在 sub2api 后台的 API 密钥页面创建。</small>
           </label>
           <label class="field-control">
             <span class="field-label">登录地址</span>
             <input v-model="workbench.config.sub2apiLoginUrl" class="text-input" type="text" />
+            <small class="field-hint">填写邮箱和密码后，检测时会额外校验后台登录。</small>
           </label>
           <label class="field-control">
-            <span class="field-label">登录账号</span>
-            <input v-model="workbench.config.sub2apiUsername" class="text-input" type="text" autocomplete="username" />
+            <span class="field-label">登录邮箱</span>
+            <input v-model="workbench.config.sub2apiUsername" class="text-input" type="email" autocomplete="email" />
           </label>
           <label class="field-control">
             <span class="field-label">登录密码</span>
@@ -656,29 +432,17 @@ onMounted(() => {
       </aside>
     </div>
 
-    <div v-if="workbench.shutdownConfirmOpen" class="confirm-backdrop" @click.self="workbench.closeShutdownConfirm">
-      <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="shutdown-confirm-title">
-        <header class="confirm-header">
-          <span class="service-icon service-icon--danger">
-            <Power class="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div>
-            <h3 id="shutdown-confirm-title">确认关闭 Windows？</h3>
-            <p>确认后会向系统发送关机命令，当前电脑将在 10 秒后关机。</p>
-          </div>
-        </header>
-        <p class="confirm-warning">请先保存正在编辑的文件，并确认没有正在运行的重要任务。</p>
-        <footer class="confirm-footer">
-          <button class="secondary-button" type="button" :disabled="workbench.loading === 'system-shutdown'" @click="workbench.closeShutdownConfirm">
-            取消
-          </button>
-          <button class="danger-button" type="button" :disabled="workbench.loading === 'system-shutdown'" @click="workbench.confirmWindowsShutdown">
-            <Power class="h-4 w-4" aria-hidden="true" />
-            <span>{{ workbench.loading === 'system-shutdown' ? '发送中' : '确认关机' }}</span>
-          </button>
-        </footer>
-      </section>
-    </div>
+    <ConfirmDialog
+      v-if="workbench.pendingConfirm"
+      :title="workbench.pendingConfirm.title"
+      :message="workbench.pendingConfirm.message"
+      :warning="workbench.pendingConfirm.warning"
+      :confirm-text="workbench.pendingConfirm.confirmText"
+      :tone="workbench.pendingConfirm.tone"
+      :loading="workbench.loading === workbench.pendingConfirm.loadingKey"
+      @cancel="workbench.closeConfirm"
+      @confirm="workbench.confirmPendingAction"
+    />
 
     <Transition name="toast">
       <div v-if="workbench.toast" class="toast-message" :class="`toast-message--${workbench.toast.type}`" role="status">

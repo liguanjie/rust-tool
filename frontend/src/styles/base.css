@@ -51,6 +51,23 @@ button:disabled {
     @apply m-0 text-sm font-bold text-emerald-800;
   }
 
+  .breadcrumb-nav {
+    @apply flex flex-wrap items-center gap-1.5 text-sm font-semibold text-stone-500;
+  }
+
+  .breadcrumb-nav a,
+  .breadcrumb-nav button {
+    @apply text-emerald-800 transition hover:text-emerald-950;
+  }
+
+  .breadcrumb-nav button {
+    @apply border-0 bg-transparent p-0 text-sm font-semibold;
+  }
+
+  .breadcrumb-nav span:last-child {
+    @apply text-stone-700;
+  }
+
   .tool-header h2 {
     @apply mt-1.5 text-3xl font-bold leading-tight text-stone-950;
   }
@@ -272,13 +289,41 @@ button:disabled {
     @apply grid grid-cols-2 gap-4 max-[1100px]:grid-cols-1;
   }
 
+  .api-card-grid {
+    @apply grid max-w-[720px] gap-3;
+  }
+
+  .api-entry-card {
+    @apply flex min-h-[104px] w-full items-center gap-3 rounded-lg border border-stone-200 bg-white p-4 text-left transition hover:border-emerald-800 hover:bg-emerald-50/40;
+  }
+
+  .api-entry-copy {
+    @apply grid min-w-0 flex-1 gap-1;
+  }
+
+  .api-entry-copy strong {
+    @apply truncate text-base font-bold text-stone-950;
+  }
+
+  .api-entry-copy small,
+  .api-entry-meta small {
+    @apply text-sm text-stone-500;
+  }
+
+  .api-entry-meta {
+    @apply grid shrink-0 justify-items-end gap-2 max-[720px]:hidden;
+  }
+
+  .api-entry-arrow {
+    @apply shrink-0 text-stone-400;
+  }
+
   .desktop-only-message {
     @apply mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900;
   }
 
   .service-card,
   .clash-manager-panel,
-  .task-log-panel,
   .operation-log-panel {
     @apply rounded-lg border border-stone-200 bg-white p-4;
   }
@@ -288,9 +333,32 @@ button:disabled {
   }
 
   .service-card-header,
-  .task-log-panel header,
   .operation-log-panel header {
     @apply flex items-start justify-between gap-3;
+  }
+
+  .log-toolbar {
+    @apply mt-4 flex items-center gap-3 max-[720px]:flex-col max-[720px]:items-stretch;
+  }
+
+  .search-field {
+    @apply flex min-h-10 flex-1 items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 text-stone-500 focus-within:border-emerald-800 focus-within:ring-2 focus-within:ring-emerald-800/10;
+  }
+
+  .search-field input {
+    @apply min-w-0 flex-1 border-0 bg-transparent py-2 text-sm text-stone-950 outline-none placeholder:text-stone-400;
+  }
+
+  .log-count {
+    @apply shrink-0 rounded-full bg-stone-100 px-3 py-1.5 font-mono text-xs font-bold text-stone-500;
+  }
+
+  .pagination-bar {
+    @apply mt-4 flex items-center justify-end gap-2 max-[720px]:justify-between;
+  }
+
+  .pagination-summary {
+    @apply min-w-[88px] text-center font-mono text-xs font-bold text-stone-500;
   }
 
   .service-title {
@@ -298,7 +366,6 @@ button:disabled {
   }
 
   .service-title h3,
-  .task-log-panel h3,
   .operation-log-panel h3,
   .drawer-header h3 {
     @apply m-0 text-base font-bold text-stone-950;
@@ -370,7 +437,14 @@ button:disabled {
     @apply mt-3 mb-0 text-sm leading-5 text-stone-500;
   }
 
-  .task-log-panel,
+  .manager-status-note {
+    @apply mt-4 mb-0 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm leading-6 text-emerald-900;
+  }
+
+  .manager-status-note--warn {
+    @apply border-amber-200 bg-amber-50 text-amber-950;
+  }
+
   .operation-log-panel {
     @apply mt-4;
   }
@@ -399,28 +473,79 @@ button:disabled {
     @apply text-xs font-bold text-stone-500;
   }
 
+  .smart-select {
+    @apply relative;
+  }
+
+  .smart-select-trigger {
+    @apply flex min-h-12 w-full items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 py-2 text-left text-stone-900 transition hover:border-emerald-800;
+  }
+
+  .smart-select--open .smart-select-trigger {
+    @apply border-emerald-800 ring-2 ring-emerald-100;
+  }
+
+  .smart-select-value,
+  .smart-select-option-copy {
+    @apply grid min-w-0 flex-1 gap-0.5;
+  }
+
+  .smart-select-value strong,
+  .smart-select-option-copy strong {
+    @apply truncate text-sm font-semibold text-stone-950;
+  }
+
+  .smart-select-value small,
+  .smart-select-option-copy small {
+    @apply truncate text-xs text-stone-500;
+  }
+
+  .smart-select-badge {
+    @apply shrink-0 rounded-md bg-stone-100 px-2 py-1 text-xs font-bold text-stone-600;
+  }
+
+  .smart-select-chevron {
+    @apply shrink-0 text-stone-500;
+  }
+
+  .smart-select-menu {
+    @apply absolute z-30 mt-1.5 grid max-h-[320px] w-full overflow-hidden rounded-lg border border-stone-200 bg-white p-2 shadow-xl shadow-stone-950/10;
+  }
+
+  .smart-select-search {
+    @apply flex h-10 items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2.5 text-stone-500;
+  }
+
+  .smart-select-search input {
+    @apply min-w-0 flex-1 border-0 bg-transparent text-sm text-stone-900 outline-none;
+  }
+
+  .smart-select-options {
+    @apply mt-2 grid max-h-[250px] gap-1 overflow-auto pr-1;
+  }
+
+  .smart-select-option {
+    @apply flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-emerald-50;
+  }
+
+  .smart-select-option--selected {
+    @apply bg-emerald-50 text-emerald-950;
+  }
+
+  .smart-select-option--active .smart-select-option-copy strong {
+    @apply text-emerald-800;
+  }
+
+  .smart-select-check {
+    @apply shrink-0 text-emerald-800;
+  }
+
+  .smart-select-empty {
+    @apply m-0 px-2 py-5 text-center text-sm text-stone-500;
+  }
+
   .compact-facts {
     @apply mt-3;
-  }
-
-  .node-list {
-    @apply mt-3 grid max-h-[240px] gap-2 overflow-auto pr-1;
-  }
-
-  .node-chip {
-    @apply flex min-h-10 items-center justify-between gap-3 rounded-lg border border-stone-300 bg-white px-3 py-2 text-left text-sm text-stone-900 transition hover:border-emerald-800 hover:bg-emerald-50;
-  }
-
-  .node-chip span {
-    @apply min-w-0 truncate font-medium;
-  }
-
-  .node-chip small {
-    @apply shrink-0 text-xs text-stone-500;
-  }
-
-  .node-chip--active {
-    @apply border-emerald-800 bg-emerald-50 text-emerald-900;
   }
 
   .task-log-list {
@@ -480,11 +605,23 @@ button:disabled {
 
   .confirm-dialog {
     width: min(460px, 100%);
-    @apply rounded-lg border border-red-200 bg-white p-5 shadow-2xl;
+    @apply rounded-lg border border-stone-200 bg-white p-5 shadow-2xl;
+  }
+
+  .confirm-dialog--danger {
+    @apply border-red-200;
   }
 
   .confirm-header {
     @apply flex items-start gap-3;
+  }
+
+  .confirm-icon {
+    @apply grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-800;
+  }
+
+  .confirm-icon--danger {
+    @apply bg-red-50 text-red-700;
   }
 
   .confirm-header h3 {

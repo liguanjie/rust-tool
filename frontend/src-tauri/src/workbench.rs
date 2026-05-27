@@ -11,6 +11,7 @@ use tauri::{AppHandle, Manager};
 
 const SETTINGS_KEY: &str = "windows_workbench.config";
 const OPERATION_LOG_RETENTION_SECONDS: u64 = 7 * 24 * 60 * 60;
+const OPERATION_LOG_PAGE_SIZE: u32 = 50;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -26,6 +27,7 @@ pub struct WorkbenchConfig {
     pub sub2api_upgrade_script: String,
     pub sub2api_working_dir: String,
     pub sub2api_health_url: String,
+    pub sub2api_api_key: String,
     pub sub2api_login_url: String,
     pub sub2api_username: String,
     pub sub2api_password: String,
@@ -202,6 +204,16 @@ pub struct OperationLog {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationLogPage {
+    pub logs: Vec<OperationLog>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
+    pub total_pages: u32,
+}
+
 pub fn get_config(app: &AppHandle) -> Result<WorkbenchConfig, String> {
     let conn = open_db(app)?;
     ensure_schema(&conn)?;
@@ -301,12 +313,10 @@ pub fn select_workbench_file(kind: WorkbenchPathKind) -> Result<Option<String>, 
 }
 
 pub fn select_workbench_directory() -> Result<Option<String>, String> {
-    let script = "Add-Type -AssemblyName System.Windows.Forms; \
-         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; \
-         $dialog.Description = '选择工作目录'; \
-         $dialog.ShowNewFolderButton = $false; \
-         if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { \
-           [Console]::Out.Write($dialog.SelectedPath) \
+    let script = "$shell = New-Object -ComObject Shell.Application; \
+         $folder = $shell.BrowseForFolder(0, '选择工作目录', 0x00000040); \
+         if ($null -ne $folder) { \
+           [Console]::Out.Write($folder.Self.Path) \
          }";
 
     run_selection_dialog(script)
@@ -525,20 +535,38 @@ pub fn get_clash_party_status(app: &AppHandle) -> Result<ClashPartyStatus, Strin
 pub fn start_clash_party(app: &AppHandle) -> Result<TaskRun, String> {
     let config = get_config(app)?;
     validate_required_executable(&config.clash_party_path, "Clash Party 路径")?;
-    spawn_process(
+    match spawn_process(
         app,
         "clash_party.start",
         &config.clash_party_path,
         &[],
         None,
         false,
-    )
+    ) {
+        Ok(run) => Ok(run),
+        Err(error) if error.contains("os error 740") || error.contains("请求的操作需要提升") => {
+            run_process_elevated(app, "clash_party.start", &config.clash_party_path)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub fn stop_clash_party(app: &AppHandle) -> Result<TaskRun, String> {
+    let config = get_config(app)?;
+    let configured_path = config.clash_party_path.trim();
+    let stop_by_path = if configured_path.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "Get-Process | Where-Object {{ $_.Path -eq {} }} | Stop-Process -Force -ErrorAction SilentlyContinue\n",
+            powershell_single_quoted(configured_path)
+        )
+    };
     let script = format!(
-        "{}\nWrite-Output 'Clash Party exit command sent.'",
-        clash_party_stop_commands()
+        "{}{}\nfor ($i = 0; $i -lt 12; $i++) {{\n  Start-Sleep -Milliseconds 500\n  $running = @({})\n  if ($running.Count -eq 0) {{ Write-Output 'Clash Party exited.'; exit 0 }}\n  $running | Stop-Process -Force -ErrorAction SilentlyContinue\n}}\nWrite-Error 'Clash Party is still running after exit command.'\nexit 1",
+        stop_by_path,
+        clash_party_stop_commands(),
+        clash_party_running_powershell_expression()
     );
     let args = [
         "-NoProfile",
@@ -551,6 +579,7 @@ pub fn stop_clash_party(app: &AppHandle) -> Result<TaskRun, String> {
 }
 
 pub fn get_clash_party_manager_state(app: &AppHandle) -> Result<ClashPartyManagerState, String> {
+    let mut runtime_error = String::new();
     let result: Result<ClashPartyManagerState, String> = (|| {
         let config = get_config(app)?;
         let data_dir = resolve_clash_party_data_dir(&config)?;
@@ -571,14 +600,17 @@ pub fn get_clash_party_manager_state(app: &AppHandle) -> Result<ClashPartyManage
                 };
                 (groups, true, message)
             }
-            Err(error) => (
-                Vec::new(),
-                false,
-                format!(
-                    "已读取 {} 个订阅；运行时 API 未连接: {error}",
-                    subscriptions.len()
-                ),
-            ),
+            Err(error) => {
+                runtime_error = error;
+                (
+                    Vec::new(),
+                    false,
+                    format!(
+                        "已读取 {} 个订阅；Mihomo API 未连接，请确认 Clash Party 正在运行，并且 API 地址/端口已开放。",
+                        subscriptions.len()
+                    ),
+                )
+            }
         };
 
         Ok(ClashPartyManagerState {
@@ -604,12 +636,7 @@ pub fn get_clash_party_manager_state(app: &AppHandle) -> Result<ClashPartyManage
                 "warn"
             },
             &state.message,
-            &format!(
-                "subscriptions={}, groups={}, active_subscription={}",
-                state.subscriptions.len(),
-                state.groups.len(),
-                state.active_subscription_id
-            ),
+            &clash_party_manager_log_detail(state, &runtime_error),
         ),
         Err(error) => log_operation(
             app,
@@ -622,6 +649,25 @@ pub fn get_clash_party_manager_state(app: &AppHandle) -> Result<ClashPartyManage
     }
 
     result
+}
+
+fn clash_party_manager_log_detail(state: &ClashPartyManagerState, runtime_error: &str) -> String {
+    if runtime_error.is_empty() {
+        format!(
+            "subscriptions={}, groups={}, active_subscription={}",
+            state.subscriptions.len(),
+            state.groups.len(),
+            state.active_subscription_id
+        )
+    } else {
+        format!(
+            "subscriptions={}, groups={}, active_subscription={}, runtime_error={}",
+            state.subscriptions.len(),
+            state.groups.len(),
+            state.active_subscription_id,
+            runtime_error
+        )
+    }
 }
 
 pub fn switch_clash_party_subscription(
@@ -766,36 +812,29 @@ pub fn check_sub2api_health(app: &AppHandle) -> Result<HealthStatus, String> {
     let result: Result<HealthStatus, String> = (|| {
         let config = get_config(app)?;
         let url = config.sub2api_health_url.trim();
+
+        let mut ok = true;
+        let mut messages = Vec::new();
+
         if url.is_empty() {
-            return Ok(HealthStatus {
-                ok: false,
-                message: "未配置健康检查地址".to_string(),
-            });
+            ok = false;
+            messages.push("API 接口未检查: 未配置健康检查地址".to_string());
+        } else {
+            let api_result = check_sub2api_api_health(url, config.sub2api_api_key.trim())?;
+            ok &= api_result.ok;
+            messages.push(api_result.message);
         }
 
-        let token = resolve_sub2api_token(&config)?;
-        let script = build_sub2api_health_script(url, token.as_deref());
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|error| format!("健康检查失败: {error}"))?;
+        if sub2api_login_should_check(&config) {
+            let login_result = check_sub2api_login(&config)?;
+            ok &= login_result.ok;
+            messages.push(login_result.message);
+        }
 
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let ok = output.status.success() && stdout.starts_with('2');
-        let message = if ok {
-            format!("健康检查通过: HTTP {stdout}")
-        } else if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            "健康检查未通过".to_string()
-        };
-
-        Ok(HealthStatus { ok, message })
+        Ok(HealthStatus {
+            ok,
+            message: messages.join("；"),
+        })
     })();
 
     match &result {
@@ -820,38 +859,85 @@ pub fn check_sub2api_health(app: &AppHandle) -> Result<HealthStatus, String> {
     result
 }
 
-fn resolve_sub2api_token(config: &WorkbenchConfig) -> Result<Option<String>, String> {
-    let username = config.sub2api_username.trim();
-    let password = config.sub2api_password.trim();
-    if username.is_empty() && password.is_empty() {
-        return Ok(None);
-    }
-    if username.is_empty() || password.is_empty() {
-        return Err("sub2api 账号和密码需要同时填写".to_string());
+struct Sub2apiCheckResult {
+    ok: bool,
+    message: String,
+}
+
+fn check_sub2api_api_health(url: &str, api_key: &str) -> Result<Sub2apiCheckResult, String> {
+    if sub2api_health_requires_api_key(url) && api_key.is_empty() {
+        return Ok(Sub2apiCheckResult {
+            ok: false,
+            message: "API 接口未检查: /v1 接口需要填写 sub2api API Key".to_string(),
+        });
     }
 
+    let script = build_sub2api_health_script(url, (!api_key.is_empty()).then_some(api_key));
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("健康检查失败: {error}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let ok = output.status.success() && stdout.starts_with('2');
+    let detail = if ok {
+        format!("HTTP {stdout}")
+    } else if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        "未返回状态".to_string()
+    };
+
+    Ok(Sub2apiCheckResult {
+        ok,
+        message: if ok {
+            format!("API 接口通过: {detail}")
+        } else {
+            format!("API 接口失败: {detail}")
+        },
+    })
+}
+
+fn sub2api_login_should_check(config: &WorkbenchConfig) -> bool {
+    !config.sub2api_username.trim().is_empty() || !config.sub2api_password.trim().is_empty()
+}
+
+fn check_sub2api_login(config: &WorkbenchConfig) -> Result<Sub2apiCheckResult, String> {
     let login_url = config.sub2api_login_url.trim();
-    if login_url.is_empty() {
-        return Err("已填写账号密码，但未配置 sub2api 登录地址".to_string());
+    let email = config.sub2api_username.trim();
+    let password = config.sub2api_password.trim();
+
+    if login_url.is_empty() || email.is_empty() || password.is_empty() {
+        return Ok(Sub2apiCheckResult {
+            ok: false,
+            message: "后台登录未检查: 登录地址、邮箱和密码需要同时填写".to_string(),
+        });
     }
 
     let body = serde_json::json!({
-        "username": username,
+        "email": email,
         "password": password,
     })
     .to_string();
     let script = format!(
         "$ErrorActionPreference = 'Stop'; \
-         $body = '{}'; \
-         $response = Invoke-RestMethod -Method Post -UseBasicParsing -Uri '{}' -ContentType 'application/json' -Body $body -TimeoutSec 8; \
-         $token = $response.token; \
-         if (-not $token) {{ $token = $response.access_token }}; \
-         if (-not $token) {{ $token = $response.accessToken }}; \
-         if (-not $token -and $response.data) {{ $token = $response.data.token }}; \
-         if (-not $token -and $response.data) {{ $token = $response.data.access_token }}; \
-         if (-not $token -and $response.data) {{ $token = $response.data.accessToken }}; \
-         if (-not $token) {{ throw '登录成功但响应中没有 token' }}; \
-         [Console]::Out.Write($token)",
+         try {{ \
+           $body = '{}'; \
+           $response = Invoke-WebRequest -Method Post -UseBasicParsing -Uri '{}' -ContentType 'application/json' -Body $body -TimeoutSec 8; \
+           [Console]::Out.Write($response.StatusCode) \
+         }} catch {{ \
+           if ($_.Exception.Response) {{ \
+             [Console]::Error.Write(('HTTP ' + [int]$_.Exception.Response.StatusCode + ': ' + $_.Exception.Message)) \
+           }} else {{ \
+             [Console]::Error.Write($_.Exception.Message) \
+           }}; \
+           exit 1 \
+         }}",
         escape_powershell_single_quoted(&body),
         escape_powershell_single_quoted(login_url),
     );
@@ -861,21 +947,29 @@ fn resolve_sub2api_token(config: &WorkbenchConfig) -> Result<Option<String>, Str
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|error| format!("sub2api 登录失败: {error}"))?;
+        .map_err(|error| format!("后台登录检查失败: {error}"))?;
+
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !output.status.success() {
-        return Err(if stderr.is_empty() {
-            "sub2api 登录失败".to_string()
-        } else {
-            format!("sub2api 登录失败: {stderr}")
-        });
-    }
-    if stdout.is_empty() {
-        return Err("sub2api 登录未返回 token".to_string());
-    }
+    let ok = output.status.success() && stdout.starts_with('2');
+    let detail = if ok {
+        format!("HTTP {stdout}")
+    } else if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        "未返回状态".to_string()
+    };
 
-    Ok(Some(stdout))
+    Ok(Sub2apiCheckResult {
+        ok,
+        message: if ok {
+            format!("后台登录通过: {detail}")
+        } else {
+            format!("后台登录失败: {detail}")
+        },
+    })
 }
 
 fn build_sub2api_health_script(url: &str, token: Option<&str>) -> String {
@@ -893,6 +987,11 @@ fn build_sub2api_health_script(url: &str, token: Option<&str>) -> String {
             escape_powershell_single_quoted(url),
         ),
     }
+}
+
+fn sub2api_health_requires_api_key(url: &str) -> bool {
+    let normalized = url.trim().to_ascii_lowercase();
+    normalized.contains("/v1/") || normalized.ends_with("/v1")
 }
 
 pub fn list_task_runs(app: &AppHandle, limit: Option<u32>) -> Result<Vec<TaskRun>, String> {
@@ -928,36 +1027,108 @@ pub fn list_task_runs(app: &AppHandle, limit: Option<u32>) -> Result<Vec<TaskRun
 
 pub fn list_operation_logs(
     app: &AppHandle,
-    limit: Option<u32>,
-) -> Result<Vec<OperationLog>, String> {
+    page: Option<u32>,
+    query: Option<String>,
+) -> Result<OperationLogPage, String> {
     let conn = open_db(app)?;
     ensure_schema(&conn)?;
     purge_old_operation_logs(&conn)?;
-    let limit = limit.unwrap_or(80).min(300);
-    let mut statement = conn
-        .prepare(
-            "SELECT id, module, action, status, message, detail, created_at
-             FROM operation_logs
-             ORDER BY id DESC
-             LIMIT ?1",
-        )
-        .map_err(|error| format!("读取操作日志失败: {error}"))?;
-    let rows = statement
-        .query_map(params![limit], |row| {
-            Ok(OperationLog {
-                id: row.get(0)?,
-                module: row.get(1)?,
-                action: row.get(2)?,
-                status: row.get(3)?,
-                message: row.get(4)?,
-                detail: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })
-        .map_err(|error| format!("读取操作日志失败: {error}"))?;
+    let requested_page = page.unwrap_or(1).max(1);
+    let query = query.unwrap_or_default();
+    let keyword = query.trim();
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("读取操作日志失败: {error}"))
+    let total: u64 = if keyword.is_empty() {
+        conn.query_row("SELECT COUNT(*) FROM operation_logs", [], |row| row.get::<_, u64>(0))
+            .map_err(|error| format!("统计操作日志失败: {error}"))?
+    } else {
+        let pattern = format!("%{}%", keyword);
+        conn.query_row(
+            "SELECT COUNT(*)
+             FROM operation_logs
+             WHERE module LIKE ?1 OR action LIKE ?1 OR status LIKE ?1 OR message LIKE ?1 OR detail LIKE ?1 OR created_at LIKE ?1",
+            params![pattern],
+            |row| row.get::<_, u64>(0),
+        )
+        .map_err(|error| format!("统计操作日志失败: {error}"))?
+    };
+
+    let total_pages = if total == 0 {
+        1
+    } else {
+        ((total + u64::from(OPERATION_LOG_PAGE_SIZE) - 1) / u64::from(OPERATION_LOG_PAGE_SIZE))
+            .min(u64::from(u32::MAX)) as u32
+    };
+    let page = requested_page.min(total_pages).max(1);
+    let offset = (page - 1) * OPERATION_LOG_PAGE_SIZE;
+
+    let logs = if keyword.is_empty() {
+        let mut statement = conn
+            .prepare(
+                "SELECT id, module, action, status, message, detail, created_at
+                 FROM operation_logs
+                 ORDER BY id DESC
+                 LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|error| format!("读取操作日志失败: {error}"))?;
+        let rows = statement
+            .query_map(params![OPERATION_LOG_PAGE_SIZE, offset], operation_log_from_row)
+            .map_err(|error| format!("读取操作日志失败: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("读取操作日志失败: {error}"))?
+    } else {
+        let pattern = format!("%{}%", keyword);
+        let mut statement = conn
+            .prepare(
+                "SELECT id, module, action, status, message, detail, created_at
+                 FROM operation_logs
+                 WHERE module LIKE ?1 OR action LIKE ?1 OR status LIKE ?1 OR message LIKE ?1 OR detail LIKE ?1 OR created_at LIKE ?1
+                 ORDER BY id DESC
+                 LIMIT ?2 OFFSET ?3",
+            )
+            .map_err(|error| format!("读取操作日志失败: {error}"))?;
+        let rows = statement
+            .query_map(params![pattern, OPERATION_LOG_PAGE_SIZE, offset], operation_log_from_row)
+            .map_err(|error| format!("读取操作日志失败: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("读取操作日志失败: {error}"))?
+    };
+
+    Ok(OperationLogPage {
+        logs,
+        page,
+        page_size: OPERATION_LOG_PAGE_SIZE,
+        total,
+        total_pages,
+    })
+}
+
+fn operation_log_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationLog> {
+    Ok(OperationLog {
+        id: row.get(0)?,
+        module: row.get(1)?,
+        action: row.get(2)?,
+        status: row.get(3)?,
+        message: row.get(4)?,
+        detail: row.get(5)?,
+        created_at: row.get(6)?,
+    })
+}
+
+pub fn clear_operation_logs(app: &AppHandle) -> Result<u64, String> {
+    let conn = open_db(app)?;
+    ensure_schema(&conn)?;
+    let deleted = conn
+        .execute("DELETE FROM operation_logs", [])
+        .map_err(|error| format!("清理操作日志失败: {error}"))?;
+    log_operation(
+        app,
+        "工作台",
+        "清理日志",
+        "success",
+        "操作日志已清理",
+        &format!("deleted={deleted}"),
+    );
+    Ok(deleted as u64)
 }
 
 pub fn record_operation(
@@ -1176,6 +1347,21 @@ fn spawn_process(
             Err(stderr)
         }
     }
+}
+
+fn run_process_elevated(app: &AppHandle, task_key: &str, program: &str) -> Result<TaskRun, String> {
+    let script = format!(
+        "Start-Process -FilePath {} -Verb RunAs; Write-Output 'UAC elevation request sent.'",
+        powershell_single_quoted(program)
+    );
+    let args = [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script.as_str(),
+    ];
+    run_process(app, task_key, "powershell", &args, None, false)
 }
 
 fn operation_module_for_task(task_key: &str) -> &'static str {
@@ -1815,7 +2001,7 @@ fn detect_clash_party_data_dir() -> Option<String> {
 }
 
 fn default_clash_party_api_url() -> String {
-    "http://127.0.0.1:9090".to_string()
+    "http://127.0.0.1:9998".to_string()
 }
 
 fn find_executable_in_path(name: &str) -> Option<String> {
@@ -1869,8 +2055,13 @@ fn clash_party_stop_commands() -> String {
         "Stop-Process -Name 'clash-party' -Force -ErrorAction SilentlyContinue",
         "Stop-Process -Name 'Mihomo Party' -Force -ErrorAction SilentlyContinue",
         "Stop-Process -Name 'mihomo-party' -Force -ErrorAction SilentlyContinue",
+        "Stop-Process -Name 'mihomo' -Force -ErrorAction SilentlyContinue",
     ]
     .join("\n")
+}
+
+fn clash_party_running_powershell_expression() -> &'static str {
+    "Get-Process -ErrorAction SilentlyContinue | Where-Object { @('Clash Party','clash-party','Mihomo Party','mihomo-party','mihomo') -contains $_.ProcessName }"
 }
 
 fn powershell_single_quoted(value: &str) -> String {
