@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import type { RouteLocationRaw } from 'vue-router'
 
 defineProps<{
   title: string
@@ -7,7 +8,7 @@ defineProps<{
   eyebrow?: string
   breadcrumbs?: Array<{
     label: string
-    to?: string
+    to?: RouteLocationRaw
     onClick?: () => void
   }>
 }>()

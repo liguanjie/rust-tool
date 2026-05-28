@@ -11,6 +11,20 @@ const copiedKey = ref('')
 
 const selectedModule = computed(() => findApiDocModule(route.query.module))
 
+const breadcrumbs = computed(() => {
+  if (selectedModule.value.id === 'clash-party') {
+    return [
+      { label: 'API 管理', to: { name: 'api-management' } },
+      { label: 'Clash Party / Mihomo', to: { name: 'api-management', query: { api: 'clash-party' } } },
+      { label: '接口文档' },
+    ]
+  }
+  return [
+    { label: 'API 管理', to: { name: 'api-management' } },
+    { label: '接口文档' },
+  ]
+})
+
 // 过滤与搜索状态
 const searchQuery = ref('')
 const methodFilter = ref<'ALL' | 'GET' | 'POST' | 'PUT' | 'DELETE'>('ALL')
@@ -205,7 +219,12 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
 </script>
 
 <template>
-  <ToolShell title="接口文档" description="查看 RustTool 对外提供的 REST API，包含请求参数、响应示例和调用示例。" eyebrow="工作台">
+  <ToolShell
+    title="接口文档"
+    description="查看 RustTool 对外提供的 REST API，包含请求参数、响应示例和调用示例。"
+    eyebrow="工作台"
+    :breadcrumbs="breadcrumbs"
+  >
     <section class="api-doc-layout">
       <!-- 左侧模块导航 -->
       <aside class="api-doc-nav">
