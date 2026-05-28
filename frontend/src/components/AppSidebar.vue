@@ -1,11 +1,52 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Sun, Moon } from '@lucide/vue'
+import { Sun, Moon, Monitor, Check, ChevronUp, ChevronDown } from '@lucide/vue'
 import { useToolsStore } from '../stores/tools'
 import { useThemeStore } from '../stores/theme'
 
 const toolsStore = useToolsStore()
 const themeStore = useThemeStore()
+
+const isMenuOpen = ref(false)
+const popoverContainerRef = ref<HTMLElement | null>(null)
+
+// Computed label and icon based on current mode
+const activeThemeLabel = computed(() => {
+  if (themeStore.themeMode === 'system') return '跟随系统'
+  if (themeStore.themeMode === 'light') return '经典浅色'
+  return '极客暗黑'
+})
+
+const activeThemeIcon = computed(() => {
+  if (themeStore.themeMode === 'system') return Monitor
+  if (themeStore.themeMode === 'light') return Sun
+  return Moon
+})
+
+function selectTheme(mode: 'system' | 'light' | 'dark') {
+  themeStore.setThemeMode(mode)
+  isMenuOpen.value = false
+}
+
+// Close the menu when clicking outside of it
+function handleOutsideClick(event: MouseEvent) {
+  if (
+    isMenuOpen.value &&
+    popoverContainerRef.value &&
+    !popoverContainerRef.value.contains(event.target as Node)
+  ) {
+    isMenuOpen.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('click', handleOutsideClick)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('click', handleOutsideClick)
+})
 </script>
 
 <template>
@@ -39,28 +80,56 @@ const themeStore = useThemeStore()
       </section>
     </nav>
 
-    <!-- Theme Switcher Segmented Capsule at bottom -->
-    <div class="theme-switcher-container">
+    <!-- Theme Switcher Popover (Gemini-style) at bottom -->
+    <div ref="popoverContainerRef" class="theme-popover-container">
       <button 
-        @click="themeStore.setTheme(false)" 
-        class="theme-segment"
-        :class="{ 'active': !themeStore.isDark }"
+        @click="isMenuOpen = !isMenuOpen" 
+        class="theme-trigger-btn"
+        :class="{ 'theme-trigger-btn--active': isMenuOpen }"
         type="button"
-        title="经典浅色"
+        title="设置主题"
       >
-        <Sun class="h-3.5 w-3.5" aria-hidden="true" />
-        <span>经典浅色</span>
+        <component :is="activeThemeIcon" class="h-4 w-4" aria-hidden="true" />
+        <span>{{ activeThemeLabel }}</span>
+        <component :is="isMenuOpen ? ChevronDown : ChevronUp" class="h-3 w-3 ml-auto text-gray-400" aria-hidden="true" />
       </button>
-      <button 
-        @click="themeStore.setTheme(true)" 
-        class="theme-segment"
-        :class="{ 'active': themeStore.isDark }"
-        type="button"
-        title="极客暗黑"
-      >
-        <Moon class="h-3.5 w-3.5" aria-hidden="true" />
-        <span>极客暗黑</span>
-      </button>
+
+      <Transition name="slide-fade">
+        <div v-if="isMenuOpen" class="theme-popover-menu">
+          <button 
+            @click="selectTheme('system')" 
+            class="theme-popover-item"
+            :class="{ 'active': themeStore.themeMode === 'system' }"
+            type="button"
+          >
+            <Monitor class="h-3.5 w-3.5" aria-hidden="true" />
+            <span>跟随系统</span>
+            <Check v-if="themeStore.themeMode === 'system'" class="h-3.5 w-3.5 ml-auto theme-check-icon" aria-hidden="true" />
+          </button>
+          
+          <button 
+            @click="selectTheme('light')" 
+            class="theme-popover-item"
+            :class="{ 'active': themeStore.themeMode === 'light' }"
+            type="button"
+          >
+            <Sun class="h-3.5 w-3.5" aria-hidden="true" />
+            <span>经典浅色</span>
+            <Check v-if="themeStore.themeMode === 'light'" class="h-3.5 w-3.5 ml-auto theme-check-icon" aria-hidden="true" />
+          </button>
+          
+          <button 
+            @click="selectTheme('dark')" 
+            class="theme-popover-item"
+            :class="{ 'active': themeStore.themeMode === 'dark' }"
+            type="button"
+          >
+            <Moon class="h-3.5 w-3.5" aria-hidden="true" />
+            <span>极客暗黑</span>
+            <Check v-if="themeStore.themeMode === 'dark'" class="h-3.5 w-3.5 ml-auto theme-check-icon" aria-hidden="true" />
+          </button>
+        </div>
+      </Transition>
     </div>
   </aside>
 </template>

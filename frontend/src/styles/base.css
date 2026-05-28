@@ -78,14 +78,16 @@
   --confirm-bg: #ffffff;
   --confirm-border: #e7e5e4;
 
-  --bg-theme-switcher: #e7e5e4;
-  --border-theme-switcher: transparent;
-  --text-theme-segment-inactive: #78716c;
-  --text-theme-segment-hover: #44403c;
-  --bg-theme-segment-active: #ffffff;
-  --border-theme-segment-active: transparent;
-  --text-theme-segment-active: #065f46;
-  --shadow-theme-segment-active: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --bg-theme-trigger: #ffffff;
+  --border-theme-trigger: #e7e5e4;
+  --text-theme-trigger: #44403c;
+  --bg-theme-popover: #ffffff;
+  --border-theme-popover: #e7e5e4;
+  --text-theme-popover-item: #44403c;
+  --bg-theme-popover-item-hover: #f5f5f4;
+  --text-theme-popover-item-active: #065f46;
+  --check-theme-popover-item: #065f46;
+  --shadow-theme-popover: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
 }
 
 .dark {
@@ -161,14 +163,16 @@
   --confirm-bg: rgba(15, 23, 42, 0.95);
   --confirm-border: rgba(255, 255, 255, 0.08);
 
-  --bg-theme-switcher: rgba(0, 0, 0, 0.2);
-  --border-theme-switcher: rgba(255, 255, 255, 0.04);
-  --text-theme-segment-inactive: #6b7280;
-  --text-theme-segment-hover: #9ca3af;
-  --bg-theme-segment-active: rgba(255, 255, 255, 0.05);
-  --border-theme-segment-active: rgba(255, 255, 255, 0.08);
-  --text-theme-segment-active: #34d399;
-  --shadow-theme-segment-active: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --bg-theme-trigger: rgba(255, 255, 255, 0.02);
+  --border-theme-trigger: rgba(255, 255, 255, 0.05);
+  --text-theme-trigger: #cbd5e1;
+  --bg-theme-popover: rgba(15, 23, 42, 0.95);
+  --border-theme-popover: rgba(255, 255, 255, 0.08);
+  --text-theme-popover-item: #9ca3af;
+  --bg-theme-popover-item-hover: rgba(255, 255, 255, 0.04);
+  --text-theme-popover-item-active: #34d399;
+  --check-theme-popover-item: #34d399;
+  --shadow-theme-popover: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -250,43 +254,58 @@ button:disabled {
     color: var(--icon-sidebar-active) !important;
   }
 
-  .theme-switcher-container {
-    background: var(--bg-theme-switcher);
-    border: 1px solid var(--border-theme-switcher);
-    border-radius: 10px;
-    padding: 3px;
-    display: flex;
-    gap: 2px;
+  /* Gemini-style Theme Switcher Popover */
+  .theme-popover-container {
+    position: relative;
     margin-top: auto;
     width: 100%;
-    transition: all 0.3s;
   }
 
-  .theme-segment {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    border-radius: 7px;
+  .theme-trigger-btn {
+    background: var(--bg-theme-trigger);
+    border: 1px solid var(--border-theme-trigger);
+    color: var(--text-theme-trigger);
+    @apply flex min-h-[38px] w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-bold transition-all duration-200;
+  }
+
+  .theme-trigger-btn:hover,
+  .theme-trigger-btn--active {
+    border-color: var(--hover-border-btn-sec);
+    background: var(--hover-bg-btn-sec);
+    color: var(--hover-text-btn-sec);
+  }
+
+  .theme-popover-menu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    width: 100%;
+    background: var(--bg-theme-popover);
+    border: 1px solid var(--border-theme-popover);
+    box-shadow: var(--shadow-theme-popover);
+    backdrop-filter: blur(12px);
+    z-index: 50;
+    @apply grid gap-0.5 rounded-xl p-1.5 transition-all duration-300;
+  }
+
+  .theme-popover-item {
+    color: var(--text-theme-popover-item);
     border: 0;
     background: transparent;
-    padding: 7px 0;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-theme-segment-inactive);
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    @apply flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-xs font-semibold transition-all duration-150;
   }
 
-  .theme-segment:hover {
-    color: var(--text-theme-segment-hover);
+  .theme-popover-item:hover {
+    background: var(--bg-theme-popover-item-hover);
+    color: var(--text-base);
   }
 
-  .theme-segment.active {
-    background: var(--bg-theme-segment-active);
-    border: 1px solid var(--border-theme-segment-active);
-    color: var(--text-theme-segment-active);
-    box-shadow: var(--shadow-theme-segment-active);
+  .theme-popover-item.active {
+    color: var(--text-theme-popover-item-active);
+  }
+
+  .theme-check-icon {
+    color: var(--check-theme-popover-item);
   }
 
   /* Global layouts and elements */
