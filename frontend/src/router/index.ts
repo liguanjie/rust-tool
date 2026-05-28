@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import VlessToMihomo from '../pages/VlessToMihomo.vue'
 import WindowsWorkbench from '../pages/WindowsWorkbench.vue'
 import ApiManagement from '../pages/ApiManagement.vue'
+import ApiDocs from '../pages/ApiDocs.vue'
 import OperationLogs from '../pages/OperationLogs.vue'
 import Toolbox from '../pages/Toolbox.vue'
 
@@ -35,6 +36,11 @@ export const router = createRouter({
       path: '/tools/api-management',
       name: 'api-management',
       component: ApiManagement,
+    },
+    {
+      path: '/tools/api-docs',
+      name: 'api-docs',
+      component: ApiDocs,
     },
     {
       path: '/tools/operation-logs',

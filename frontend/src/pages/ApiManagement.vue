@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  BookOpen,
   CheckCircle2,
   ChevronRight,
   Cog,
@@ -8,14 +9,17 @@ import {
   X,
   XCircle,
 } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import SmartSelect, { type SmartSelectItem } from '../components/SmartSelect.vue'
 import ToolShell from '../components/ToolShell.vue'
 import { useWindowsWorkbenchStore } from '../stores/windowsWorkbench'
 
 const workbench = useWindowsWorkbenchStore()
-const selectedApi = ref<'clashParty' | ''>('')
+const route = useRoute()
+const router = useRouter()
+const selectedApi = computed<'clashParty' | ''>(() => (route.query.api === 'clash-party' ? 'clashParty' : ''))
 
 const activeSubscription = computed(() =>
   workbench.clashPartyManager?.subscriptions.find((item) => item.active),
@@ -88,11 +92,23 @@ const breadcrumbs = computed(() =>
 )
 
 function openApiDetail(api: 'clashParty') {
-  selectedApi.value = api
+  void router.push({
+    name: 'api-management',
+    query: {
+      ...route.query,
+      api: api === 'clashParty' ? 'clash-party' : undefined,
+    },
+  })
 }
 
 function closeApiDetail() {
-  selectedApi.value = ''
+  void router.push({
+    name: 'api-management',
+    query: {
+      ...route.query,
+      api: undefined,
+    },
+  })
 }
 
 
@@ -161,6 +177,10 @@ onMounted(() => {
         </div>
         <div class="service-actions">
           <span class="status-pill" :class="`status-pill--${clashPartyApiState.tone}`">{{ clashPartyApiState.label }}</span>
+          <RouterLink class="icon-button" :to="{ name: 'api-docs', query: { module: 'clash-party' } }">
+            <BookOpen class="h-4 w-4" aria-hidden="true" />
+            <span>接口文档</span>
+          </RouterLink>
           <button
             class="icon-only-button"
             type="button"

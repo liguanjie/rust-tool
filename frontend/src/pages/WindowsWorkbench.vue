@@ -25,7 +25,7 @@ const dockerState = computed(() => {
   if (!workbench.dockerConfigured) return { label: '未配置', tone: 'muted' }
   if (workbench.autoChecking && !workbench.dockerStatus) return { label: '检测中', tone: 'muted' }
   if (workbench.dockerStatus?.engineRunning) return { label: '运行中', tone: 'good' }
-  if (workbench.dockerStatus?.desktopRunning) return { label: '启动中', tone: 'warn' }
+  if (workbench.dockerStatus?.desktopRunning) return { label: '未就绪', tone: 'warn' }
   if (workbench.dockerStatus) return { label: '需检查', tone: 'warn' }
   return { label: '待检测', tone: 'muted' }
 })
@@ -40,7 +40,7 @@ const dockerLaunchDisabled = computed(
 const dockerLaunchLabel = computed(() => {
   if (workbench.loading === 'docker-start') return '启动中'
   if (workbench.dockerStatus?.engineRunning) return '已运行'
-  if (workbench.dockerStatus?.desktopRunning) return '启动中'
+  if (workbench.dockerStatus?.desktopRunning) return '已打开'
   return '启动 Docker'
 })
 

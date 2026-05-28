@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { Cable, MonitorCog, GitBranch, ScrollText } from '@lucide/vue'
+import { BookOpen, Cable, GitBranch, MonitorCog, ScrollText } from '@lucide/vue'
 
 export interface ToolItem {
   id: string
@@ -34,6 +34,13 @@ export const useToolsStore = defineStore('tools', () => {
           path: '/tools/api-management',
           description: '管理 Clash Party 订阅与节点',
           icon: GitBranch,
+        },
+        {
+          id: 'api-docs',
+          name: '接口文档',
+          path: '/tools/api-docs',
+          description: '查看 RustTool REST API',
+          icon: BookOpen,
         },
         {
           id: 'operation-logs',

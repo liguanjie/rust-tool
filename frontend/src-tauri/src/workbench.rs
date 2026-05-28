@@ -261,7 +261,7 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
                 cli_available: false,
                 engine_running: false,
                 version: String::new(),
-                message: "未配置 docker CLI 路径".to_string(),
+                message: "还没有配置 docker CLI。请点齿轮打开 Docker 配置，选择 Docker 安装目录里的 resources\\bin\\docker.exe。".to_string(),
             });
         }
 
@@ -278,13 +278,11 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
 
         if !cli_available {
             let message = if stderr.is_empty() {
-                "docker CLI 无法执行，请确认配置的是 docker.exe，而不是 Docker Desktop.exe。"
+                "docker CLI 路径可能选错了。请在 Docker 配置里选择 resources\\bin\\docker.exe，不要选择 Docker Desktop.exe。"
                     .to_string()
             } else {
-                format!(
-                    "docker CLI 无法执行，请确认 docker.exe 路径是否正确。{}",
-                    friendly_detail_suffix(&stderr)
-                )
+                "docker CLI 暂时无法执行。请重新选择 Docker 安装目录里的 resources\\bin\\docker.exe，然后再检测。"
+                    .to_string()
             };
             return Ok(DockerStatus {
                 desktop_configured,
@@ -318,9 +316,9 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
         };
         let message = if engine_running {
             if engine_stdout.is_empty() {
-                "Docker Engine 运行中".to_string()
+                "Docker 已就绪，可以使用依赖 Docker 的工具。".to_string()
             } else {
-                format!("Docker Engine 运行中: {engine_stdout}")
+                format!("Docker 已就绪，Engine 版本 {engine_stdout}。")
             }
         } else {
             let detail = if !engine_stderr.is_empty() {
@@ -1903,29 +1901,29 @@ fn limit_text(value: &str, limit: usize) -> String {
 
 fn friendly_docker_engine_message(desktop_running: bool, detail: &str) -> String {
     let normalized = detail.to_ascii_lowercase();
-    let hint = if normalized.contains("dockerdesktoplinuxengine")
+    if normalized.contains("dockerdesktoplinuxengine")
         || normalized.contains("pipe")
         || normalized.contains("daemon")
         || normalized.contains("cannot find the file specified")
         || normalized.contains("system cannot find")
     {
         if desktop_running {
-            "Docker Desktop 已启动，但 Docker Engine 还没有准备好。请等几十秒后再检测；如果一直如此，尝试重启 Docker Desktop。"
+            "Docker Desktop 已打开，但 Engine 还没有就绪。请等 30 秒后再点“检测”；如果一直停在这里，点“重启”重新初始化 Docker。".to_string()
         } else {
-            "Docker Engine 未运行。请先启动 Docker Desktop，等状态稳定后再检测。"
+            "Docker Engine 还没有启动。请点“启动 Docker”，等 Docker Desktop 稳定后再点“检测”。"
+                .to_string()
         }
     } else if normalized.contains("permission")
         || normalized.contains("access is denied")
         || normalized.contains("拒绝访问")
     {
-        "当前用户没有访问 Docker Engine 的权限。请确认 Docker Desktop 已允许当前账号使用，必要时以管理员身份启动。"
+        "当前账号暂时无法访问 Docker Engine。请确认 Docker Desktop 允许当前用户使用；仍失败时，用管理员身份启动 Docker Desktop 后再检测。".to_string()
     } else if desktop_running {
-        "Docker Desktop 已启动，但 Docker Engine 暂时不可用。请稍等后重试。"
+        "Docker Desktop 已打开，但 Engine 暂时没有响应。请稍等后再检测，或点“重启”重新初始化。"
+            .to_string()
     } else {
-        "Docker Engine 未运行。请先启动 Docker Desktop。"
-    };
-
-    format!("{hint}{}", friendly_detail_suffix(detail))
+        "Docker Engine 还没有启动。请点“启动 Docker”，等状态稳定后再检测。".to_string()
+    }
 }
 
 fn friendly_detail_suffix(detail: &str) -> String {
