@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Copy, Server, Search } from '@lucide/vue'
+import { BookOpen, Copy, Server, Search, Play } from '@lucide/vue'
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiDocModules, buildCurlExample, findApiDocModule, type ApiEndpointDoc } from '../apiDocs'
@@ -124,6 +124,84 @@ function scrollToEndpoint(id: string) {
     activeEndpointId.value = id
   }
 }
+
+// API 在线调试状态管理
+interface TestState {
+  active: boolean
+  requestBody: string
+  loading: boolean
+  responseStatus: string
+  responseTime: number
+  responseBody: string
+}
+
+const testingStates = ref<Record<string, TestState>>({})
+
+function toggleTestMode(endpoint: ApiEndpointDoc) {
+  if (!testingStates.value[endpoint.id]) {
+    testingStates.value[endpoint.id] = {
+      active: true,
+      requestBody: endpoint.request || '',
+      loading: false,
+      responseStatus: '',
+      responseTime: 0,
+      responseBody: '',
+    }
+  } else {
+    testingStates.value[endpoint.id].active = !testingStates.value[endpoint.id].active
+  }
+}
+
+async function sendRequest(endpoint: ApiEndpointDoc) {
+  const state = testingStates.value[endpoint.id]
+  if (!state) return
+
+  state.loading = true
+  state.responseStatus = ''
+  state.responseBody = ''
+  state.responseTime = 0
+
+  const startTime = performance.now()
+  const url = `${selectedModule.value.baseUrl}${endpoint.path}`
+
+  try {
+    const options: RequestInit = {
+      method: endpoint.method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+
+    if (endpoint.method !== 'GET' && state.requestBody) {
+      try {
+        JSON.parse(state.requestBody)
+      } catch (err) {
+        throw new Error('请求 Body 的 JSON 格式无效，请检查语法语法是否正确。')
+      }
+      options.body = state.requestBody
+    }
+
+    const response = await fetch(url, options)
+    const endTime = performance.now()
+    state.responseTime = Math.round(endTime - startTime)
+    state.responseStatus = `${response.status} ${response.statusText}`
+
+    const text = await response.text()
+    try {
+      const parsed = JSON.parse(text)
+      state.responseBody = JSON.stringify(parsed, null, 2)
+    } catch {
+      state.responseBody = text
+    }
+  } catch (error: any) {
+    const endTime = performance.now()
+    state.responseTime = Math.round(endTime - startTime)
+    state.responseStatus = 'Error'
+    state.responseBody = error.message || '请求失败，请确保本地后端服务已启动且网络连接正常。'
+  } finally {
+    state.loading = false
+  }
+}
 </script>
 
 <template>
@@ -233,10 +311,21 @@ function scrollToEndpoint(id: string) {
                 <h4>{{ endpoint.title }}</h4>
                 <p>{{ endpoint.description }}</p>
               </div>
-              <button class="icon-button" type="button" @click="copyText(`${endpoint.id}-curl`, curlFor(endpoint))">
-                <Copy class="h-4 w-4" aria-hidden="true" />
-                <span>{{ copiedKey === `${endpoint.id}-curl` ? '已复制' : '复制 curl' }}</span>
-              </button>
+              <div class="flex items-center gap-2 flex-wrap">
+                <button
+                  class="icon-button"
+                  type="button"
+                  :class="{ 'border-emerald-800 bg-emerald-50 text-emerald-800': testingStates[endpoint.id]?.active }"
+                  @click="toggleTestMode(endpoint)"
+                >
+                  <Play class="h-4 w-4" :class="{ 'fill-emerald-800': testingStates[endpoint.id]?.active }" aria-hidden="true" />
+                  <span>{{ testingStates[endpoint.id]?.active ? '关闭测试' : '测试接口' }}</span>
+                </button>
+                <button class="icon-button" type="button" @click="copyText(`${endpoint.id}-curl`, curlFor(endpoint))">
+                  <Copy class="h-4 w-4" aria-hidden="true" />
+                  <span>{{ copiedKey === `${endpoint.id}-curl` ? '已复制' : '复制 curl' }}</span>
+                </button>
+              </div>
             </header>
 
             <div class="api-example-grid" :class="{ 'api-example-grid--single': !endpoint.request }">
@@ -254,6 +343,62 @@ function scrollToEndpoint(id: string) {
                   <button type="button" @click="copyText(`${endpoint.id}-response`, endpoint.response)">复制</button>
                 </div>
                 <pre>{{ endpoint.response }}</pre>
+              </div>
+            </div>
+
+            <!-- 在线测试面板 -->
+            <div v-if="testingStates[endpoint.id]?.active" class="api-test-panel">
+              <div class="api-test-header">
+                <span class="text-xs font-bold text-stone-900">本地接口在线调试</span>
+                <button
+                  class="compact-primary primary-button inline-flex items-center gap-1.5 px-3 py-1 h-7 min-h-0 mt-0 w-auto text-xs font-semibold"
+                  :disabled="testingStates[endpoint.id].loading"
+                  @click="sendRequest(endpoint)"
+                >
+                  <span>{{ testingStates[endpoint.id].loading ? '发送中...' : '发送请求' }}</span>
+                </button>
+              </div>
+
+              <!-- GET 以外的请求 Body 编辑 -->
+              <div v-if="endpoint.method !== 'GET'" class="mb-3">
+                <label class="api-test-body-label">请求 Body (JSON)</label>
+                <textarea
+                  v-model="testingStates[endpoint.id].requestBody"
+                  rows="5"
+                  class="api-test-textarea"
+                  placeholder="请输入 JSON 请求体..."
+                ></textarea>
+              </div>
+
+              <!-- 接口实际响应展现 -->
+              <div v-if="testingStates[endpoint.id].responseStatus || testingStates[endpoint.id].loading" class="api-test-response">
+                <div class="api-test-response-meta">
+                  <span class="text-xs font-bold text-stone-600">调试响应结果</span>
+                  <div v-if="testingStates[endpoint.id].responseStatus" class="flex items-center gap-2">
+                    <span
+                      class="status-pill text-[10px] py-0.5 px-2 min-h-0 font-mono font-bold"
+                      :class="testingStates[endpoint.id].responseStatus.startsWith('2') ? 'status-pill--good' : 'status-pill--warn'"
+                    >
+                      {{ testingStates[endpoint.id].responseStatus }}
+                    </span>
+                    <span class="text-[10px] text-stone-400 font-mono font-semibold">{{ testingStates[endpoint.id].responseTime }}ms</span>
+                  </div>
+                </div>
+
+                <div class="api-example-block mt-2">
+                  <div class="api-example-header">
+                    <strong class="text-[10px]">Response Body</strong>
+                    <button
+                      v-if="testingStates[endpoint.id].responseBody"
+                      type="button"
+                      class="text-[10px]"
+                      @click="copyText(`${endpoint.id}-test-resp`, testingStates[endpoint.id].responseBody)"
+                    >
+                      {{ copiedKey === `${endpoint.id}-test-resp` ? '已复制' : '复制' }}
+                    </button>
+                  </div>
+                  <pre class="bg-stone-50/50 max-h-[300px] overflow-auto">{{ testingStates[endpoint.id].loading ? '正在发送 HTTP 请求，等待响应中...' : testingStates[endpoint.id].responseBody }}</pre>
+                </div>
               </div>
             </div>
 
@@ -292,4 +437,5 @@ function scrollToEndpoint(id: string) {
     </section>
   </ToolShell>
 </template>
+
 
