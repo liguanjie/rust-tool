@@ -25,12 +25,12 @@ export const apiDocModules: ApiDocModule[] = [
     id: 'clash-party',
     name: 'Clash Party / Mihomo',
     summary: '读取 Clash Party 订阅与运行时代理组，并通过 Mihomo API 检测、切换订阅和节点。',
-    baseUrl: 'http://127.0.0.1:8080',
+    baseUrl: 'http://127.0.0.1:5172',
     environment: [
       {
         name: 'RUSTTOOL_SERVER_PORT',
         description: 'RustTool REST 服务端口。端口被占用时可以改成其他值。',
-        defaultValue: '8080',
+        defaultValue: '5172',
       },
       {
         name: 'RUSTTOOL_CLASH_PARTY_DATA_DIR',

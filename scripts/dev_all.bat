@@ -9,7 +9,7 @@ start "RustTool Frontend" cmd /k "cd /d %cd%\frontend && pnpm run dev"
 
 echo.
 if "%RUSTTOOL_SERVER_PORT%"=="" (
-  set "RUSTTOOL_SERVER_PORT=8080"
+  set "RUSTTOOL_SERVER_PORT=5172"
 )
 if "%RUSTTOOL_SERVER_HOST%"=="" (
   set "RUSTTOOL_SERVER_HOST=127.0.0.1"

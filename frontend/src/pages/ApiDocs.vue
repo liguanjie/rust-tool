@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Copy, Server, Search, Play } from '@lucide/vue'
+import { BookOpen, Copy, Server, Search, Play, X, Send, Loader2, AlertTriangle, CheckCircle } from '@lucide/vue'
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiDocModules, buildCurlExample, findApiDocModule, type ApiEndpointDoc } from '../apiDocs'
@@ -197,7 +197,7 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
     const endTime = performance.now()
     state.responseTime = Math.round(endTime - startTime)
     state.responseStatus = 'Error'
-    state.responseBody = error.message || '请求失败，请确保本地后端服务已启动且网络连接正常。'
+    state.responseBody = error.message || 'Failed to fetch'
   } finally {
     state.loading = false
   }
@@ -318,7 +318,12 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
                   :class="{ 'border-emerald-800 bg-emerald-50 text-emerald-800': testingStates[endpoint.id]?.active }"
                   @click="toggleTestMode(endpoint)"
                 >
-                  <Play class="h-4 w-4" :class="{ 'fill-emerald-800': testingStates[endpoint.id]?.active }" aria-hidden="true" />
+                  <component
+                    :is="testingStates[endpoint.id]?.active ? X : Play"
+                    class="h-4 w-4"
+                    :class="{ 'text-emerald-800': testingStates[endpoint.id]?.active, 'fill-emerald-800/10': !testingStates[endpoint.id]?.active }"
+                    aria-hidden="true"
+                  />
                   <span>{{ testingStates[endpoint.id]?.active ? '关闭测试' : '测试接口' }}</span>
                 </button>
                 <button class="icon-button" type="button" @click="copyText(`${endpoint.id}-curl`, curlFor(endpoint))">
@@ -347,60 +352,127 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
             </div>
 
             <!-- 在线测试面板 -->
-            <div v-if="testingStates[endpoint.id]?.active" class="api-test-panel">
-              <div class="api-test-header">
-                <span class="text-xs font-bold text-stone-900">本地接口在线调试</span>
-                <button
-                  class="compact-primary primary-button inline-flex items-center gap-1.5 px-3 py-1 h-7 min-h-0 mt-0 w-auto text-xs font-semibold"
-                  :disabled="testingStates[endpoint.id].loading"
-                  @click="sendRequest(endpoint)"
-                >
-                  <span>{{ testingStates[endpoint.id].loading ? '发送中...' : '发送请求' }}</span>
-                </button>
-              </div>
-
-              <!-- GET 以外的请求 Body 编辑 -->
-              <div v-if="endpoint.method !== 'GET'" class="mb-3">
-                <label class="api-test-body-label">请求 Body (JSON)</label>
-                <textarea
-                  v-model="testingStates[endpoint.id].requestBody"
-                  rows="5"
-                  class="api-test-textarea"
-                  placeholder="请输入 JSON 请求体..."
-                ></textarea>
-              </div>
-
-              <!-- 接口实际响应展现 -->
-              <div v-if="testingStates[endpoint.id].responseStatus || testingStates[endpoint.id].loading" class="api-test-response">
-                <div class="api-test-response-meta">
-                  <span class="text-xs font-bold text-stone-600">调试响应结果</span>
-                  <div v-if="testingStates[endpoint.id].responseStatus" class="flex items-center gap-2">
-                    <span
-                      class="status-pill text-[10px] py-0.5 px-2 min-h-0 font-mono font-bold"
-                      :class="testingStates[endpoint.id].responseStatus.startsWith('2') ? 'status-pill--good' : 'status-pill--warn'"
-                    >
-                      {{ testingStates[endpoint.id].responseStatus }}
-                    </span>
-                    <span class="text-[10px] text-stone-400 font-mono font-semibold">{{ testingStates[endpoint.id].responseTime }}ms</span>
+            <Transition name="slide-fade">
+              <div v-if="testingStates[endpoint.id]?.active" class="api-test-panel">
+                <div class="api-test-header">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span class="text-xs font-bold text-stone-900">本地接口在线调试</span>
                   </div>
+                  <button
+                    class="compact-primary primary-button inline-flex items-center gap-1.5 px-3 py-1.5 h-8 min-h-0 mt-0 w-auto text-xs font-semibold"
+                    :disabled="testingStates[endpoint.id].loading"
+                    @click="sendRequest(endpoint)"
+                  >
+                    <component
+                      :is="testingStates[endpoint.id].loading ? Loader2 : Send"
+                      class="h-3.5 w-3.5"
+                      :class="{ 'animate-spin': testingStates[endpoint.id].loading }"
+                    />
+                    <span>{{ testingStates[endpoint.id].loading ? '发送中...' : '发送请求' }}</span>
+                  </button>
                 </div>
 
-                <div class="api-example-block mt-2">
-                  <div class="api-example-header">
-                    <strong class="text-[10px]">Response Body</strong>
-                    <button
-                      v-if="testingStates[endpoint.id].responseBody"
-                      type="button"
-                      class="text-[10px]"
-                      @click="copyText(`${endpoint.id}-test-resp`, testingStates[endpoint.id].responseBody)"
-                    >
-                      {{ copiedKey === `${endpoint.id}-test-resp` ? '已复制' : '复制' }}
-                    </button>
+                <!-- GET 以外的请求 Body 编辑 -->
+                <div v-if="endpoint.method !== 'GET'" class="mb-4">
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="api-test-body-label !mb-0">请求 Body (JSON)</label>
+                    <span class="text-[10px] text-stone-400 font-mono">application/json</span>
                   </div>
-                  <pre class="bg-stone-50/50 max-h-[300px] overflow-auto">{{ testingStates[endpoint.id].loading ? '正在发送 HTTP 请求，等待响应中...' : testingStates[endpoint.id].responseBody }}</pre>
+                  <textarea
+                    v-model="testingStates[endpoint.id].requestBody"
+                    rows="6"
+                    class="api-test-textarea"
+                    placeholder="请输入 JSON 请求体..."
+                  ></textarea>
+                </div>
+
+                <!-- 接口实际响应展现 -->
+                <div v-if="testingStates[endpoint.id].responseStatus || testingStates[endpoint.id].loading" class="api-test-response">
+                  <div class="api-test-response-meta">
+                    <span class="text-xs font-bold text-stone-600">调试响应结果</span>
+                    <div v-if="testingStates[endpoint.id].responseStatus" class="flex items-center gap-2">
+                      <span
+                        class="status-pill text-[10px] py-0.5 px-2 min-h-0 font-mono font-bold"
+                        :class="[
+                          testingStates[endpoint.id].responseStatus.startsWith('2') ? 'status-pill--good' : '',
+                          testingStates[endpoint.id].responseStatus.startsWith('4') ? 'status-pill--warn' : '',
+                          testingStates[endpoint.id].responseStatus.startsWith('5') || testingStates[endpoint.id].responseStatus === 'Error' ? 'bg-red-50 text-red-800 border border-red-100' : ''
+                        ]"
+                      >
+                        {{ testingStates[endpoint.id].responseStatus }}
+                      </span>
+                      <span class="text-[10px] text-stone-400 font-mono font-semibold">{{ testingStates[endpoint.id].responseTime }}ms</span>
+                    </div>
+                  </div>
+
+                  <!-- 友好错误提示框 -->
+                  <div
+                    v-if="testingStates[endpoint.id].responseStatus === 'Error'"
+                    class="mt-2 rounded-lg border border-red-200 bg-red-50/50 p-3.5 text-xs text-red-800 leading-relaxed"
+                  >
+                    <div class="flex items-center gap-2 font-bold mb-1.5">
+                      <AlertTriangle class="h-4 w-4 shrink-0 text-red-600" />
+                      <span>连接后端服务失败</span>
+                    </div>
+                    <p class="m-0">
+                      浏览器无法与本地后端服务建立连接（报错：<code>{{ testingStates[endpoint.id].responseBody }}</code>）。<br/>
+                      这通常是因为本地后端服务未启动。请确保您已双击根目录下的 <code>start.bat</code> 启动服务，或者在命令行中运行了 <code>rt dev</code>。
+                    </p>
+                  </div>
+
+                  <!-- 正常响应体展示 (包含成功的 2xx 和失败的 4xx/5xx) -->
+                  <div
+                    v-else
+                    class="api-example-block mt-2 border transition-colors"
+                    :class="[
+                      testingStates[endpoint.id].responseStatus.startsWith('2') ? 'border-stone-200' : '',
+                      testingStates[endpoint.id].responseStatus.startsWith('4') ? 'border-amber-200' : '',
+                      testingStates[endpoint.id].responseStatus.startsWith('5') ? 'border-red-200' : ''
+                    ]"
+                  >
+                    <div
+                      class="api-example-header py-1.5 transition-colors"
+                      :class="[
+                        testingStates[endpoint.id].responseStatus.startsWith('2') ? 'bg-stone-50/50 border-stone-100' : '',
+                        testingStates[endpoint.id].responseStatus.startsWith('4') ? 'bg-amber-50/50 border-amber-100/50 text-amber-900' : '',
+                        testingStates[endpoint.id].responseStatus.startsWith('5') ? 'bg-red-50/50 border-red-100/50 text-red-900' : ''
+                      ]"
+                    >
+                      <strong class="text-[10px] flex items-center gap-1">
+                        <component
+                          :is="testingStates[endpoint.id].responseStatus.startsWith('2') ? CheckCircle : AlertTriangle"
+                          class="h-3 w-3"
+                          :class="testingStates[endpoint.id].responseStatus.startsWith('2') ? 'text-emerald-700' : (testingStates[endpoint.id].responseStatus.startsWith('4') ? 'text-amber-700' : 'text-red-700')"
+                        />
+                        <span>Response Body</span>
+                      </strong>
+                      <button
+                        v-if="testingStates[endpoint.id].responseBody"
+                        type="button"
+                        class="text-[10px]"
+                        :class="[
+                          testingStates[endpoint.id].responseStatus.startsWith('2') ? 'text-emerald-800 hover:text-emerald-950' : '',
+                          testingStates[endpoint.id].responseStatus.startsWith('4') ? 'text-amber-800 hover:text-amber-950' : '',
+                          testingStates[endpoint.id].responseStatus.startsWith('5') ? 'text-red-800 hover:text-red-950' : ''
+                        ]"
+                        @click="copyText(`${endpoint.id}-test-resp`, testingStates[endpoint.id].responseBody)"
+                      >
+                        {{ copiedKey === `${endpoint.id}-test-resp` ? '已复制' : '复制' }}
+                      </button>
+                    </div>
+                    <pre
+                      class="max-h-[320px] overflow-auto transition-colors"
+                      :class="[
+                        testingStates[endpoint.id].responseStatus.startsWith('2') ? 'bg-white text-stone-800' : '',
+                        testingStates[endpoint.id].responseStatus.startsWith('4') ? 'bg-amber-50/10 text-stone-700' : '',
+                        testingStates[endpoint.id].responseStatus.startsWith('5') ? 'bg-red-50/10 text-stone-700' : ''
+                      ]"
+                    >{{ testingStates[endpoint.id].loading ? '正在发送 HTTP 请求，等待响应中...' : testingStates[endpoint.id].responseBody }}</pre>
+                  </div>
                 </div>
               </div>
-            </div>
+            </Transition>
 
             <ul v-if="endpoint.notes?.length" class="api-notes">
               <li v-for="note in endpoint.notes" :key="note">{{ note }}</li>

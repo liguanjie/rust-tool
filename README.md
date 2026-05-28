@@ -45,7 +45,7 @@ rt dev
 `rt dev` 会分别打开后端和前端窗口：
 
 ```text
-Backend:  http://127.0.0.1:8080
+Backend:  http://127.0.0.1:5172
 Frontend: http://127.0.0.1:5173
 ```
 
@@ -56,7 +56,7 @@ rt server
 rt frontend
 ```
 
-后端默认监听 `127.0.0.1:8080`。端口被占用时可以改端口：
+后端默认监听 `127.0.0.1:5172`。端口被占用时可以改端口：
 
 ```powershell
 rt server --port 18080
@@ -95,7 +95,7 @@ $env:RUSTTOOL_CLASH_PARTY_DELAY_TEST_URL = "https://www.gstatic.com/generate_204
 
 ```powershell
 Invoke-RestMethod -Method Post -ContentType "application/json" `
-  -Uri "http://127.0.0.1:8080/api/clash-party/nodes/check" `
+  -Uri "http://127.0.0.1:5172/api/clash-party/nodes/check" `
   -Body '{"nodeName":"raw-node-name"}'
 ```
 
@@ -103,7 +103,7 @@ Invoke-RestMethod -Method Post -ContentType "application/json" `
 
 ```powershell
 Invoke-RestMethod -Method Post -ContentType "application/json" `
-  -Uri "http://127.0.0.1:8080/api/clash-party/subscriptions/switch" `
+  -Uri "http://127.0.0.1:5172/api/clash-party/subscriptions/switch" `
   -Body '{"subscriptionId":"your-profile-id"}'
 ```
 
@@ -111,7 +111,7 @@ Invoke-RestMethod -Method Post -ContentType "application/json" `
 
 ```powershell
 Invoke-RestMethod -Method Post -ContentType "application/json" `
-  -Uri "http://127.0.0.1:8080/api/clash-party/nodes/switch" `
+  -Uri "http://127.0.0.1:5172/api/clash-party/nodes/switch" `
   -Body '{"groupName":"PROXY","nodeName":"raw-node-name"}'
 ```
 

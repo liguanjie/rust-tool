@@ -907,4 +907,19 @@ button:disabled {
   .api-test-response-meta {
     @apply flex items-center justify-between mb-2;
   }
+
+  /* Vue Slide-Fade Transitions */
+  .slide-fade-enter-active {
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .slide-fade-leave-active {
+    transition: all 0.15s cubic-bezier(0.5, 0, 0.75, 0);
+  }
+
+  .slide-fade-enter-from,
+  .slide-fade-leave-to {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
 }

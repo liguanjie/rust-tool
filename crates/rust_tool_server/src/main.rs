@@ -13,7 +13,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 struct ServerArgs {
     #[arg(long, env = "RUSTTOOL_SERVER_HOST", default_value = "127.0.0.1")]
     host: String,
-    #[arg(long, env = "RUSTTOOL_SERVER_PORT", default_value_t = 8080)]
+    #[arg(long, env = "RUSTTOOL_SERVER_PORT", default_value_t = 5172)]
     port: u16,
 }
 
