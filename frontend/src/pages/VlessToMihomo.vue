@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { ExternalLink } from '@lucide/vue'
 import ResultPanel from '../components/ResultPanel.vue'
 import ToolShell from '../components/ToolShell.vue'
 import { useVlessToMihomoStore } from '../stores/vlessToMihomo'
 
 const tool = useVlessToMihomoStore()
+const templateHints = {
+  full_rules: '规则集分流，覆盖广告、AI、媒体、Google、Telegram 与国内直连。',
+  standard: '本机、局域网、国内直连；其他走代理。',
+  minimal: '仅保留代理节点和兜底规则。',
+}
+const transitGroupHints = {
+  url_test: '刷新节奏：订阅节点 1 小时 > 节点测速 5 分钟 > 自动选择最优中转。',
+  fallback: '按顺序使用可用节点，当前节点不可用时自动切到下一个。',
+  select: '在 Clash Party 里手动指定中转节点，不自动切换。',
+}
+const selectedTemplateHint = computed(() => templateHints[tool.template])
+const selectedTransitGroupHint = computed(() => transitGroupHints[tool.transitGroupType])
 
 onMounted(() => {
   void tool.load()
@@ -22,7 +34,7 @@ onMounted(() => {
     ]"
   >
     <div class="tool-grid">
-      <section class="input-panel">
+      <section class="input-panel vless-config-panel">
         <label class="field-label" for="vless-input">VLESS 链接</label>
         <textarea
           id="vless-input"
@@ -63,23 +75,24 @@ onMounted(() => {
               <input v-model="tool.template" type="radio" value="full_rules" />
               <span>
                 <strong>多节点分流模板</strong>
-                <small>规则集分流，覆盖广告、AI、媒体、Google、Telegram 与国内直连。</small>
               </span>
             </label>
             <label class="template-option">
               <input v-model="tool.template" type="radio" value="standard" />
               <span>
                 <strong>基础分流</strong>
-                <small>本机、局域网、国内直连；其他走代理。</small>
               </span>
             </label>
             <label class="template-option">
               <input v-model="tool.template" type="radio" value="minimal" />
               <span>
                 <strong>最小配置</strong>
-                <small>仅保留代理节点和兜底规则。</small>
               </span>
             </label>
+          </div>
+          <div class="template-hint">
+            <strong>当前模板</strong>
+            <span>{{ selectedTemplateHint }}</span>
           </div>
         </div>
 
@@ -177,6 +190,11 @@ onMounted(() => {
                 <input v-model="tool.transitGroupType" type="radio" value="select" />
                 <span>手动选择</span>
               </label>
+            </div>
+
+            <div class="transit-mode-hint">
+              <strong>中转模式</strong>
+              <span>{{ selectedTransitGroupHint }}</span>
             </div>
           </div>
         </section>
