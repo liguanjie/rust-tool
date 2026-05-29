@@ -4,6 +4,8 @@ RustTool 是一个本地工具站，后端使用 Rust，前端使用 Vue。
 
 第一期工具：将 `vless://` 链接转换为 Clash Party/Mihomo YAML。
 
+新增工具：AI 离线备忘。支持本地 Markdown 备忘、敏感字段加密、OpenAI 兼容接口检索问答、备份与恢复。
+
 ## 技术选型
 
 - Rust workspace
@@ -77,6 +79,19 @@ GET  /api/clash-party/state
 POST /api/clash-party/nodes/check
 POST /api/clash-party/subscriptions/switch
 POST /api/clash-party/nodes/switch
+POST /api/memo/unlock
+POST /api/memo/lock
+GET  /api/memo/status
+POST /api/memo/settings
+GET  /api/memo/list
+GET  /api/memo/doc/:id
+POST /api/memo/save
+POST /api/memo/draft
+POST /api/memo/delete
+POST /api/memo/query
+POST /api/memo/backup
+POST /api/memo/restore
+POST /api/memo/translate-key
 ```
 
 Clash Party / Mihomo API 默认读取：
@@ -113,6 +128,54 @@ Invoke-RestMethod -Method Post -ContentType "application/json" `
 Invoke-RestMethod -Method Post -ContentType "application/json" `
   -Uri "http://127.0.0.1:5172/api/clash-party/nodes/switch" `
   -Body '{"groupName":"PROXY","nodeName":"raw-node-name"}'
+```
+
+## AI 离线备忘
+
+AI 离线备忘默认使用本机数据目录：
+
+```powershell
+$env:RUSTTOOL_DATA_DIR = "D:\RustToolData" # 可选，未设置时使用 APPDATA\rust-tool
+```
+
+默认 OpenAI 兼容接口配置：
+
+```powershell
+Base URL:                 https://api.openai.com/v1
+Chat Model:               gpt-5.5
+Embedding Model:          text-embedding-3-small
+Reasoning Effort:         xhigh
+Disable Response Storage: true
+```
+
+安全行为：
+
+- 保密库需要先调用 `/api/memo/unlock` 解锁。锁定状态访问文档、检索、备份、恢复、设置保存等接口会返回 `401`。
+- 明文主密码不会落盘；服务只保存盐和加密校验 token。
+- 文档正文以 Markdown 文件保存，敏感字段以 `{{secret:key}}` 占位；secret 值使用主密码派生密钥加密后保存到 SQLite。
+- `/api/memo/status` 只返回 `hasApiKey`，不会回显已保存的 API Key。设置页 API Key 留空会保留原值。
+- 文档 `fileName` 必须是库内相对路径，不能使用绝对路径或 `..`；同名文件会被拒绝。
+- 备份恢复会先解压到临时目录并校验 `memos.db`，校验成功后才替换现有数据。
+- 开启“允许 AI 检索并读取解密后的密码”后，解密 secret 可能随上下文发送给配置的大模型服务；云端模型场景建议保持关闭。
+
+错误响应格式：
+
+```json
+{
+  "error": {
+    "code": "vault_locked",
+    "message": "Vault is locked. Please unlock first."
+  }
+}
+```
+
+常见状态码：
+
+```text
+401 vault_locked  保密库未解锁
+400 bad_request   参数、路径、备份包或文件名冲突错误
+404 not_found     文档不存在
+500 internal_error 服务端处理失败
 ```
 
 ## 常用命令

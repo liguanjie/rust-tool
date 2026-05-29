@@ -214,6 +214,24 @@ button:disabled {
     @apply flex min-h-0 flex-col px-5 py-7 z-20 transition-all duration-300;
   }
 
+  .app-sidebar--collapsed {
+    @apply px-3;
+  }
+
+  .sidebar-item--collapsed {
+    @apply justify-center px-0 w-10 h-10 mx-auto rounded-xl;
+  }
+
+  .theme-trigger-btn--collapsed {
+    @apply justify-center px-0 w-10 h-10 mx-auto rounded-xl;
+  }
+
+  .theme-popover-menu--collapsed {
+    bottom: 0 !important;
+    left: calc(100% + 12px) !important;
+    width: 150px !important;
+  }
+
   .logo-box {
     background: var(--logo-bg);
     box-shadow: var(--logo-shadow);
@@ -312,7 +330,12 @@ button:disabled {
 
   /* Global layouts and elements */
   .tool-shell {
-    @apply w-full max-w-[1180px];
+    @apply w-full max-w-[1180px] mx-auto;
+  }
+
+  .tool-shell--fluid {
+    max-width: none !important;
+    width: 100% !important;
   }
 
   .tool-header {

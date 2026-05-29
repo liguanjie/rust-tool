@@ -24,6 +24,13 @@ export const useThemeStore = defineStore('theme', () => {
     updateTheme()
   }
 
+  const isSidebarCollapsed = ref(localStorage.getItem('sidebar-collapsed') === 'true')
+
+  function toggleSidebar() {
+    isSidebarCollapsed.value = !isSidebarCollapsed.value
+    localStorage.setItem('sidebar-collapsed', isSidebarCollapsed.value.toString())
+  }
+
   // Setup listener for system changes
   try {
     mediaQuery.addEventListener('change', updateTheme)
@@ -38,6 +45,8 @@ export const useThemeStore = defineStore('theme', () => {
   return {
     themeMode,
     isDark,
+    isSidebarCollapsed,
     setThemeMode,
+    toggleSidebar,
   }
 })

@@ -11,11 +11,12 @@ defineProps<{
     to?: RouteLocationRaw
     onClick?: () => void
   }>
+  fluid?: boolean
 }>()
 </script>
 
 <template>
-  <article class="tool-shell">
+  <article class="tool-shell" :class="{ 'tool-shell--fluid': fluid }">
     <header class="tool-header">
       <div>
         <nav v-if="breadcrumbs?.length" class="breadcrumb-nav" aria-label="面包屑">

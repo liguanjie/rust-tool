@@ -5,6 +5,7 @@ import ApiManagement from '../pages/ApiManagement.vue'
 import ApiDocs from '../pages/ApiDocs.vue'
 import OperationLogs from '../pages/OperationLogs.vue'
 import Toolbox from '../pages/Toolbox.vue'
+import AiMemo from '../pages/AiMemo.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -46,6 +47,11 @@ export const router = createRouter({
       path: '/tools/operation-logs',
       name: 'operation-logs',
       component: OperationLogs,
+    },
+    {
+      path: '/tools/ai-memo',
+      name: 'ai-memo',
+      component: AiMemo,
     },
   ],
 })

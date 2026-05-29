@@ -18,7 +18,10 @@ const themeStore = useThemeStore()
       </div>
     </Transition>
 
-    <main class="relative z-10 grid min-h-screen grid-cols-[280px_minmax(0,1fr)] max-[880px]:grid-cols-1">
+    <main 
+      class="relative z-10 grid min-h-screen transition-[grid-template-columns] duration-300 max-[880px]:grid-cols-1"
+      :class="themeStore.isSidebarCollapsed ? 'grid-cols-[80px_minmax(0,1fr)]' : 'grid-cols-[280px_minmax(0,1fr)]'"
+    >
       <AppSidebar class="max-[880px]:min-h-0 max-[880px]:border-b max-[880px]:border-r-0" />
       <section class="min-w-0 px-8 py-8 max-[880px]:px-5">
         <RouterView />

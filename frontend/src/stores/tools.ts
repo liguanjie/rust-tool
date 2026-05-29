@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { BookOpen, Cable, GitBranch, MonitorCog, ScrollText } from '@lucide/vue'
+import { BookOpen, Cable, GitBranch, MonitorCog, ScrollText, Brain } from '@lucide/vue'
 
 export interface ToolItem {
   id: string
@@ -62,8 +62,16 @@ export const useToolsStore = defineStore('tools', () => {
           description: '本地转换与辅助工具',
           icon: Cable,
         },
+        {
+          id: 'ai-memo',
+          name: 'AI 离线备忘',
+          path: '/tools/ai-memo',
+          description: '100% 离线、支持加密与 AI 检索的个人备忘助手',
+          icon: Brain,
+        },
       ],
     },
+
   ]
 
   const tools = groups.flatMap((group) => group.items)
