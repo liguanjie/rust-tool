@@ -13,5 +13,5 @@ pub use clash_party::{
 };
 pub use tools::vless_to_mihomo::{
     convert_vless_to_yaml, ConvertError, ConvertOptions, OutputMode, TemplateMode,
-    TransitGroupType, TransitProxyOptions,
+    TransitGroupType, TransitProviderOptions, TransitProxyOptions,
 };

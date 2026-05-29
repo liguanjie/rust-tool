@@ -112,7 +112,44 @@ describe('useVlessToMihomoStore', () => {
           group_name: '寿司云中转',
           group_type: 'fallback',
           bypass_domains: ['youtube.com', 'https://netflix.com/watch'],
+          providers: undefined,
         },
+      }),
+    )
+  })
+
+  it('splits multiple transit subscription URLs into provider entries', async () => {
+    const store = useVlessToMihomoStore()
+    store.input = 'vless://11111111-1111-1111-1111-111111111111@example.com:443#Original'
+    store.transitEnabled = true
+    store.transitProviderUrl = 'https://example.com/sushi.yaml\nhttps://example.com/fast.yaml'
+    store.transitProviderName = 'transit'
+    store.transitGroupName = '中转总组'
+
+    await store.convert()
+
+    expect(convertVlessToMihomo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transit_proxy: expect.objectContaining({
+          provider_name: 'transit',
+          provider_url: undefined,
+          provider_path: undefined,
+          group_name: '中转总组',
+          providers: [
+            {
+              provider_name: 'transit-1',
+              provider_url: 'https://example.com/sushi.yaml',
+              provider_path: undefined,
+              group_name: '中转总组-1',
+            },
+            {
+              provider_name: 'transit-2',
+              provider_url: 'https://example.com/fast.yaml',
+              provider_path: undefined,
+              group_name: '中转总组-2',
+            },
+          ],
+        }),
       }),
     )
   })

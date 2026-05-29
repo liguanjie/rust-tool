@@ -138,6 +138,7 @@ fn run() -> Result<(), String> {
                     CliTransitGroupType::Fallback => TransitGroupType::Fallback,
                 },
                 bypass_domains: Vec::new(),
+                providers: Vec::new(),
             });
 
             let yaml = convert_vless_to_yaml(

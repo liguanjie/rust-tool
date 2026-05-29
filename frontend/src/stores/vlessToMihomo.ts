@@ -162,14 +162,27 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
 
   function buildTransitProxyPayload() {
     if (!transitEnabled.value) return undefined
+    const providerUrls = parseDirectDomains(transitProviderUrl.value)
+    const baseProviderName = emptyToUndefined(transitProviderName.value) || 'transit'
+    const baseGroupName = emptyToUndefined(transitGroupName.value) || '中转节点组'
+    const providers =
+      providerUrls.length > 1
+        ? providerUrls.map((url, index) => ({
+            provider_name: `${baseProviderName}-${index + 1}`,
+            provider_url: url,
+            provider_path: undefined,
+            group_name: `${baseGroupName}-${index + 1}`,
+          }))
+        : undefined
 
     return {
-      provider_name: emptyToUndefined(transitProviderName.value) || 'transit',
-      provider_url: emptyToUndefined(transitProviderUrl.value),
+      provider_name: baseProviderName,
+      provider_url: providerUrls.length <= 1 ? providerUrls[0] : undefined,
       provider_path: emptyToUndefined(transitProviderPath.value),
-      group_name: emptyToUndefined(transitGroupName.value) || '中转节点组',
+      group_name: baseGroupName,
       group_type: transitGroupType.value,
       bypass_domains: parseDirectDomains(transitBypassDomains.value),
+      providers,
     }
   }
 

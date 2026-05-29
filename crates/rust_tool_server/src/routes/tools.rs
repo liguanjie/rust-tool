@@ -1,7 +1,7 @@
 use axum::{http::StatusCode, Json};
 use rust_tool_core::{
     convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
-    TransitProxyOptions,
+    TransitProviderOptions, TransitProxyOptions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +36,15 @@ pub struct VlessTransitProxyRequest {
     group_name: String,
     group_type: Option<VlessTransitGroupType>,
     bypass_domains: Option<Vec<String>>,
+    providers: Option<Vec<VlessTransitProviderRequest>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VlessTransitProviderRequest {
+    provider_name: String,
+    provider_url: Option<String>,
+    provider_path: Option<String>,
+    group_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +123,23 @@ impl From<VlessTransitProxyRequest> for TransitProxyOptions {
                 VlessTransitGroupType::Fallback => TransitGroupType::Fallback,
             },
             bypass_domains: value.bypass_domains.unwrap_or_default(),
+            providers: value
+                .providers
+                .unwrap_or_default()
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        }
+    }
+}
+
+impl From<VlessTransitProviderRequest> for TransitProviderOptions {
+    fn from(value: VlessTransitProviderRequest) -> Self {
+        Self {
+            provider_name: value.provider_name,
+            provider_url: value.provider_url,
+            provider_path: value.provider_path,
+            group_name: value.group_name,
         }
     }
 }

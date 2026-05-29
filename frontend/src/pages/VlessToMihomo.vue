@@ -141,14 +141,14 @@ onMounted(() => {
 
             <label class="field-control config-section" for="transit-provider-url">
               <span class="field-label">中转订阅地址</span>
-              <input
+              <textarea
                 id="transit-provider-url"
                 v-model="tool.transitProviderUrl"
-                class="text-input"
-                type="url"
-                placeholder="https://example.com/sub.yaml"
+                class="direct-domain-input transit-provider-url-input"
+                spellcheck="false"
+                placeholder="https://example.com/sub-1.yaml&#10;https://example.com/sub-2.yaml"
               />
-              <small class="field-hint">需要是 Clash/Mihomo 可解析订阅；生成到 proxy-providers。</small>
+              <small class="field-hint">支持一行一个 Clash/Mihomo 订阅；多行会生成多个 proxy-providers，并汇总到同一个中转组。</small>
             </label>
 
             <div class="config-section transit-two-col">
@@ -184,6 +184,7 @@ onMounted(() => {
                 type="text"
                 placeholder="./proxy_providers/transit.yaml"
               />
+              <small class="field-hint">单个订阅时可自定义缓存路径；多个订阅会按 Provider 名称自动生成路径。</small>
             </label>
 
             <label class="field-control route-field" for="transit-bypass-domains">

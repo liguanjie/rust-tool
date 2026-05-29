@@ -31,6 +31,15 @@ pub struct TransitProxyOptions {
     pub group_name: String,
     pub group_type: TransitGroupType,
     pub bypass_domains: Vec<String>,
+    pub providers: Vec<TransitProviderOptions>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransitProviderOptions {
+    pub provider_name: String,
+    pub provider_url: Option<String>,
+    pub provider_path: Option<String>,
+    pub group_name: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -308,8 +317,8 @@ pub fn convert_vless_to_yaml(input: &str, options: ConvertOptions) -> Result<Str
         && matches!(output_mode, OutputMode::FullConfig)
         && transit_proxy
             .as_ref()
-            .and_then(|transit| transit.provider_url.as_deref())
-            .is_none()
+            .map(|transit| !transit.has_provider_url())
+            .unwrap_or(true)
     {
         return Err(ConvertError::MissingTransitProviderUrl);
     }
@@ -501,8 +510,14 @@ fn build_proxy_groups(
 
     let mut groups = Vec::new();
     if let Some(transit) = transit_proxy {
-        if transit.provider_url.is_some() {
-            groups.push(provider_group(transit));
+        let providers = transit.enabled_providers();
+        if providers.len() > 1 {
+            for provider in &providers {
+                groups.push(provider_group(transit, provider));
+            }
+            groups.push(transit_summary_group(transit, &providers));
+        } else if let Some(provider) = providers.first() {
+            groups.push(provider_group(transit, provider));
         }
     }
 
@@ -558,12 +573,33 @@ fn url_test_group(name: &str, proxies: Vec<String>) -> ProxyGroup {
     }
 }
 
-fn provider_group(transit: &TransitProxyOptions) -> ProxyGroup {
+fn provider_group(transit: &TransitProxyOptions, provider: &TransitProviderOptions) -> ProxyGroup {
+    ProxyGroup {
+        name: provider.group_name.clone(),
+        group_type: transit.group_type.as_mihomo_type().to_string(),
+        proxies: Vec::new(),
+        use_providers: vec![provider.provider_name.clone()],
+        url: transit
+            .group_type
+            .requires_health_check()
+            .then(|| "https://www.gstatic.com/generate_204".to_string()),
+        interval: transit.group_type.requires_health_check().then_some(300),
+        tolerance: matches!(transit.group_type, TransitGroupType::UrlTest).then_some(50),
+    }
+}
+
+fn transit_summary_group(
+    transit: &TransitProxyOptions,
+    providers: &[&TransitProviderOptions],
+) -> ProxyGroup {
     ProxyGroup {
         name: transit.group_name.clone(),
         group_type: transit.group_type.as_mihomo_type().to_string(),
-        proxies: Vec::new(),
-        use_providers: vec![transit.provider_name.clone()],
+        proxies: providers
+            .iter()
+            .map(|provider| provider.group_name.clone())
+            .collect(),
+        use_providers: Vec::new(),
         url: transit
             .group_type
             .requires_health_check()
@@ -574,26 +610,36 @@ fn provider_group(transit: &TransitProxyOptions) -> ProxyGroup {
 }
 
 fn build_proxy_providers(transit: &TransitProxyOptions) -> Option<BTreeMap<String, ProxyProvider>> {
-    let provider_url = transit.provider_url.as_ref()?;
+    let providers = transit.enabled_providers();
+    if providers.is_empty() {
+        return None;
+    }
+
     let mut providers = BTreeMap::new();
-    providers.insert(
-        transit.provider_name.clone(),
-        ProxyProvider {
-            provider_type: "http".to_string(),
-            url: provider_url.clone(),
-            path: transit
-                .provider_path
-                .clone()
-                .unwrap_or_else(|| default_provider_path(&transit.provider_name)),
-            interval: 3600,
-            health_check: ProxyProviderHealthCheck {
-                enable: true,
-                url: "https://www.gstatic.com/generate_204".to_string(),
-                interval: 300,
+    for provider in transit.enabled_providers() {
+        let Some(provider_url) = provider.provider_url.as_ref() else {
+            continue;
+        };
+        providers.insert(
+            provider.provider_name.clone(),
+            ProxyProvider {
+                provider_type: "http".to_string(),
+                url: provider_url.clone(),
+                path: provider
+                    .provider_path
+                    .clone()
+                    .unwrap_or_else(|| default_provider_path(&provider.provider_name)),
+                interval: 3600,
+                health_check: ProxyProviderHealthCheck {
+                    enable: true,
+                    url: "https://www.gstatic.com/generate_204".to_string(),
+                    interval: 300,
+                },
             },
-        },
-    );
-    Some(providers)
+        );
+    }
+
+    (!providers.is_empty()).then_some(providers)
 }
 
 fn build_dns_config() -> DnsConfig {
@@ -1013,6 +1059,15 @@ fn normalize_transit_proxy(value: Option<TransitProxyOptions>) -> Option<Transit
         normalize_provider_name(&transit.provider_name).unwrap_or_else(|| "transit".to_string());
     let group_name =
         normalize_custom_name(Some(&transit.group_name)).unwrap_or_else(|| "Transit".to_string());
+    let mut providers = normalize_transit_providers(transit.providers, &provider_name, &group_name);
+    if provider_url.is_some() && providers.is_empty() {
+        providers.push(TransitProviderOptions {
+            provider_name: provider_name.clone(),
+            provider_url: provider_url.clone(),
+            provider_path: provider_path.clone(),
+            group_name: group_name.clone(),
+        });
+    }
 
     Some(TransitProxyOptions {
         provider_name,
@@ -1021,7 +1076,33 @@ fn normalize_transit_proxy(value: Option<TransitProxyOptions>) -> Option<Transit
         group_name,
         group_type: transit.group_type,
         bypass_domains: transit.bypass_domains,
+        providers,
     })
+}
+
+fn normalize_transit_providers(
+    providers: Vec<TransitProviderOptions>,
+    default_provider_name: &str,
+    default_group_name: &str,
+) -> Vec<TransitProviderOptions> {
+    let mut normalized = providers
+        .into_iter()
+        .filter_map(|provider| {
+            let provider_url = normalize_custom_name(provider.provider_url.as_deref())?;
+            Some(TransitProviderOptions {
+                provider_name: normalize_provider_name(&provider.provider_name)
+                    .unwrap_or_else(|| default_provider_name.to_string()),
+                provider_url: Some(provider_url),
+                provider_path: normalize_custom_name(provider.provider_path.as_deref()),
+                group_name: normalize_custom_name(Some(&provider.group_name))
+                    .unwrap_or_else(|| default_group_name.to_string()),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    ensure_unique_transit_provider_names(&mut normalized);
+    ensure_unique_transit_group_names(&mut normalized);
+    normalized
 }
 
 fn normalize_provider_name(value: &str) -> Option<String> {
@@ -1059,6 +1140,42 @@ fn ensure_unique_proxy_names(proxies: &mut [Proxy]) {
             let candidate = format!("{base_name}-{index}");
             if used.insert(candidate.clone()) {
                 proxy.name = candidate;
+                break;
+            }
+        }
+    }
+}
+
+fn ensure_unique_transit_provider_names(providers: &mut [TransitProviderOptions]) {
+    let mut used = BTreeSet::new();
+    for provider in providers {
+        if used.insert(provider.provider_name.clone()) {
+            continue;
+        }
+
+        let base_name = provider.provider_name.clone();
+        for index in 2.. {
+            let candidate = format!("{base_name}-{index}");
+            if used.insert(candidate.clone()) {
+                provider.provider_name = candidate;
+                break;
+            }
+        }
+    }
+}
+
+fn ensure_unique_transit_group_names(providers: &mut [TransitProviderOptions]) {
+    let mut used = BTreeSet::new();
+    for provider in providers {
+        if used.insert(provider.group_name.clone()) {
+            continue;
+        }
+
+        let base_name = provider.group_name.clone();
+        for index in 2.. {
+            let candidate = format!("{base_name}-{index}");
+            if used.insert(candidate.clone()) {
+                provider.group_name = candidate;
                 break;
             }
         }
@@ -1137,6 +1254,23 @@ impl TransitGroupType {
 
     fn requires_health_check(&self) -> bool {
         matches!(self, TransitGroupType::UrlTest | TransitGroupType::Fallback)
+    }
+}
+
+impl TransitProxyOptions {
+    fn enabled_providers(&self) -> Vec<&TransitProviderOptions> {
+        if self.providers.is_empty() {
+            return Vec::new();
+        }
+
+        self.providers
+            .iter()
+            .filter(|provider| provider.provider_url.is_some())
+            .collect()
+    }
+
+    fn has_provider_url(&self) -> bool {
+        self.provider_url.is_some() || self.providers.iter().any(|provider| provider.provider_url.is_some())
     }
 }
 
@@ -1405,6 +1539,7 @@ mod tests {
                     group_name: "寿司云中转".to_string(),
                     group_type: TransitGroupType::UrlTest,
                     bypass_domains: Vec::new(),
+                    providers: Vec::new(),
                 }),
             },
         )
@@ -1427,6 +1562,61 @@ mod tests {
     }
 
     #[test]
+    fn adds_multiple_transit_providers_and_summary_group() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#lisa";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::FullRules,
+                proxy_name: None,
+                direct_domains: Vec::new(),
+                transit_proxy: Some(TransitProxyOptions {
+                    provider_name: "transit".to_string(),
+                    provider_url: None,
+                    provider_path: None,
+                    group_name: "中转总组".to_string(),
+                    group_type: TransitGroupType::UrlTest,
+                    bypass_domains: Vec::new(),
+                    providers: vec![
+                        TransitProviderOptions {
+                            provider_name: "sushi".to_string(),
+                            provider_url: Some("https://example.com/sushi.yaml".to_string()),
+                            provider_path: None,
+                            group_name: "寿司云".to_string(),
+                        },
+                        TransitProviderOptions {
+                            provider_name: "fast".to_string(),
+                            provider_url: Some("https://example.com/fast.yaml".to_string()),
+                            provider_path: Some("./proxy_providers/fast.yaml".to_string()),
+                            group_name: "快速VPN".to_string(),
+                        },
+                    ],
+                }),
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("sushi:"));
+        assert!(yaml.contains("fast:"));
+        assert!(yaml.contains("url: https://example.com/sushi.yaml"));
+        assert!(yaml.contains("url: https://example.com/fast.yaml"));
+        assert!(yaml.contains("path: ./proxy_providers/sushi.yaml"));
+        assert!(yaml.contains("path: ./proxy_providers/fast.yaml"));
+        assert!(yaml.contains("name: 寿司云"));
+        assert!(yaml.contains("name: 快速VPN"));
+        assert!(yaml.contains("name: 中转总组"));
+        assert!(yaml.contains("- 寿司云"));
+        assert!(yaml.contains("- 快速VPN"));
+        assert!(yaml.contains("dialer-proxy: 中转总组"));
+        assert!(yaml.find("name: 寿司云") < yaml.find("name: 中转总组"));
+        assert!(yaml.find("name: 快速VPN") < yaml.find("name: 中转总组"));
+        assert!(yaml.find("name: 中转总组") < yaml.find("name: PROXY"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
     fn rejects_enabled_transit_without_provider_url_for_full_config() {
         let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#lisa";
 
@@ -1444,6 +1634,7 @@ mod tests {
                     group_name: "寿司云中转".to_string(),
                     group_type: TransitGroupType::UrlTest,
                     bypass_domains: Vec::new(),
+                    providers: Vec::new(),
                 }),
             },
         )
@@ -1473,6 +1664,7 @@ mod tests {
                         "youtube.com".to_string(),
                         "https://netflix.com/watch".to_string(),
                     ],
+                    providers: Vec::new(),
                 }),
             },
         )
@@ -1507,6 +1699,7 @@ mod tests {
                     group_name: "寿司云中转".to_string(),
                     group_type: TransitGroupType::UrlTest,
                     bypass_domains: Vec::new(),
+                    providers: Vec::new(),
                 }),
             },
         )

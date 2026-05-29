@@ -460,6 +460,10 @@ button:disabled {
     @apply min-h-[96px] w-full resize-y rounded-lg px-3 py-2.5 leading-6 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10;
   }
 
+  .transit-provider-url-input {
+    @apply min-h-[74px];
+  }
+
   .transit-section {
     background: linear-gradient(180deg, rgba(16, 185, 129, 0.026), rgba(15, 23, 42, 0.16));
     box-shadow:

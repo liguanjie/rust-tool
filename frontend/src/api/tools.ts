@@ -9,6 +9,14 @@ export interface VlessTransitProxyRequest {
   group_name: string
   group_type: VlessTransitGroupType
   bypass_domains?: string[]
+  providers?: VlessTransitProviderRequest[]
+}
+
+export interface VlessTransitProviderRequest {
+  provider_name: string
+  provider_url?: string
+  provider_path?: string
+  group_name: string
 }
 
 export interface ConvertVlessRequest {
