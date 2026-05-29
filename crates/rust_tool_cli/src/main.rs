@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use rust_tool_core::{convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode};
+use rust_tool_core::{
+    convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
+    TransitProxyOptions,
+};
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
@@ -24,6 +27,24 @@ enum Commands {
         template: CliTemplateMode,
         #[arg(long, help = "Override the proxy name in YAML")]
         proxy_name: Option<String>,
+        #[arg(long, help = "HTTP proxy-provider URL used as the dialer transit")]
+        transit_provider_url: Option<String>,
+        #[arg(
+            long,
+            default_value = "transit",
+            help = "Name of the generated proxy-provider"
+        )]
+        transit_provider_name: String,
+        #[arg(long, help = "Path used by the generated proxy-provider cache file")]
+        transit_provider_path: Option<String>,
+        #[arg(
+            long,
+            default_value = "Transit",
+            help = "Proxy group name referenced by dialer-proxy"
+        )]
+        transit_group_name: String,
+        #[arg(long, value_enum, default_value_t = CliTransitGroupType::UrlTest)]
+        transit_group_type: CliTransitGroupType,
         #[arg(long, help = "Only output the proxy item")]
         proxy_only: bool,
         #[arg(short, long, help = "Write YAML to a file")]
@@ -42,6 +63,13 @@ enum CliTemplateMode {
     Minimal,
     Standard,
     FullRules,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum CliTransitGroupType {
+    Select,
+    UrlTest,
+    Fallback,
 }
 
 impl fmt::Display for CliOutputMode {
@@ -79,6 +107,11 @@ fn run() -> Result<(), String> {
             mode,
             template,
             proxy_name,
+            transit_provider_url,
+            transit_provider_name,
+            transit_provider_path,
+            transit_group_name,
+            transit_group_type,
             proxy_only,
             output,
         } => {
@@ -94,6 +127,18 @@ fn run() -> Result<(), String> {
                 CliTemplateMode::FullRules => TemplateMode::FullRules,
             };
 
+            let transit_proxy = transit_provider_url.map(|url| TransitProxyOptions {
+                provider_name: transit_provider_name,
+                provider_url: Some(url),
+                provider_path: transit_provider_path,
+                group_name: transit_group_name,
+                group_type: match transit_group_type {
+                    CliTransitGroupType::Select => TransitGroupType::Select,
+                    CliTransitGroupType::UrlTest => TransitGroupType::UrlTest,
+                    CliTransitGroupType::Fallback => TransitGroupType::Fallback,
+                },
+            });
+
             let yaml = convert_vless_to_yaml(
                 &input,
                 ConvertOptions {
@@ -101,6 +146,7 @@ fn run() -> Result<(), String> {
                     template_mode,
                     proxy_name,
                     direct_domains: Vec::new(),
+                    transit_proxy,
                 },
             )
             .map_err(|error| error.to_string())?;

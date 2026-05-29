@@ -1,5 +1,14 @@
 export type VlessOutputMode = 'full_config' | 'proxy_only'
 export type VlessTemplateMode = 'minimal' | 'standard' | 'full_rules'
+export type VlessTransitGroupType = 'select' | 'url_test' | 'fallback'
+
+export interface VlessTransitProxyRequest {
+  provider_name: string
+  provider_url?: string
+  provider_path?: string
+  group_name: string
+  group_type: VlessTransitGroupType
+}
 
 export interface ConvertVlessRequest {
   input: string
@@ -7,6 +16,7 @@ export interface ConvertVlessRequest {
   template: VlessTemplateMode
   proxy_name?: string
   direct_domains?: string[]
+  transit_proxy?: VlessTransitProxyRequest
 }
 
 export interface ConvertVlessResponse {
@@ -26,6 +36,12 @@ export interface VlessToolSettings {
   template: VlessTemplateMode
   downloadName: string
   directDomains: string
+  transitEnabled: boolean
+  transitProviderUrl: string
+  transitProviderName: string
+  transitProviderPath: string
+  transitGroupName: string
+  transitGroupType: VlessTransitGroupType
 }
 
 const VLESS_TOOL_SETTINGS_STORAGE_KEY = 'rusttool:vless-to-mihomo:settings'
@@ -37,6 +53,12 @@ export function defaultVlessToolSettings(): VlessToolSettings {
     template: 'full_rules',
     downloadName: 'mihomo',
     directDomains: '',
+    transitEnabled: false,
+    transitProviderUrl: '',
+    transitProviderName: 'transit',
+    transitProviderPath: '',
+    transitGroupName: '中转节点组',
+    transitGroupType: 'url_test',
   }
 }
 

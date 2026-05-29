@@ -6,6 +6,20 @@ import { useVlessToMihomoStore } from './vlessToMihomo'
 
 vi.mock('../api/tools', () => ({
   convertVlessToMihomo: vi.fn(async () => ({ yaml: 'type: vless\n' })),
+  getVlessToolSettings: vi.fn(async () => ({
+    input: '',
+    mode: 'full_config',
+    template: 'full_rules',
+    downloadName: 'mihomo',
+    directDomains: '',
+    transitEnabled: false,
+    transitProviderUrl: '',
+    transitProviderName: 'transit',
+    transitProviderPath: '',
+    transitGroupName: '中转节点组',
+    transitGroupType: 'url_test',
+  })),
+  saveVlessToolSettings: vi.fn(async (settings) => settings),
 }))
 
 describe('useVlessToMihomoStore', () => {
@@ -72,6 +86,30 @@ describe('useVlessToMihomoStore', () => {
     expect(convertVlessToMihomo).toHaveBeenCalledWith(
       expect.objectContaining({
         proxy_name: 'Edited',
+      }),
+    )
+  })
+
+  it('sends transit proxy provider settings when enabled', async () => {
+    const store = useVlessToMihomoStore()
+    store.input = 'vless://11111111-1111-1111-1111-111111111111@example.com:443#Original'
+    store.transitEnabled = true
+    store.transitProviderUrl = 'https://example.com/sushi.yaml'
+    store.transitProviderName = 'sushi'
+    store.transitGroupName = '寿司云中转'
+    store.transitGroupType = 'fallback'
+
+    await store.convert()
+
+    expect(convertVlessToMihomo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transit_proxy: {
+          provider_name: 'sushi',
+          provider_url: 'https://example.com/sushi.yaml',
+          provider_path: undefined,
+          group_name: '寿司云中转',
+          group_type: 'fallback',
+        },
       }),
     )
   })

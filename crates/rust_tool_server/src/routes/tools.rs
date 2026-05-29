@@ -1,5 +1,8 @@
 use axum::{http::StatusCode, Json};
-use rust_tool_core::{convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode};
+use rust_tool_core::{
+    convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
+    TransitProxyOptions,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -18,12 +21,30 @@ pub enum VlessTemplateMode {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VlessTransitGroupType {
+    Select,
+    UrlTest,
+    Fallback,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VlessTransitProxyRequest {
+    provider_name: String,
+    provider_url: Option<String>,
+    provider_path: Option<String>,
+    group_name: String,
+    group_type: Option<VlessTransitGroupType>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct VlessToMihomoRequest {
     input: String,
     mode: Option<VlessOutputMode>,
     template: Option<VlessTemplateMode>,
     proxy_name: Option<String>,
     direct_domains: Option<Vec<String>>,
+    transit_proxy: Option<VlessTransitProxyRequest>,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,6 +83,7 @@ pub async fn vless_to_mihomo(
             template_mode,
             proxy_name: request.proxy_name,
             direct_domains: request.direct_domains.unwrap_or_default(),
+            transit_proxy: request.transit_proxy.map(Into::into),
         },
     )
     .map(|yaml| Json(VlessToMihomoResponse { yaml }))
@@ -76,4 +98,20 @@ pub async fn vless_to_mihomo(
             }),
         )
     })
+}
+
+impl From<VlessTransitProxyRequest> for TransitProxyOptions {
+    fn from(value: VlessTransitProxyRequest) -> Self {
+        Self {
+            provider_name: value.provider_name,
+            provider_url: value.provider_url,
+            provider_path: value.provider_path,
+            group_name: value.group_name,
+            group_type: match value.group_type.unwrap_or(VlessTransitGroupType::UrlTest) {
+                VlessTransitGroupType::Select => TransitGroupType::Select,
+                VlessTransitGroupType::UrlTest => TransitGroupType::UrlTest,
+                VlessTransitGroupType::Fallback => TransitGroupType::Fallback,
+            },
+        }
+    }
 }

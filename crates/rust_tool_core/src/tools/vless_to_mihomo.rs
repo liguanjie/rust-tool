@@ -17,11 +17,28 @@ pub enum TemplateMode {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TransitGroupType {
+    Select,
+    UrlTest,
+    Fallback,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransitProxyOptions {
+    pub provider_name: String,
+    pub provider_url: Option<String>,
+    pub provider_path: Option<String>,
+    pub group_name: String,
+    pub group_type: TransitGroupType,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConvertOptions {
     pub output_mode: OutputMode,
     pub template_mode: TemplateMode,
     pub proxy_name: Option<String>,
     pub direct_domains: Vec<String>,
+    pub transit_proxy: Option<TransitProxyOptions>,
 }
 
 impl Default for ConvertOptions {
@@ -31,6 +48,7 @@ impl Default for ConvertOptions {
             template_mode: TemplateMode::Standard,
             proxy_name: None,
             direct_domains: Vec::new(),
+            transit_proxy: None,
         }
     }
 }
@@ -47,6 +65,8 @@ pub enum ConvertError {
     MissingServer,
     #[error("invalid port")]
     InvalidPort,
+    #[error("proxy provider URL is required when transit proxy is enabled for full config output")]
+    MissingTransitProviderUrl,
     #[error("failed to serialize YAML: {0}")]
     YamlSerializeFailed(String),
 }
@@ -66,6 +86,9 @@ struct MihomoConfig {
     log_level: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     dns: Option<DnsConfig>,
+    #[serde(rename = "proxy-providers")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    proxy_providers: Option<BTreeMap<String, ProxyProvider>>,
     proxies: Vec<Proxy>,
     #[serde(rename = "proxy-groups")]
     proxy_groups: Vec<ProxyGroup>,
@@ -80,13 +103,35 @@ struct ProxyGroup {
     name: String,
     #[serde(rename = "type")]
     group_type: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     proxies: Vec<String>,
+    #[serde(rename = "use")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    use_providers: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     interval: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tolerance: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct ProxyProvider {
+    #[serde(rename = "type")]
+    provider_type: String,
+    url: String,
+    path: String,
+    interval: u32,
+    health_check: ProxyProviderHealthCheck,
+}
+
+#[derive(Debug, Serialize)]
+struct ProxyProviderHealthCheck {
+    enable: bool,
+    url: String,
+    interval: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -179,6 +224,9 @@ struct Proxy {
     #[serde(rename = "h2-opts")]
     #[serde(skip_serializing_if = "Option::is_none")]
     h2_opts: Option<H2Options>,
+    #[serde(rename = "dialer-proxy")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dialer_proxy: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -254,15 +302,35 @@ pub fn convert_vless_to_yaml(input: &str, options: ConvertOptions) -> Result<Str
     let output_mode = options.output_mode;
     let template_mode = options.template_mode;
     let direct_domains = options.direct_domains;
+    let transit_proxy = normalize_transit_proxy(options.transit_proxy);
+    if transit_proxy.is_some()
+        && matches!(output_mode, OutputMode::FullConfig)
+        && transit_proxy
+            .as_ref()
+            .and_then(|transit| transit.provider_url.as_deref())
+            .is_none()
+    {
+        return Err(ConvertError::MissingTransitProviderUrl);
+    }
+
+    if let Some(transit) = &transit_proxy {
+        for proxy in &mut proxies {
+            proxy.dialer_proxy = Some(transit.group_name.clone());
+        }
+    }
+
     let node_addresses = proxies
         .iter()
         .map(|proxy| format!("{}:{}", proxy.server, proxy.port))
         .collect::<Vec<_>>();
 
     let mut yaml = match output_mode {
-        OutputMode::FullConfig => {
-            serde_yaml::to_string(&build_config(proxies, template_mode, &direct_domains))
-        }
+        OutputMode::FullConfig => serde_yaml::to_string(&build_config(
+            proxies,
+            template_mode,
+            &direct_domains,
+            transit_proxy.as_ref(),
+        )),
         OutputMode::ProxyOnly => {
             if proxies.len() == 1 {
                 serde_yaml::to_string(&proxies[0])
@@ -272,7 +340,10 @@ pub fn convert_vless_to_yaml(input: &str, options: ConvertOptions) -> Result<Str
         }
     }
     .map_err(|error| ConvertError::YamlSerializeFailed(error.to_string()))?;
-    yaml.insert_str(0, &format_node_addresses_comment(&node_addresses));
+    yaml.insert_str(
+        0,
+        &format_node_addresses_comment(&node_addresses, transit_proxy.as_ref()),
+    );
 
     Ok(yaml)
 }
@@ -356,6 +427,7 @@ fn parse_vless(input: &str) -> Result<Proxy, ConvertError> {
         httpupgrade_opts: None,
         xhttp_opts: None,
         h2_opts: None,
+        dialer_proxy: None,
     };
 
     if security == "reality" {
@@ -378,6 +450,7 @@ fn build_config(
     proxies: Vec<Proxy>,
     template_mode: TemplateMode,
     direct_domains: &[String],
+    transit_proxy: Option<&TransitProxyOptions>,
 ) -> MihomoConfig {
     let proxy_names = proxies
         .iter()
@@ -388,7 +461,7 @@ fn build_config(
         TemplateMode::Standard | TemplateMode::FullRules
     );
     let include_full_rules = matches!(template_mode, TemplateMode::FullRules);
-    let proxy_groups = build_proxy_groups(&proxy_names, &template_mode);
+    let proxy_groups = build_proxy_groups(&proxy_names, &template_mode, transit_proxy);
 
     MihomoConfig {
         mixed_port: 7890,
@@ -397,6 +470,7 @@ fn build_config(
         mode: "rule".to_string(),
         log_level: "info".to_string(),
         dns: include_standard.then(build_dns_config),
+        proxy_providers: transit_proxy.and_then(build_proxy_providers),
         proxies,
         proxy_groups,
         rule_providers: include_full_rules.then(build_rule_providers),
@@ -404,19 +478,39 @@ fn build_config(
     }
 }
 
-fn build_proxy_groups(proxy_names: &[String], template_mode: &TemplateMode) -> Vec<ProxyGroup> {
+fn build_proxy_groups(
+    proxy_names: &[String],
+    template_mode: &TemplateMode,
+    transit_proxy: Option<&TransitProxyOptions>,
+) -> Vec<ProxyGroup> {
     let mut proxy_choices = proxy_names.to_vec();
+    if let Some(transit) = transit_proxy {
+        proxy_choices.push(transit.group_name.clone());
+    }
     proxy_choices.push("AUTO".to_string());
     proxy_choices.push("DIRECT".to_string());
 
     let mut category_choices = vec!["PROXY".to_string()];
     category_choices.extend(proxy_names.iter().cloned());
+    if let Some(transit) = transit_proxy {
+        category_choices.push(transit.group_name.clone());
+    }
     category_choices.push("AUTO".to_string());
     category_choices.push("DIRECT".to_string());
 
-    match template_mode {
+    let mut groups = Vec::new();
+    if let Some(transit) = transit_proxy {
+        if transit.provider_url.is_some() {
+            groups.push(provider_group(transit));
+        }
+    }
+
+    groups.extend(match template_mode {
         TemplateMode::Minimal => {
             let mut choices = proxy_names.to_vec();
+            if let Some(transit) = transit_proxy {
+                choices.push(transit.group_name.clone());
+            }
             choices.push("DIRECT".to_string());
             vec![select_group("PROXY", choices)]
         }
@@ -434,7 +528,9 @@ fn build_proxy_groups(proxy_names: &[String], template_mode: &TemplateMode) -> V
             select_group("TikTok", category_choices),
             select_group("Ads", vec!["REJECT".to_string(), "DIRECT".to_string()]),
         ],
-    }
+    });
+
+    groups
 }
 
 fn select_group(name: &str, proxies: Vec<String>) -> ProxyGroup {
@@ -442,6 +538,7 @@ fn select_group(name: &str, proxies: Vec<String>) -> ProxyGroup {
         name: name.to_string(),
         group_type: "select".to_string(),
         proxies,
+        use_providers: Vec::new(),
         url: None,
         interval: None,
         tolerance: None,
@@ -453,10 +550,49 @@ fn url_test_group(name: &str, proxies: Vec<String>) -> ProxyGroup {
         name: name.to_string(),
         group_type: "url-test".to_string(),
         proxies,
+        use_providers: Vec::new(),
         url: Some("https://www.gstatic.com/generate_204".to_string()),
         interval: Some(300),
         tolerance: Some(50),
     }
+}
+
+fn provider_group(transit: &TransitProxyOptions) -> ProxyGroup {
+    ProxyGroup {
+        name: transit.group_name.clone(),
+        group_type: transit.group_type.as_mihomo_type().to_string(),
+        proxies: Vec::new(),
+        use_providers: vec![transit.provider_name.clone()],
+        url: transit
+            .group_type
+            .requires_health_check()
+            .then(|| "https://www.gstatic.com/generate_204".to_string()),
+        interval: transit.group_type.requires_health_check().then_some(300),
+        tolerance: matches!(transit.group_type, TransitGroupType::UrlTest).then_some(50),
+    }
+}
+
+fn build_proxy_providers(transit: &TransitProxyOptions) -> Option<BTreeMap<String, ProxyProvider>> {
+    let provider_url = transit.provider_url.as_ref()?;
+    let mut providers = BTreeMap::new();
+    providers.insert(
+        transit.provider_name.clone(),
+        ProxyProvider {
+            provider_type: "http".to_string(),
+            url: provider_url.clone(),
+            path: transit
+                .provider_path
+                .clone()
+                .unwrap_or_else(|| default_provider_path(&transit.provider_name)),
+            interval: 3600,
+            health_check: ProxyProviderHealthCheck {
+                enable: true,
+                url: "https://www.gstatic.com/generate_204".to_string(),
+                interval: 300,
+            },
+        },
+    );
+    Some(providers)
 }
 
 fn build_dns_config() -> DnsConfig {
@@ -839,6 +975,47 @@ fn normalize_custom_name(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn normalize_transit_proxy(value: Option<TransitProxyOptions>) -> Option<TransitProxyOptions> {
+    let transit = value?;
+    let provider_url = normalize_custom_name(transit.provider_url.as_deref());
+    let provider_path = normalize_custom_name(transit.provider_path.as_deref());
+    let provider_name =
+        normalize_provider_name(&transit.provider_name).unwrap_or_else(|| "transit".to_string());
+    let group_name =
+        normalize_custom_name(Some(&transit.group_name)).unwrap_or_else(|| "Transit".to_string());
+
+    Some(TransitProxyOptions {
+        provider_name,
+        provider_url,
+        provider_path,
+        group_name,
+        group_type: transit.group_type,
+    })
+}
+
+fn normalize_provider_name(value: &str) -> Option<String> {
+    normalize_custom_name(Some(value))
+        .map(|name| {
+            name.chars()
+                .map(|character| {
+                    if character.is_ascii_alphanumeric() || matches!(character, '_' | '-') {
+                        character
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>()
+                .trim_matches('_')
+                .to_string()
+        })
+        .filter(|name| !name.is_empty())
+}
+
+fn default_provider_path(provider_name: &str) -> String {
+    let safe_name = normalize_provider_name(provider_name).unwrap_or_else(|| "transit".to_string());
+    format!("./proxy_providers/{safe_name}.yaml")
+}
+
 fn ensure_unique_proxy_names(proxies: &mut [Proxy]) {
     let mut used = BTreeSet::new();
     for proxy in proxies {
@@ -857,15 +1034,27 @@ fn ensure_unique_proxy_names(proxies: &mut [Proxy]) {
     }
 }
 
-fn format_node_addresses_comment(node_addresses: &[String]) -> String {
-    if node_addresses.len() <= 1 {
-        return format!(
-            "# 节点地址: {}\n",
+fn format_node_addresses_comment(
+    node_addresses: &[String],
+    transit_proxy: Option<&TransitProxyOptions>,
+) -> String {
+    let address_comment = if node_addresses.len() <= 1 {
+        format!(
+            "# 节点地址: {}",
             node_addresses.first().cloned().unwrap_or_default()
+        )
+    } else {
+        format!("# 节点地址: {}", node_addresses.join(", "))
+    };
+
+    if let Some(transit) = transit_proxy {
+        return format!(
+            "{address_comment}\n# 中转链路: 设备/浏览器 -> 中转节点({}) -> 终端节点(3x-ui/VLESS) -> 最终目标(例如 google.com)\n",
+            transit.group_name
         );
     }
 
-    format!("# 节点地址: {}\n", node_addresses.join(", "))
+    format!("{address_comment}\n")
 }
 
 impl RealityOptions {
@@ -906,6 +1095,20 @@ impl H2Options {
     }
 }
 
+impl TransitGroupType {
+    fn as_mihomo_type(&self) -> &'static str {
+        match self {
+            TransitGroupType::Select => "select",
+            TransitGroupType::UrlTest => "url-test",
+            TransitGroupType::Fallback => "fallback",
+        }
+    }
+
+    fn requires_health_check(&self) -> bool {
+        matches!(self, TransitGroupType::UrlTest | TransitGroupType::Fallback)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -938,6 +1141,7 @@ mod tests {
                 template_mode: TemplateMode::Standard,
                 proxy_name: None,
                 direct_domains: Vec::new(),
+                transit_proxy: None,
             },
         )
         .unwrap();
@@ -985,6 +1189,7 @@ mod tests {
                 template_mode: TemplateMode::FullRules,
                 proxy_name: None,
                 direct_domains: Vec::new(),
+                transit_proxy: None,
             },
         )
         .unwrap();
@@ -1015,6 +1220,7 @@ mod tests {
                 template_mode: TemplateMode::FullRules,
                 proxy_name: Some("ignored-for-multiple".to_string()),
                 direct_domains: Vec::new(),
+                transit_proxy: None,
             },
         )
         .unwrap();
@@ -1057,6 +1263,7 @@ mod tests {
                 template_mode: TemplateMode::Minimal,
                 proxy_name: None,
                 direct_domains: Vec::new(),
+                transit_proxy: None,
             },
         )
         .unwrap();
@@ -1078,6 +1285,7 @@ mod tests {
                 template_mode: TemplateMode::Minimal,
                 proxy_name: None,
                 direct_domains: Vec::new(),
+                transit_proxy: None,
             },
         )
         .unwrap();
@@ -1106,6 +1314,7 @@ mod tests {
                 template_mode: TemplateMode::Standard,
                 proxy_name: Some("my-node".to_string()),
                 direct_domains: Vec::new(),
+                transit_proxy: None,
             },
         )
         .unwrap();
@@ -1131,6 +1340,7 @@ mod tests {
                     "https://example.org/docs".to_string(),
                     "*.internal.test".to_string(),
                 ],
+                transit_proxy: None,
             },
         )
         .unwrap();
@@ -1143,6 +1353,96 @@ mod tests {
                 < yaml.find("RULE-SET,geolocation_not_cn,PROXY")
         );
         assert!(yaml.find("DOMAIN-SUFFIX,github.com,DIRECT") < yaml.find("MATCH,PROXY"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn adds_proxy_provider_transit_group_and_dialer_proxy() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#lisa";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::FullRules,
+                proxy_name: None,
+                direct_domains: Vec::new(),
+                transit_proxy: Some(TransitProxyOptions {
+                    provider_name: "sushi".to_string(),
+                    provider_url: Some("https://example.com/sub.yaml".to_string()),
+                    provider_path: None,
+                    group_name: "寿司云中转".to_string(),
+                    group_type: TransitGroupType::UrlTest,
+                }),
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("proxy-providers:"));
+        assert!(yaml.contains(
+            "# 中转链路: 设备/浏览器 -> 中转节点(寿司云中转) -> 终端节点(3x-ui/VLESS) -> 最终目标(例如 google.com)"
+        ));
+        assert!(yaml.contains("sushi:"));
+        assert!(yaml.contains("url: https://example.com/sub.yaml"));
+        assert!(yaml.contains("path: ./proxy_providers/sushi.yaml"));
+        assert!(yaml.contains("dialer-proxy: 寿司云中转"));
+        assert!(yaml.contains("name: 寿司云中转"));
+        assert!(yaml.contains("type: url-test"));
+        assert!(yaml.contains("use:"));
+        assert!(yaml.contains("- sushi"));
+        assert!(yaml.find("name: 寿司云中转") < yaml.find("name: PROXY"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
+    }
+
+    #[test]
+    fn rejects_enabled_transit_without_provider_url_for_full_config() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#lisa";
+
+        let error = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::FullRules,
+                proxy_name: None,
+                direct_domains: Vec::new(),
+                transit_proxy: Some(TransitProxyOptions {
+                    provider_name: "sushi".to_string(),
+                    provider_url: None,
+                    provider_path: None,
+                    group_name: "寿司云中转".to_string(),
+                    group_type: TransitGroupType::UrlTest,
+                }),
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, ConvertError::MissingTransitProviderUrl);
+    }
+
+    #[test]
+    fn proxy_only_can_apply_dialer_proxy_without_provider_block() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#lisa";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::ProxyOnly,
+                template_mode: TemplateMode::Minimal,
+                proxy_name: None,
+                direct_domains: Vec::new(),
+                transit_proxy: Some(TransitProxyOptions {
+                    provider_name: "sushi".to_string(),
+                    provider_url: None,
+                    provider_path: None,
+                    group_name: "寿司云中转".to_string(),
+                    group_type: TransitGroupType::UrlTest,
+                }),
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("dialer-proxy: 寿司云中转"));
+        assert!(!yaml.contains("proxy-providers:"));
         serde_yaml::from_str::<Value>(&yaml).unwrap();
     }
 }

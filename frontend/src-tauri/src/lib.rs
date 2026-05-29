@@ -1,5 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
-use rust_tool_core::{convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode};
+use rust_tool_core::{
+    convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
+    TransitProxyOptions,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,12 +29,30 @@ enum VlessTemplateMode {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum VlessTransitGroupType {
+    Select,
+    UrlTest,
+    Fallback,
+}
+
+#[derive(Debug, Deserialize)]
+struct VlessTransitProxyRequest {
+    provider_name: String,
+    provider_url: Option<String>,
+    provider_path: Option<String>,
+    group_name: String,
+    group_type: Option<VlessTransitGroupType>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ConvertVlessRequest {
     input: String,
     mode: Option<VlessOutputMode>,
     template: Option<VlessTemplateMode>,
     proxy_name: Option<String>,
     direct_domains: Option<Vec<String>>,
+    transit_proxy: Option<VlessTransitProxyRequest>,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,6 +73,12 @@ struct VlessToolSettings {
     template: String,
     download_name: String,
     direct_domains: String,
+    transit_enabled: bool,
+    transit_provider_url: String,
+    transit_provider_name: String,
+    transit_provider_path: String,
+    transit_group_name: String,
+    transit_group_type: String,
 }
 
 impl Default for VlessToolSettings {
@@ -62,6 +89,12 @@ impl Default for VlessToolSettings {
             template: "full_rules".to_string(),
             download_name: "mihomo".to_string(),
             direct_domains: String::new(),
+            transit_enabled: false,
+            transit_provider_url: String::new(),
+            transit_provider_name: "transit".to_string(),
+            transit_provider_path: String::new(),
+            transit_group_name: "中转节点组".to_string(),
+            transit_group_type: "url_test".to_string(),
         }
     }
 }
@@ -85,6 +118,7 @@ fn convert_vless_to_mihomo(request: ConvertVlessRequest) -> Result<ConvertVlessR
             template_mode,
             proxy_name: request.proxy_name,
             direct_domains: request.direct_domains.unwrap_or_default(),
+            transit_proxy: request.transit_proxy.map(Into::into),
         },
     )
     .map(|yaml| ConvertVlessResponse { yaml })
@@ -476,6 +510,22 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run RustTool desktop app");
+}
+
+impl From<VlessTransitProxyRequest> for TransitProxyOptions {
+    fn from(value: VlessTransitProxyRequest) -> Self {
+        Self {
+            provider_name: value.provider_name,
+            provider_url: value.provider_url,
+            provider_path: value.provider_path,
+            group_name: value.group_name,
+            group_type: match value.group_type.unwrap_or(VlessTransitGroupType::UrlTest) {
+                VlessTransitGroupType::Select => TransitGroupType::Select,
+                VlessTransitGroupType::UrlTest => TransitGroupType::UrlTest,
+                VlessTransitGroupType::Fallback => TransitGroupType::Fallback,
+            },
+        }
+    }
 }
 
 fn open_app_db(app: &tauri::AppHandle) -> Result<Connection, String> {

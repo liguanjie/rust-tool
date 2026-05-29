@@ -95,6 +95,87 @@ onMounted(() => {
           <small class="field-hint">每行一条；会生成 DOMAIN-SUFFIX 直连规则，并优先于代理兜底匹配。</small>
         </label>
 
+        <section class="transit-section" aria-labelledby="transit-provider-title">
+          <label class="toggle-option">
+            <input v-model="tool.transitEnabled" type="checkbox" />
+            <span>
+              <strong id="transit-provider-title">启用 Proxy Provider 中转</strong>
+              <small>将任意 Clash/Mihomo 订阅作为中转组，3x-ui 节点会通过 dialer-proxy 先走该组。</small>
+            </span>
+          </label>
+
+          <div v-if="tool.transitEnabled" class="transit-fields">
+            <div class="transit-chain" aria-label="中转链路说明">
+              <span>设备/浏览器</span>
+              <span>中转节点 (VPN)</span>
+              <span>终端节点 (3x-ui)</span>
+              <span>最终目标 (google.com)</span>
+            </div>
+
+            <label class="field-control" for="transit-provider-url">
+              <span class="field-label">中转订阅地址</span>
+              <input
+                id="transit-provider-url"
+                v-model="tool.transitProviderUrl"
+                class="text-input"
+                type="url"
+                placeholder="https://example.com/sub.yaml"
+              />
+              <small class="field-hint">需要是 Clash/Mihomo 可解析订阅；生成到 proxy-providers。</small>
+            </label>
+
+            <div class="transit-two-col">
+              <label class="field-control" for="transit-provider-name">
+                <span class="field-label">Provider 名称</span>
+                <input
+                  id="transit-provider-name"
+                  v-model="tool.transitProviderName"
+                  class="text-input"
+                  type="text"
+                  placeholder="transit"
+                />
+              </label>
+
+              <label class="field-control" for="transit-group-name">
+                <span class="field-label">中转组名</span>
+                <input
+                  id="transit-group-name"
+                  v-model="tool.transitGroupName"
+                  class="text-input"
+                  type="text"
+                  placeholder="中转节点组"
+                />
+              </label>
+            </div>
+
+            <label class="field-control" for="transit-provider-path">
+              <span class="field-label">Provider 缓存路径</span>
+              <input
+                id="transit-provider-path"
+                v-model="tool.transitProviderPath"
+                class="text-input"
+                type="text"
+                placeholder="./proxy_providers/transit.yaml"
+              />
+            </label>
+
+            <div class="mode-row" role="radiogroup" aria-label="中转组类型">
+              <label class="mode-option">
+                <input v-model="tool.transitGroupType" type="radio" value="url_test" />
+                <span>自动测速</span>
+              </label>
+              <label class="mode-option">
+                <input v-model="tool.transitGroupType" type="radio" value="fallback" />
+                <span>故障切换</span>
+              </label>
+              <label class="mode-option">
+                <input v-model="tool.transitGroupType" type="radio" value="select" />
+                <span>手动选择</span>
+              </label>
+            </div>
+          </div>
+        </section>
+
         <button class="primary-button" type="button" :disabled="!tool.canConvert" @click="tool.convert">
           {{ tool.loading ? '转换中...' : '转换' }}
         </button>

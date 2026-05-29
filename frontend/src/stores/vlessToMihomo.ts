@@ -6,6 +6,7 @@ import {
   saveVlessToolSettings,
   type VlessOutputMode,
   type VlessTemplateMode,
+  type VlessTransitGroupType,
 } from '../api/tools'
 
 export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
@@ -15,6 +16,12 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
   const downloadName = ref('mihomo')
   const downloadNameEdited = ref(false)
   const directDomains = ref('')
+  const transitEnabled = ref(false)
+  const transitProviderUrl = ref('')
+  const transitProviderName = ref('transit')
+  const transitProviderPath = ref('')
+  const transitGroupName = ref('中转节点组')
+  const transitGroupType = ref<VlessTransitGroupType>('url_test')
   const settingsLoaded = ref(false)
   const savingSettings = ref(false)
   const yaml = ref('')
@@ -35,9 +42,24 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
     downloadName.value = name || 'mihomo'
   })
 
-  watch([input, mode, template, downloadName, directDomains], () => {
-    scheduleSaveSettings()
-  })
+  watch(
+    [
+      input,
+      mode,
+      template,
+      downloadName,
+      directDomains,
+      transitEnabled,
+      transitProviderUrl,
+      transitProviderName,
+      transitProviderPath,
+      transitGroupName,
+      transitGroupType,
+    ],
+    () => {
+      scheduleSaveSettings()
+    },
+  )
 
   async function load() {
     if (settingsLoaded.value) return
@@ -55,6 +77,12 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
           settings.downloadName !== extractedName,
       )
       directDomains.value = settings.directDomains || ''
+      transitEnabled.value = Boolean(settings.transitEnabled)
+      transitProviderUrl.value = settings.transitProviderUrl || ''
+      transitProviderName.value = settings.transitProviderName || 'transit'
+      transitProviderPath.value = settings.transitProviderPath || ''
+      transitGroupName.value = settings.transitGroupName || '中转节点组'
+      transitGroupType.value = normalizeTransitGroupType(settings.transitGroupType)
     } catch (caught) {
       console.warn('Failed to load VLESS tool settings', caught)
     } finally {
@@ -80,6 +108,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
         template: template.value,
         proxy_name: proxyName.value || undefined,
         direct_domains: parseDirectDomains(directDomains.value),
+        transit_proxy: buildTransitProxyPayload(),
       })
       yaml.value = result.yaml
     } catch (caught) {
@@ -113,11 +142,29 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
         template: template.value,
         downloadName: downloadName.value,
         directDomains: directDomains.value,
+        transitEnabled: transitEnabled.value,
+        transitProviderUrl: transitProviderUrl.value,
+        transitProviderName: transitProviderName.value,
+        transitProviderPath: transitProviderPath.value,
+        transitGroupName: transitGroupName.value,
+        transitGroupType: transitGroupType.value,
       })
     } catch (caught) {
       console.warn('Failed to save VLESS tool settings', caught)
     } finally {
       savingSettings.value = false
+    }
+  }
+
+  function buildTransitProxyPayload() {
+    if (!transitEnabled.value) return undefined
+
+    return {
+      provider_name: emptyToUndefined(transitProviderName.value) || 'transit',
+      provider_url: emptyToUndefined(transitProviderUrl.value),
+      provider_path: emptyToUndefined(transitProviderPath.value),
+      group_name: emptyToUndefined(transitGroupName.value) || '中转节点组',
+      group_type: transitGroupType.value,
     }
   }
 
@@ -137,6 +184,12 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
     downloadName,
     downloadFilename,
     directDomains,
+    transitEnabled,
+    transitProviderUrl,
+    transitProviderName,
+    transitProviderPath,
+    transitGroupName,
+    transitGroupType,
     savingSettings,
     load,
     updateDownloadName,
@@ -230,4 +283,17 @@ function normalizeTemplateMode(value: string): VlessTemplateMode {
   }
 
   return 'full_rules'
+}
+
+function normalizeTransitGroupType(value: string): VlessTransitGroupType {
+  if (value === 'select' || value === 'fallback' || value === 'url_test') {
+    return value
+  }
+
+  return 'url_test'
+}
+
+function emptyToUndefined(value: string) {
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }

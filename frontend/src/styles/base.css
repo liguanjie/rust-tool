@@ -417,6 +417,58 @@ button:disabled {
     @apply min-h-[96px] w-full resize-y rounded-lg px-3 py-2.5 leading-6 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10;
   }
 
+  .transit-section {
+    @apply mt-4 grid gap-3 rounded-lg border border-emerald-500/15 bg-emerald-500/[0.03] p-3;
+  }
+
+  .toggle-option {
+    color: var(--text-base);
+    @apply flex items-start gap-3 text-sm;
+  }
+
+  .toggle-option input {
+    @apply mt-1 shrink-0;
+  }
+
+  .toggle-option span {
+    @apply grid gap-1;
+  }
+
+  .toggle-option strong {
+    color: var(--text-title);
+    @apply font-bold;
+  }
+
+  .toggle-option small {
+    color: var(--text-muted);
+    @apply text-xs leading-5;
+  }
+
+  .transit-fields {
+    @apply grid gap-3;
+  }
+
+  .transit-chain {
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(16, 185, 129, 0.14);
+    color: var(--text-subtitle);
+    @apply flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs leading-5;
+  }
+
+  .transit-chain span {
+    @apply inline-flex items-center font-medium;
+  }
+
+  .transit-chain span:not(:last-child)::after {
+    content: "->";
+    color: var(--text-muted);
+    @apply ml-2;
+  }
+
+  .transit-two-col {
+    @apply grid grid-cols-2 gap-3 max-[640px]:grid-cols-1;
+  }
+
   .field-hint {
     color: var(--text-muted);
     @apply mt-1.5 block text-xs leading-5 transition-colors duration-300;
