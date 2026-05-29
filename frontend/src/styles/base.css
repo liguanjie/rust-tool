@@ -206,12 +206,30 @@ button:disabled {
 }
 
 @layer components {
+  .app-shell {
+    @apply relative z-10 grid h-screen min-h-0 transition-[grid-template-columns] duration-300 max-[880px]:grid-cols-1;
+  }
+
+  .app-content {
+    @apply min-h-0 min-w-0 overflow-y-auto px-8 py-8 max-[880px]:px-5;
+  }
+
   /* Semantic Sidebar Styles */
   .app-sidebar {
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border-sidebar);
     backdrop-filter: var(--backdrop-card);
-    @apply flex min-h-0 flex-col px-5 py-7 z-20 transition-all duration-300;
+    @apply sticky top-0 flex h-screen min-h-0 flex-col overflow-hidden px-5 py-7 z-20 transition-all duration-300;
+  }
+
+  @media (max-width: 880px) {
+    .app-shell {
+      @apply h-screen grid-rows-[auto_minmax(0,1fr)];
+    }
+
+    .app-sidebar {
+      @apply static h-auto max-h-[45vh] overflow-auto;
+    }
   }
 
   .app-sidebar--collapsed {
@@ -403,6 +421,10 @@ button:disabled {
       inset 0 3px 0 rgba(16, 185, 129, 0.22);
   }
 
+  .vless-config-panel {
+    @apply grid gap-4;
+  }
+
   .result-panel {
     container-type: inline-size;
   }
@@ -423,8 +445,12 @@ button:disabled {
     @apply min-h-[180px] w-full resize-y rounded-lg px-3 py-3 leading-6 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10;
   }
 
-  .direct-domain-field {
-    @apply mt-4;
+  .config-section,
+  .route-field {
+    background: rgba(15, 23, 42, 0.28);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    box-shadow: inset 2px 0 0 rgba(16, 185, 129, 0.3);
+    @apply rounded-lg p-3;
   }
 
   .direct-domain-input {
@@ -435,11 +461,11 @@ button:disabled {
   }
 
   .transit-section {
-    background: linear-gradient(180deg, rgba(16, 185, 129, 0.035), rgba(16, 185, 129, 0.015));
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.026), rgba(15, 23, 42, 0.16));
     box-shadow:
-      inset 3px 0 0 rgba(16, 185, 129, 0.48),
-      inset 0 3px 0 rgba(16, 185, 129, 0.28);
-    @apply mt-7 grid gap-3 rounded-lg border border-emerald-500/18 p-4;
+      inset 3px 0 0 rgba(16, 185, 129, 0.42),
+      inset 0 2px 0 rgba(16, 185, 129, 0.18);
+    @apply grid gap-3 rounded-lg border border-emerald-500/15 p-4;
   }
 
   .section-divider {
@@ -480,30 +506,39 @@ button:disabled {
     @apply grid gap-3;
   }
 
-  .transit-chain {
+  .transit-chain,
+  .route-hint {
     background: rgba(16, 185, 129, 0.075);
     border: 1px solid rgba(16, 185, 129, 0.22);
     color: var(--text-subtitle);
     @apply flex flex-wrap items-center gap-2 rounded-lg px-3 py-2.5 text-xs leading-5 shadow-[0_0_18px_rgba(16,185,129,0.05)];
   }
 
-  .transit-chain strong {
+  .route-hint {
+    @apply mb-2 py-2;
+  }
+
+  .transit-chain strong,
+  .route-hint strong {
     color: #6ee7b7;
     @apply mr-1 font-bold;
   }
 
-  .transit-chain span {
+  .transit-chain span,
+  .route-hint span {
     background: rgba(15, 23, 42, 0.45);
     border: 1px solid rgba(148, 163, 184, 0.12);
     color: var(--text-base);
     @apply relative inline-flex min-h-[24px] items-center rounded-full px-2 font-semibold;
   }
 
-  .transit-chain span:not(:last-child) {
+  .transit-chain span:not(:last-child),
+  .route-hint span:not(:last-child) {
     @apply mr-4;
   }
 
-  .transit-chain span:not(:last-child)::after {
+  .transit-chain span:not(:last-child)::after,
+  .route-hint span:not(:last-child)::after {
     content: "->";
     color: #34d399;
     top: 50%;
@@ -516,6 +551,10 @@ button:disabled {
     @apply grid grid-cols-2 gap-3 max-[640px]:grid-cols-1;
   }
 
+  .transit-two-col .field-label {
+    @apply mb-2;
+  }
+
   .field-hint {
     color: var(--text-muted);
     @apply mt-1.5 block text-xs leading-5 transition-colors duration-300;
@@ -523,10 +562,6 @@ button:disabled {
 
   .field-control {
     @apply block;
-  }
-
-  .file-name-field {
-    @apply mt-3.5;
   }
 
   .text-input {
@@ -549,7 +584,7 @@ button:disabled {
   }
 
   .mode-row {
-    @apply mt-3.5 flex flex-wrap gap-2.5;
+    @apply flex flex-wrap gap-2.5;
   }
 
   .mode-option {
@@ -560,7 +595,7 @@ button:disabled {
   }
 
   .template-section {
-    @apply mt-4;
+    @apply mt-0;
   }
 
   .template-options {
@@ -607,7 +642,7 @@ button:disabled {
   .primary-button {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
-    @apply mt-4 min-h-[42px] w-full rounded-lg border-0 font-bold text-white transition-all duration-200 hover:brightness-110 hover:shadow-[0_4px_20px_rgba(16,185,129,0.4)] active:scale-[0.98];
+    @apply min-h-[42px] w-full rounded-lg border-0 font-bold text-white transition-all duration-200 hover:brightness-110 hover:shadow-[0_4px_20px_rgba(16,185,129,0.4)] active:scale-[0.98];
   }
 
   .compact-primary {

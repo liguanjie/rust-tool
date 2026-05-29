@@ -7,7 +7,7 @@ const themeStore = useThemeStore()
 </script>
 
 <template>
-  <div :class="{ 'dark': themeStore.isDark }" class="relative min-h-screen overflow-hidden bg-[var(--bg-app)] text-[var(--text-base)] transition-colors duration-300">
+  <div :class="{ 'dark': themeStore.isDark }" class="relative h-screen overflow-hidden bg-[var(--bg-app)] text-[var(--text-base)] transition-colors duration-300">
     <!-- Background glowing ambient spots (Only active in dark mode) -->
     <Transition name="fade">
       <div v-if="themeStore.isDark" class="pointer-events-none">
@@ -18,12 +18,12 @@ const themeStore = useThemeStore()
       </div>
     </Transition>
 
-    <main 
-      class="relative z-10 grid min-h-screen transition-[grid-template-columns] duration-300 max-[880px]:grid-cols-1"
+    <main
+      class="app-shell"
       :class="themeStore.isSidebarCollapsed ? 'grid-cols-[80px_minmax(0,1fr)]' : 'grid-cols-[280px_minmax(0,1fr)]'"
     >
       <AppSidebar class="max-[880px]:min-h-0 max-[880px]:border-b max-[880px]:border-r-0" />
-      <section class="min-w-0 px-8 py-8 max-[880px]:px-5">
+      <section class="app-content">
         <RouterView />
       </section>
     </main>

@@ -30,6 +30,7 @@ pub struct TransitProxyOptions {
     pub provider_path: Option<String>,
     pub group_name: String,
     pub group_type: TransitGroupType,
+    pub bypass_domains: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -474,7 +475,7 @@ fn build_config(
         proxies,
         proxy_groups,
         rule_providers: include_full_rules.then(build_rule_providers),
-        rules: build_rules(&template_mode, direct_domains),
+        rules: build_rules(&template_mode, direct_domains, transit_proxy),
     }
 }
 
@@ -753,13 +754,21 @@ fn http_rule_provider(behavior: &str, url: &str, path: &str) -> RuleProvider {
     }
 }
 
-fn build_rules(template_mode: &TemplateMode, direct_domains: &[String]) -> Vec<String> {
+fn build_rules(
+    template_mode: &TemplateMode,
+    direct_domains: &[String],
+    transit_proxy: Option<&TransitProxyOptions>,
+) -> Vec<String> {
     match template_mode {
-        TemplateMode::Minimal => with_local_direct_rules(vec!["MATCH,PROXY"], direct_domains),
-        TemplateMode::Standard => {
-            with_local_direct_rules(vec!["GEOIP,CN,DIRECT", "MATCH,PROXY"], direct_domains)
+        TemplateMode::Minimal => {
+            with_custom_domain_rules(vec!["MATCH,PROXY"], direct_domains, transit_proxy)
         }
-        TemplateMode::FullRules => with_local_direct_rules(
+        TemplateMode::Standard => with_custom_domain_rules(
+            vec!["GEOIP,CN,DIRECT", "MATCH,PROXY"],
+            direct_domains,
+            transit_proxy,
+        ),
+        TemplateMode::FullRules => with_custom_domain_rules(
             vec![
                 "RULE-SET,reject,Ads",
                 "RULE-SET,openai,AI",
@@ -776,11 +785,16 @@ fn build_rules(template_mode: &TemplateMode, direct_domains: &[String]) -> Vec<S
                 "MATCH,PROXY",
             ],
             direct_domains,
+            transit_proxy,
         ),
     }
 }
 
-fn with_local_direct_rules(rules: Vec<&'static str>, direct_domains: &[String]) -> Vec<String> {
+fn with_custom_domain_rules(
+    rules: Vec<&'static str>,
+    direct_domains: &[String],
+    transit_proxy: Option<&TransitProxyOptions>,
+) -> Vec<String> {
     let mut merged = vec![
         "DOMAIN,localhost,DIRECT",
         "DOMAIN-SUFFIX,localhost,DIRECT",
@@ -807,6 +821,13 @@ fn with_local_direct_rules(rules: Vec<&'static str>, direct_domains: &[String]) 
             merged.push(rule);
         }
     }
+    if let Some(transit) = transit_proxy {
+        for rule in build_transit_bypass_domain_rules(transit) {
+            if seen.insert(rule.clone()) {
+                merged.push(rule);
+            }
+        }
+    }
 
     merged.extend(rules.into_iter().map(ToOwned::to_owned));
     merged
@@ -817,6 +838,15 @@ fn build_custom_direct_domain_rules(direct_domains: &[String]) -> Vec<String> {
         .iter()
         .filter_map(|domain| normalize_direct_domain(domain))
         .map(|domain| format!("DOMAIN-SUFFIX,{domain},DIRECT"))
+        .collect()
+}
+
+fn build_transit_bypass_domain_rules(transit: &TransitProxyOptions) -> Vec<String> {
+    transit
+        .bypass_domains
+        .iter()
+        .filter_map(|domain| normalize_direct_domain(domain))
+        .map(|domain| format!("DOMAIN-SUFFIX,{domain},{}", transit.group_name))
         .collect()
 }
 
@@ -990,6 +1020,7 @@ fn normalize_transit_proxy(value: Option<TransitProxyOptions>) -> Option<Transit
         provider_path,
         group_name,
         group_type: transit.group_type,
+        bypass_domains: transit.bypass_domains,
     })
 }
 
@@ -1373,6 +1404,7 @@ mod tests {
                     provider_path: None,
                     group_name: "寿司云中转".to_string(),
                     group_type: TransitGroupType::UrlTest,
+                    bypass_domains: Vec::new(),
                 }),
             },
         )
@@ -1411,12 +1443,50 @@ mod tests {
                     provider_path: None,
                     group_name: "寿司云中转".to_string(),
                     group_type: TransitGroupType::UrlTest,
+                    bypass_domains: Vec::new(),
                 }),
             },
         )
         .unwrap_err();
 
         assert_eq!(error, ConvertError::MissingTransitProviderUrl);
+    }
+
+    #[test]
+    fn adds_transit_bypass_domains_before_proxy_rules() {
+        let input = "vless://11111111-1111-1111-1111-111111111111@example.com:443?type=tcp&security=reality&pbk=abc123#lisa";
+
+        let yaml = convert_vless_to_yaml(
+            input,
+            ConvertOptions {
+                output_mode: OutputMode::FullConfig,
+                template_mode: TemplateMode::FullRules,
+                proxy_name: None,
+                direct_domains: vec!["github.com".to_string()],
+                transit_proxy: Some(TransitProxyOptions {
+                    provider_name: "transit".to_string(),
+                    provider_url: Some("https://example.com/sub.yaml".to_string()),
+                    provider_path: None,
+                    group_name: "中转VPN".to_string(),
+                    group_type: TransitGroupType::UrlTest,
+                    bypass_domains: vec![
+                        "youtube.com".to_string(),
+                        "https://netflix.com/watch".to_string(),
+                    ],
+                }),
+            },
+        )
+        .unwrap();
+
+        assert!(yaml.contains("DOMAIN-SUFFIX,github.com,DIRECT"));
+        assert!(yaml.contains("DOMAIN-SUFFIX,youtube.com,中转VPN"));
+        assert!(yaml.contains("DOMAIN-SUFFIX,netflix.com,中转VPN"));
+        assert!(
+            yaml.find("DOMAIN-SUFFIX,youtube.com,中转VPN")
+                < yaml.find("RULE-SET,geolocation_not_cn,PROXY")
+        );
+        assert!(yaml.find("DOMAIN-SUFFIX,youtube.com,中转VPN") < yaml.find("MATCH,PROXY"));
+        serde_yaml::from_str::<Value>(&yaml).unwrap();
     }
 
     #[test]
@@ -1436,6 +1506,7 @@ mod tests {
                     provider_path: None,
                     group_name: "寿司云中转".to_string(),
                     group_type: TransitGroupType::UrlTest,
+                    bypass_domains: Vec::new(),
                 }),
             },
         )

@@ -35,6 +35,7 @@ pub struct VlessTransitProxyRequest {
     provider_path: Option<String>,
     group_name: String,
     group_type: Option<VlessTransitGroupType>,
+    bypass_domains: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +113,7 @@ impl From<VlessTransitProxyRequest> for TransitProxyOptions {
                 VlessTransitGroupType::UrlTest => TransitGroupType::UrlTest,
                 VlessTransitGroupType::Fallback => TransitGroupType::Fallback,
             },
+            bypass_domains: value.bypass_domains.unwrap_or_default(),
         }
     }
 }

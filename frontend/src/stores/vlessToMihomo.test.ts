@@ -18,6 +18,7 @@ vi.mock('../api/tools', () => ({
     transitProviderPath: '',
     transitGroupName: '中转节点组',
     transitGroupType: 'url_test',
+    transitBypassDomains: '',
   })),
   saveVlessToolSettings: vi.fn(async (settings) => settings),
 }))
@@ -98,6 +99,7 @@ describe('useVlessToMihomoStore', () => {
     store.transitProviderName = 'sushi'
     store.transitGroupName = '寿司云中转'
     store.transitGroupType = 'fallback'
+    store.transitBypassDomains = 'youtube.com\nhttps://netflix.com/watch'
 
     await store.convert()
 
@@ -109,6 +111,7 @@ describe('useVlessToMihomoStore', () => {
           provider_path: undefined,
           group_name: '寿司云中转',
           group_type: 'fallback',
+          bypass_domains: ['youtube.com', 'https://netflix.com/watch'],
         },
       }),
     )

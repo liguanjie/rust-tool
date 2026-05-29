@@ -8,6 +8,7 @@ export interface VlessTransitProxyRequest {
   provider_path?: string
   group_name: string
   group_type: VlessTransitGroupType
+  bypass_domains?: string[]
 }
 
 export interface ConvertVlessRequest {
@@ -42,6 +43,7 @@ export interface VlessToolSettings {
   transitProviderPath: string
   transitGroupName: string
   transitGroupType: VlessTransitGroupType
+  transitBypassDomains: string
 }
 
 const VLESS_TOOL_SETTINGS_STORAGE_KEY = 'rusttool:vless-to-mihomo:settings'
@@ -59,6 +61,7 @@ export function defaultVlessToolSettings(): VlessToolSettings {
     transitProviderPath: '',
     transitGroupName: '中转节点组',
     transitGroupType: 'url_test',
+    transitBypassDomains: '',
   }
 }
 

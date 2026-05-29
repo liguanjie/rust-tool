@@ -35,40 +35,44 @@ onMounted(() => {
   >
     <div class="tool-grid">
       <section class="input-panel vless-config-panel">
-        <label class="field-label" for="vless-input">VLESS 链接</label>
-        <textarea
-          id="vless-input"
-          v-model="tool.input"
-          class="vless-input"
-          spellcheck="false"
-          placeholder="每行一个 vless:// 链接&#10;vless://uuid@example.com:443?type=tcp&security=reality..."
-        />
-        <small class="field-hint">支持单条或多条 VLESS 链接；多条时会生成多个节点并加入同一份 Mihomo 配置。</small>
-
-        <label class="field-control file-name-field" for="download-name">
-          <span class="field-label">下载文件名</span>
-          <input
-            id="download-name"
-            :value="tool.downloadName"
-            class="text-input"
-            type="text"
-            placeholder="自动读取链接 # 后面的名称"
-            @input="tool.updateDownloadName(($event.target as HTMLInputElement).value)"
+        <section class="config-section">
+          <label class="field-label" for="vless-input">VLESS 链接</label>
+          <textarea
+            id="vless-input"
+            v-model="tool.input"
+            class="vless-input"
+            spellcheck="false"
+            placeholder="每行一个 vless:// 链接&#10;vless://uuid@example.com:443?type=tcp&security=reality..."
           />
-        </label>
+          <small class="field-hint">支持单条或多条 VLESS 链接；多条时会生成多个节点并加入同一份 Mihomo 配置。</small>
+        </section>
 
-        <div class="mode-row" role="radiogroup" aria-label="输出格式">
-          <label class="mode-option">
-            <input v-model="tool.mode" type="radio" value="full_config" />
-            <span>完整配置</span>
+        <section class="config-section">
+          <label class="field-control" for="download-name">
+            <span class="field-label">下载文件名</span>
+            <input
+              id="download-name"
+              :value="tool.downloadName"
+              class="text-input"
+              type="text"
+              placeholder="自动读取链接 # 后面的名称"
+              @input="tool.updateDownloadName(($event.target as HTMLInputElement).value)"
+            />
           </label>
-          <label class="mode-option">
-            <input v-model="tool.mode" type="radio" value="proxy_only" />
-            <span>仅节点片段</span>
-          </label>
-        </div>
 
-        <div v-if="tool.mode === 'full_config'" class="template-section">
+          <div class="mode-row" role="radiogroup" aria-label="输出格式">
+            <label class="mode-option">
+              <input v-model="tool.mode" type="radio" value="full_config" />
+              <span>完整配置</span>
+            </label>
+            <label class="mode-option">
+              <input v-model="tool.mode" type="radio" value="proxy_only" />
+              <span>仅节点片段</span>
+            </label>
+          </div>
+        </section>
+
+        <section v-if="tool.mode === 'full_config'" class="config-section template-section">
           <p class="field-label">配置模板</p>
           <div class="template-options" role="radiogroup" aria-label="配置模板">
             <label class="template-option">
@@ -94,10 +98,15 @@ onMounted(() => {
             <strong>当前模板</strong>
             <span>{{ selectedTemplateHint }}</span>
           </div>
-        </div>
+        </section>
 
-        <label v-if="tool.mode === 'full_config'" class="field-control direct-domain-field" for="direct-domains">
+        <label v-if="tool.mode === 'full_config'" class="field-control route-field" for="direct-domains">
           <span class="field-label">特殊直连域名</span>
+          <div class="route-hint" aria-label="特殊直连域名流量路线">
+            <strong>流量路线</strong>
+            <span>设备/浏览器</span>
+            <span>最终目标</span>
+          </div>
           <textarea
             id="direct-domains"
             v-model="tool.directDomains"
@@ -105,7 +114,7 @@ onMounted(() => {
             spellcheck="false"
             placeholder="github.com&#10;example.com"
           />
-          <small class="field-hint">每行一条；会生成 DOMAIN-SUFFIX 直连规则，并优先于代理兜底匹配。</small>
+          <small class="field-hint">这些域名完全直连，不经过 3x-ui，也不经过中转 VPN。每行一个域名即可。</small>
         </label>
 
         <section class="transit-section" aria-labelledby="transit-provider-title">
@@ -130,7 +139,7 @@ onMounted(() => {
               <span>最终目标 (google.com)</span>
             </div>
 
-            <label class="field-control" for="transit-provider-url">
+            <label class="field-control config-section" for="transit-provider-url">
               <span class="field-label">中转订阅地址</span>
               <input
                 id="transit-provider-url"
@@ -142,7 +151,7 @@ onMounted(() => {
               <small class="field-hint">需要是 Clash/Mihomo 可解析订阅；生成到 proxy-providers。</small>
             </label>
 
-            <div class="transit-two-col">
+            <div class="config-section transit-two-col">
               <label class="field-control" for="transit-provider-name">
                 <span class="field-label">Provider 名称</span>
                 <input
@@ -166,7 +175,7 @@ onMounted(() => {
               </label>
             </div>
 
-            <label class="field-control" for="transit-provider-path">
+            <label class="field-control config-section" for="transit-provider-path">
               <span class="field-label">Provider 缓存路径</span>
               <input
                 id="transit-provider-path"
@@ -177,24 +186,44 @@ onMounted(() => {
               />
             </label>
 
-            <div class="mode-row" role="radiogroup" aria-label="中转组类型">
-              <label class="mode-option">
-                <input v-model="tool.transitGroupType" type="radio" value="url_test" />
-                <span>自动测速</span>
-              </label>
-              <label class="mode-option">
-                <input v-model="tool.transitGroupType" type="radio" value="fallback" />
-                <span>故障切换</span>
-              </label>
-              <label class="mode-option">
-                <input v-model="tool.transitGroupType" type="radio" value="select" />
-                <span>手动选择</span>
-              </label>
-            </div>
+            <label class="field-control route-field" for="transit-bypass-domains">
+              <span class="field-label">仅走中转域名</span>
+              <div class="route-hint" aria-label="仅走中转域名流量路线">
+                <strong>流量路线</strong>
+                <span>设备/浏览器</span>
+                <span>中转节点 (VPN)</span>
+                <span>最终目标</span>
+              </div>
+              <textarea
+                id="transit-bypass-domains"
+                v-model="tool.transitBypassDomains"
+                class="direct-domain-input"
+                spellcheck="false"
+                placeholder="youtube.com&#10;netflix.com"
+              />
+              <small class="field-hint">这些域名不进 3x-ui，只走中转节点组。适合速度优先、无需纯净出口的网站。</small>
+            </label>
 
-            <div class="transit-mode-hint">
-              <strong>中转模式</strong>
-              <span>{{ selectedTransitGroupHint }}</span>
+            <div class="config-section">
+              <div class="mode-row" role="radiogroup" aria-label="中转组类型">
+                <label class="mode-option">
+                  <input v-model="tool.transitGroupType" type="radio" value="url_test" />
+                  <span>自动测速</span>
+                </label>
+                <label class="mode-option">
+                  <input v-model="tool.transitGroupType" type="radio" value="fallback" />
+                  <span>故障切换</span>
+                </label>
+                <label class="mode-option">
+                  <input v-model="tool.transitGroupType" type="radio" value="select" />
+                  <span>手动选择</span>
+                </label>
+              </div>
+
+              <div class="transit-mode-hint">
+                <strong>中转模式</strong>
+                <span>{{ selectedTransitGroupHint }}</span>
+              </div>
             </div>
           </div>
         </section>

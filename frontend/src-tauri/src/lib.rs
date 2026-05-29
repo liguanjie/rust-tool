@@ -43,6 +43,7 @@ struct VlessTransitProxyRequest {
     provider_path: Option<String>,
     group_name: String,
     group_type: Option<VlessTransitGroupType>,
+    bypass_domains: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +80,7 @@ struct VlessToolSettings {
     transit_provider_path: String,
     transit_group_name: String,
     transit_group_type: String,
+    transit_bypass_domains: String,
 }
 
 impl Default for VlessToolSettings {
@@ -95,6 +97,7 @@ impl Default for VlessToolSettings {
             transit_provider_path: String::new(),
             transit_group_name: "中转节点组".to_string(),
             transit_group_type: "url_test".to_string(),
+            transit_bypass_domains: String::new(),
         }
     }
 }
@@ -524,6 +527,7 @@ impl From<VlessTransitProxyRequest> for TransitProxyOptions {
                 VlessTransitGroupType::UrlTest => TransitGroupType::UrlTest,
                 VlessTransitGroupType::Fallback => TransitGroupType::Fallback,
             },
+            bypass_domains: value.bypass_domains.unwrap_or_default(),
         }
     }
 }

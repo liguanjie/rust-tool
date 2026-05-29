@@ -22,6 +22,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
   const transitProviderPath = ref('')
   const transitGroupName = ref('中转节点组')
   const transitGroupType = ref<VlessTransitGroupType>('url_test')
+  const transitBypassDomains = ref('')
   const settingsLoaded = ref(false)
   const savingSettings = ref(false)
   const yaml = ref('')
@@ -55,6 +56,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
       transitProviderPath,
       transitGroupName,
       transitGroupType,
+      transitBypassDomains,
     ],
     () => {
       scheduleSaveSettings()
@@ -83,6 +85,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
       transitProviderPath.value = settings.transitProviderPath || ''
       transitGroupName.value = settings.transitGroupName || '中转节点组'
       transitGroupType.value = normalizeTransitGroupType(settings.transitGroupType)
+      transitBypassDomains.value = settings.transitBypassDomains || ''
     } catch (caught) {
       console.warn('Failed to load VLESS tool settings', caught)
     } finally {
@@ -148,6 +151,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
         transitProviderPath: transitProviderPath.value,
         transitGroupName: transitGroupName.value,
         transitGroupType: transitGroupType.value,
+        transitBypassDomains: transitBypassDomains.value,
       })
     } catch (caught) {
       console.warn('Failed to save VLESS tool settings', caught)
@@ -165,6 +169,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
       provider_path: emptyToUndefined(transitProviderPath.value),
       group_name: emptyToUndefined(transitGroupName.value) || '中转节点组',
       group_type: transitGroupType.value,
+      bypass_domains: parseDirectDomains(transitBypassDomains.value),
     }
   }
 
@@ -190,6 +195,7 @@ export const useVlessToMihomoStore = defineStore('vless-to-mihomo', () => {
     transitProviderPath,
     transitGroupName,
     transitGroupType,
+    transitBypassDomains,
     savingSettings,
     load,
     updateDownloadName,
