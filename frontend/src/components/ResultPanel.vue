@@ -17,7 +17,7 @@ const emit = defineEmits<{
 <template>
   <section class="result-panel">
     <header class="result-header">
-      <div>
+      <div class="result-title">
         <h3>YAML 结果</h3>
         <p v-if="nodeAddress" class="node-address">节点地址：{{ nodeAddress }}</p>
       </div>

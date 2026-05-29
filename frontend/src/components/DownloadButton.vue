@@ -51,7 +51,7 @@ function hideToast() {
   <span class="download-action">
     <button class="icon-button" type="button" title="下载 YAML" :disabled="saving || !text" @click="downloadText">
       <Download class="h-4 w-4" aria-hidden="true" />
-      <span>{{ saving ? '保存中' : '下载' }}</span>
+      <span class="button-label">{{ saving ? '保存中' : '下载' }}</span>
     </button>
     <Transition name="toast">
       <div v-if="toast" class="toast-message" :class="`toast-message--${toast.type}`" role="status">

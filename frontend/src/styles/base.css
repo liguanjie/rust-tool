@@ -378,7 +378,7 @@ button:disabled {
   }
 
   .tool-grid {
-    @apply grid grid-cols-[minmax(340px,0.9fr)_minmax(420px,1.1fr)] items-start gap-5 max-[980px]:grid-cols-1;
+    @apply grid grid-cols-[minmax(620px,1.35fr)_minmax(320px,0.65fr)] items-start gap-5 max-[1120px]:grid-cols-1;
   }
 
   .input-panel,
@@ -388,6 +388,10 @@ button:disabled {
     box-shadow: var(--shadow-card);
     backdrop-filter: var(--backdrop-card);
     @apply rounded-xl p-[20px] transition-all duration-300;
+  }
+
+  .result-panel {
+    container-type: inline-size;
   }
 
   .result-column {
@@ -403,7 +407,7 @@ button:disabled {
     background: var(--bg-input);
     border: 1px solid var(--border-input);
     color: var(--text-input-color);
-    @apply min-h-[220px] w-full resize-y rounded-lg px-3 py-3 leading-6 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10;
+    @apply min-h-[180px] w-full resize-y rounded-lg px-3 py-3 leading-6 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10;
   }
 
   .direct-domain-field {
@@ -418,7 +422,22 @@ button:disabled {
   }
 
   .transit-section {
-    @apply mt-4 grid gap-3 rounded-lg border border-emerald-500/15 bg-emerald-500/[0.03] p-3;
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.035), rgba(16, 185, 129, 0.015));
+    box-shadow:
+      inset 3px 0 0 rgba(16, 185, 129, 0.48),
+      inset 0 3px 0 rgba(16, 185, 129, 0.28);
+    @apply mt-7 grid gap-3 rounded-lg border border-emerald-500/18 p-4;
+  }
+
+  .section-divider {
+    color: #34d399;
+    @apply -mt-1 flex items-center gap-3 text-xs font-bold uppercase tracking-wide;
+  }
+
+  .section-divider::after {
+    content: "";
+    background: linear-gradient(90deg, rgba(52, 211, 153, 0.28), transparent);
+    @apply h-px flex-1;
   }
 
   .toggle-option {
@@ -449,20 +468,35 @@ button:disabled {
   }
 
   .transit-chain {
-    background: rgba(15, 23, 42, 0.35);
-    border: 1px solid rgba(16, 185, 129, 0.14);
+    background: rgba(16, 185, 129, 0.075);
+    border: 1px solid rgba(16, 185, 129, 0.22);
     color: var(--text-subtitle);
-    @apply flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs leading-5;
+    @apply flex flex-wrap items-center gap-2 rounded-lg px-3 py-2.5 text-xs leading-5 shadow-[0_0_18px_rgba(16,185,129,0.05)];
+  }
+
+  .transit-chain strong {
+    color: #6ee7b7;
+    @apply mr-1 font-bold;
   }
 
   .transit-chain span {
-    @apply inline-flex items-center font-medium;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    color: var(--text-base);
+    @apply relative inline-flex min-h-[24px] items-center rounded-full px-2 font-semibold;
+  }
+
+  .transit-chain span:not(:last-child) {
+    @apply mr-4;
   }
 
   .transit-chain span:not(:last-child)::after {
     content: "->";
-    color: var(--text-muted);
-    @apply ml-2;
+    color: #34d399;
+    top: 50%;
+    left: calc(100% + 6px);
+    transform: translateY(-50%);
+    @apply absolute font-bold;
   }
 
   .transit-two-col {
@@ -517,13 +551,13 @@ button:disabled {
   }
 
   .template-options {
-    @apply grid gap-2;
+    @apply grid grid-cols-[minmax(300px,1.25fr)_minmax(210px,0.85fr)_minmax(190px,0.75fr)] gap-2 max-[900px]:grid-cols-1;
   }
 
   .template-option {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.06);
-    @apply flex items-start gap-3 rounded-lg px-3 py-2.5 text-sm transition hover:border-emerald-500/30 hover:bg-white/[0.04];
+    @apply flex min-h-[76px] items-start gap-3 rounded-lg px-3 py-2.5 text-sm transition hover:border-emerald-500/30 hover:bg-white/[0.04];
   }
 
   .template-option span {
@@ -606,6 +640,10 @@ button:disabled {
     @apply mb-3 flex items-center justify-between gap-3;
   }
 
+  .result-title {
+    @apply min-w-0;
+  }
+
   .result-header h3 {
     color: var(--text-title);
     @apply m-0 text-base font-bold transition-colors duration-300;
@@ -613,11 +651,11 @@ button:disabled {
 
   .node-address {
     color: var(--text-muted);
-    @apply mt-1 mb-0 font-mono text-xs transition-colors duration-300;
+    @apply mt-1 mb-0 truncate font-mono text-xs transition-colors duration-300;
   }
 
   .result-actions {
-    @apply flex items-center gap-2;
+    @apply flex shrink-0 items-center gap-2;
   }
 
   .copy-status {
@@ -679,7 +717,17 @@ button:disabled {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.06);
     color: var(--text-base);
-    @apply inline-flex min-h-[34px] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition hover:border-emerald-500/30 hover:bg-white/[0.04];
+    @apply inline-flex min-h-[34px] items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition hover:border-emerald-500/30 hover:bg-white/[0.04];
+  }
+
+  @container (max-width: 380px) {
+    .result-panel .icon-button {
+      @apply h-9 w-9 justify-center px-0;
+    }
+
+    .result-panel .button-label {
+      @apply sr-only;
+    }
   }
 
   .nav-group h2 {
@@ -690,7 +738,7 @@ button:disabled {
   .yaml-output {
     background: rgba(3, 7, 18, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.05);
-    @apply m-0 max-h-[68vh] min-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg p-4 font-mono text-[13px] leading-6 text-emerald-300;
+    @apply m-0 max-h-[52vh] min-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-lg p-4 font-mono text-[13px] leading-6 text-emerald-300;
   }
 
   .workbench-grid {

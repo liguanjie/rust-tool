@@ -63,21 +63,21 @@ onMounted(() => {
               <input v-model="tool.template" type="radio" value="full_rules" />
               <span>
                 <strong>多节点分流模板</strong>
-                <small>引用社区规则集，覆盖广告、AI、媒体、Google、Telegram、国内直连；单节点下各分类最终仍会走同一个代理。</small>
+                <small>规则集分流，覆盖广告、AI、媒体、Google、Telegram 与国内直连。</small>
               </span>
             </label>
             <label class="template-option">
               <input v-model="tool.template" type="radio" value="standard" />
               <span>
                 <strong>基础分流</strong>
-                <small>本机/局域网/国内直连，其他代理</small>
+                <small>本机、局域网、国内直连；其他走代理。</small>
               </span>
             </label>
             <label class="template-option">
               <input v-model="tool.template" type="radio" value="minimal" />
               <span>
                 <strong>最小配置</strong>
-                <small>所有流量走代理</small>
+                <small>仅保留代理节点和兜底规则。</small>
               </span>
             </label>
           </div>
@@ -96,6 +96,10 @@ onMounted(() => {
         </label>
 
         <section class="transit-section" aria-labelledby="transit-provider-title">
+          <div class="section-divider">
+            <span>中转配置</span>
+          </div>
+
           <label class="toggle-option">
             <input v-model="tool.transitEnabled" type="checkbox" />
             <span>
@@ -106,6 +110,7 @@ onMounted(() => {
 
           <div v-if="tool.transitEnabled" class="transit-fields">
             <div class="transit-chain" aria-label="中转链路说明">
+              <strong>流量链路</strong>
               <span>设备/浏览器</span>
               <span>中转节点 (VPN)</span>
               <span>终端节点 (3x-ui)</span>
