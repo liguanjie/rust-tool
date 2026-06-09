@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FRONTEND_DIR="$ROOT_DIR/frontend"
+
+export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
+
+require_command() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "Missing required command: $name" >&2
+    exit 127
+  fi
+}
+
+run_frontend() {
+  require_command pnpm
+  cd "$FRONTEND_DIR"
+  pnpm "$@"
+}
+
+cleanup_dev() {
+  if [[ -n "${SERVER_PID:-}" ]]; then
+    kill "$SERVER_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${FRONTEND_PID:-}" ]]; then
+    kill "$FRONTEND_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${DEV_STATUS_DIR:-}" ]]; then
+    rm -rf "$DEV_STATUS_DIR"
+  fi
+}
+
+run_and_record() {
+  local status_file="$1"
+  shift
+  set +e
+  "$@"
+  local status=$?
+  echo "$status" > "$status_file"
+  exit "$status"
+}
+
+wait_for_dev_processes() {
+  while [[ ! -f "$DEV_STATUS_DIR/server.exit" && ! -f "$DEV_STATUS_DIR/frontend.exit" ]]; do
+    sleep 1
+  done
+
+  local exit_code=0
+  if [[ -f "$DEV_STATUS_DIR/server.exit" ]]; then
+    exit_code="$(cat "$DEV_STATUS_DIR/server.exit")"
+    echo "RustTool backend exited with status $exit_code"
+  else
+    exit_code="$(cat "$DEV_STATUS_DIR/frontend.exit")"
+    echo "RustTool frontend exited with status $exit_code"
+  fi
+
+  cleanup_dev
+  wait "$SERVER_PID" 2>/dev/null || true
+  wait "$FRONTEND_PID" 2>/dev/null || true
+  exit "$exit_code"
+}
+
+print_help() {
+  cat <<'EOF'
+RustTool 命令：
+
+  ./rt install        安装前端依赖
+  ./rt dev            启动后端和前端开发服务
+  ./rt desktop        启动 Tauri 桌面开发版
+  ./rt server         只启动 Rust 后端
+  ./rt frontend       只启动 Vue 前端
+  ./rt test           运行 Rust 和前端测试
+  ./rt build          构建前端和 release 后端/CLI
+  ./rt build-desktop  构建 Tauri 桌面应用
+  ./rt run            运行 release 后端服务
+  ./rt clean          清理构建产物
+EOF
+}
+
+show_menu() {
+  cat <<'EOF'
+RustTool
+
+  1) 启动桌面应用        ./rt desktop
+  2) 启动网页开发服务    ./rt dev
+  3) 运行测试            ./rt test
+  4) 安装依赖            ./rt install
+  5) 构建桌面应用        ./rt build-desktop
+  6) 清理构建产物        ./rt clean
+  7) 查看帮助            ./rt help
+  0) 退出
+
+EOF
+
+  local choice
+  read -r -p "请选择操作： " choice
+  case "$choice" in
+    1) run_command desktop ;;
+    2) run_command dev ;;
+    3) run_command test ;;
+    4) run_command install ;;
+    5) run_command build-desktop ;;
+    6) run_command clean ;;
+    7) print_help ;;
+    0|"") exit 0 ;;
+    *)
+      echo "未知选项：$choice" >&2
+      exit 2
+      ;;
+  esac
+}
+
+run_command() {
+  local command_name="$1"
+  shift || true
+
+  case "$command_name" in
+  install)
+    run_frontend install
+    ;;
+  dev)
+    require_command cargo
+    require_command pnpm
+    DEV_STATUS_DIR="$(mktemp -d)"
+    cd "$ROOT_DIR"
+    run_and_record "$DEV_STATUS_DIR/server.exit" cargo run -p rust_tool_server -- "$@" &
+    SERVER_PID=$!
+
+    cd "$FRONTEND_DIR"
+    run_and_record "$DEV_STATUS_DIR/frontend.exit" pnpm dev &
+    FRONTEND_PID=$!
+
+    trap cleanup_dev INT TERM EXIT
+    echo "RustTool dev servers started:"
+    echo "  Backend:  http://${RUSTTOOL_SERVER_HOST:-127.0.0.1}:${RUSTTOOL_SERVER_PORT:-5172}"
+    echo "  Frontend: http://127.0.0.1:5173"
+    wait_for_dev_processes
+    ;;
+  desktop)
+    run_frontend tauri:dev
+    ;;
+  server)
+    require_command cargo
+    cd "$ROOT_DIR"
+    cargo run -p rust_tool_server -- "$@"
+    ;;
+  frontend)
+    run_frontend dev
+    ;;
+  test)
+    require_command cargo
+    require_command pnpm
+    cd "$ROOT_DIR"
+    cargo test
+    run_frontend run test:run
+    ;;
+  build)
+    require_command cargo
+    require_command pnpm
+    run_frontend run build
+    cd "$ROOT_DIR"
+    cargo build --release -p rust_tool_server -p rust_tool_cli
+    ;;
+  build-desktop)
+    run_frontend tauri:build
+    ;;
+  run)
+    require_command cargo
+    cd "$ROOT_DIR"
+    cargo run --release -p rust_tool_server -- "$@"
+    ;;
+  clean)
+    require_command cargo
+    cd "$ROOT_DIR"
+    cargo clean
+    rm -rf "$FRONTEND_DIR/dist" "$FRONTEND_DIR/tsconfig.tsbuildinfo"
+    ;;
+  help|--help|-h)
+    print_help
+    ;;
+  *)
+    echo "未知命令：$command_name" >&2
+    echo "运行 ./rt help 查看可用命令。" >&2
+    exit 2
+    ;;
+  esac
+}
+
+if [[ $# -eq 0 ]]; then
+  show_menu
+else
+  run_command "$@"
+fi

@@ -28,8 +28,30 @@ pub struct AppState {
 pub fn get_default_base_dir() -> PathBuf {
     if let Ok(dir_str) = std::env::var("RUSTTOOL_DATA_DIR") {
         PathBuf::from(dir_str)
+    } else if cfg!(windows) {
+        std::env::var("APPDATA")
+            .map(PathBuf::from)
+            .map(|base| base.join("rust-tool"))
+            .unwrap_or_else(|_| PathBuf::from(".").join("memos_data"))
+    } else if cfg!(target_os = "macos") {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .map(|home| {
+                home.join("Library")
+                    .join("Application Support")
+                    .join("rust-tool")
+            })
+            .unwrap_or_else(|_| PathBuf::from(".").join("memos_data"))
     } else if let Ok(app_data) = std::env::var("APPDATA") {
         PathBuf::from(app_data).join("rust-tool")
+    } else if cfg!(unix) {
+        std::env::var("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|_| {
+                std::env::var("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+            })
+            .map(|base| base.join("rust-tool"))
+            .unwrap_or_else(|_| PathBuf::from(".").join("memos_data"))
     } else {
         PathBuf::from(".").join("memos_data")
     }

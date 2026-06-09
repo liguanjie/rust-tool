@@ -16,6 +16,17 @@ export interface WorkbenchConfig {
   sub2apiPassword: string
 }
 
+export type WorkbenchPlatformId = 'windows' | 'macos' | 'linux' | 'unknown'
+
+export interface WorkbenchPlatform {
+  id: WorkbenchPlatformId
+  label: string
+  executableLabel: string
+  scriptLabel: string
+  clashPartyDataDirHint: string
+  supportsSystemShutdown: boolean
+}
+
 export interface DockerDetection {
   dockerDesktopPath: string
   dockerCliPath: string
@@ -167,6 +178,10 @@ export async function getWorkbenchConfig() {
   return await invokeWorkbench<WorkbenchConfig>('get_workbench_config')
 }
 
+export async function getWorkbenchPlatform() {
+  return await invokeWorkbench<WorkbenchPlatform>('get_workbench_platform')
+}
+
 export async function saveWorkbenchConfig(config: WorkbenchConfig) {
   return await invokeWorkbench<WorkbenchConfig>('save_workbench_config', { config })
 }
@@ -231,8 +246,8 @@ export async function checkClashPartyNode(nodeName: string) {
   return await invokeWorkbench<ClashPartyNodeCheckResult>('check_clash_party_node', { nodeName })
 }
 
-export async function shutdownWindows() {
-  return await invokeWorkbench<TaskRun>('shutdown_windows')
+export async function shutdownSystem() {
+  return await invokeWorkbench<TaskRun>('shutdown_system')
 }
 
 export async function runSub2apiTask(task: Sub2apiTask) {
@@ -258,7 +273,7 @@ export async function clearOperationLogs() {
 async function invokeWorkbench<T>(command: string, args?: Record<string, unknown>) {
   const tauriCore = await import('@tauri-apps/api/core')
   if (!tauriCore.isTauri()) {
-    throw new Error('Windows 工作台需要在 Tauri 桌面版中使用')
+    throw new Error('本机工作台需要在 Tauri 桌面版中使用')
   }
   return await tauriCore.invoke<T>(command, args)
 }

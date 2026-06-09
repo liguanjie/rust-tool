@@ -208,6 +208,11 @@ async fn get_workbench_config(app: tauri::AppHandle) -> Result<workbench::Workbe
 }
 
 #[tauri::command]
+fn get_workbench_platform() -> workbench::WorkbenchPlatform {
+    workbench::get_platform()
+}
+
+#[tauri::command]
 async fn save_workbench_config(
     app: tauri::AppHandle,
     config: workbench::WorkbenchConfig,
@@ -445,6 +450,13 @@ async fn shutdown_windows(app: tauri::AppHandle) -> Result<workbench::TaskRun, S
 }
 
 #[tauri::command]
+async fn shutdown_system(app: tauri::AppHandle) -> Result<workbench::TaskRun, String> {
+    tauri::async_runtime::spawn_blocking(move || workbench::shutdown_system(&app))
+        .await
+        .map_err(|error| format!("异步执行失败: {error}"))?
+}
+
+#[tauri::command]
 async fn run_sub2api_task(
     app: tauri::AppHandle,
     task: workbench::Sub2apiTask,
@@ -497,6 +509,7 @@ pub fn run() {
             get_vless_tool_settings,
             save_vless_tool_settings,
             get_workbench_config,
+            get_workbench_platform,
             save_workbench_config,
             detect_docker,
             detect_clash_party,
@@ -514,6 +527,7 @@ pub fn run() {
             switch_clash_party_node,
             check_clash_party_node,
             shutdown_windows,
+            shutdown_system,
             run_sub2api_task,
             check_sub2api_health,
             list_task_runs,

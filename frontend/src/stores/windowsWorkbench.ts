@@ -11,6 +11,7 @@ import {
   getClashPartyStatus,
   getDockerStatus,
   getWorkbenchConfig,
+  getWorkbenchPlatform,
   listOperationLogs,
   restartDocker,
   runSub2apiTask,
@@ -21,7 +22,7 @@ import {
   startClashParty,
   stopDocker,
   stopClashParty,
-  shutdownWindows,
+  shutdownSystem,
   switchClashPartyNode,
   switchClashPartySubscription,
   type ClashPartyManagerState,
@@ -35,6 +36,7 @@ import {
   type Sub2apiTask,
   type TaskRun,
   type WorkbenchConfig,
+  type WorkbenchPlatform,
 } from '../api/workbench'
 
 type Sub2apiScriptField = 'sub2apiStartScript' | 'sub2apiStopScript' | 'sub2apiUpgradeScript'
@@ -53,6 +55,14 @@ interface PendingConfirm {
 
 export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
   const config = ref<WorkbenchConfig>(defaultWorkbenchConfig())
+  const platform = ref<WorkbenchPlatform>({
+    id: 'unknown',
+    label: '当前系统',
+    executableLabel: '程序路径',
+    scriptLabel: '脚本路径',
+    clashPartyDataDirHint: '请选择包含 profile.yaml 和 profiles 目录的数据目录。',
+    supportsSystemShutdown: false,
+  })
   const dockerStatus = ref<DockerStatus | null>(null)
   const clashPartyStatus = ref<ClashPartyStatus | null>(null)
   const clashPartyManager = ref<ClashPartyManagerState | null>(null)
@@ -120,6 +130,7 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
   }
 
   async function loadConfig() {
+    platform.value = await getWorkbenchPlatform()
     config.value = await getWorkbenchConfig()
     initialized.value = true
   }
@@ -139,7 +150,7 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
   async function saveConfigNow() {
     await withLoading('save-config', async () => {
       config.value = await saveWorkbenchConfig(config.value)
-      showToast('success', '配置已保存', 'Windows 工作台配置已更新')
+      showToast('success', '配置已保存', `${platform.value.label} 工作台配置已更新`)
       await autoCheckConfiguredServices()
     })
   }
@@ -434,16 +445,16 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
     })
   }
 
-  async function requestWindowsShutdown() {
+  async function requestSystemShutdown() {
     requestConfirm({
-      title: '确认关闭 Windows？',
-      message: '确认后会向系统发送关机命令，当前电脑将在 10 秒后关机。',
+      title: `确认关闭${platform.value.label}？`,
+      message: '确认后会向系统发送关机命令，当前电脑将在短时间后关机。',
       warning: '请先保存正在编辑的文件，并确认没有正在运行的重要任务。',
       confirmText: '确认关机',
       loadingKey: 'system-shutdown',
       tone: 'danger',
       action: async () => {
-        await confirmWindowsShutdown()
+        await confirmSystemShutdown()
       },
     })
   }
@@ -453,9 +464,9 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
     pendingConfirm.value = null
   }
 
-  async function confirmWindowsShutdown() {
+  async function confirmSystemShutdown() {
     await withLoading('system-shutdown', async () => {
-      const run = await shutdownWindows()
+      const run = await shutdownSystem()
       showToast(isRunOk(run) ? 'success' : 'error', '关机任务已执行', runSummary(run))
     })
   }
@@ -723,6 +734,7 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
     loading,
     autoChecking,
     desktopAvailable,
+    platform,
     pendingConfirm,
     toast,
     dockerConfigured,
@@ -754,7 +766,7 @@ export const useWindowsWorkbenchStore = defineStore('windows-workbench', () => {
     switchSubscription,
     switchNode,
     checkSelectedClashPartyNode,
-    requestWindowsShutdown,
+    requestSystemShutdown,
     closeConfirm,
     confirmPendingAction,
     runSub2api,

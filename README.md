@@ -35,37 +35,53 @@ cargo run -p rust_tool_cli -- convert-vless -o mihomo.yaml "vless://..."
 
 ## 本地开发
 
-最简单的方式：双击项目根目录的 `start.bat`，然后按数字选择功能。
+### macOS / Unix
 
-命令行方式：
+项目根目录提供 `./rt` 作为 macOS/Linux 开发入口：
 
-```powershell
-rt install
-rt dev
+```sh
+./rt
+./rt install
+./rt dev
 ```
 
-`rt dev` 会分别打开后端和前端窗口：
+直接运行 `./rt` 会显示交互菜单，可按数字选择启动桌面版、开发服务、测试、安装依赖、构建桌面应用和清理构建产物等常用操作。
+
+`./rt dev` 会同时启动后端和前端：
 
 ```text
 Backend:  http://127.0.0.1:5172
 Frontend: http://127.0.0.1:5173
 ```
 
-也可以单独启动：
+高级调试时也可以单独启动：
 
-```powershell
-rt server
-rt frontend
+```sh
+./rt server
+./rt frontend
 ```
 
 后端默认监听 `127.0.0.1:5172`。端口被占用时可以改端口：
 
-```powershell
-rt server --port 18080
-$env:RUSTTOOL_SERVER_PORT = "18080"; rt dev
+```sh
+./rt server --port 18080
+RUSTTOOL_SERVER_PORT=18080 ./rt dev
 ```
 
 如果前端开发服务也要代理到新端口，启动前设置同一个 `RUSTTOOL_SERVER_PORT` 即可。
+
+### Windows
+
+Windows 下仍可双击项目根目录的 `start.bat`，或使用：
+
+```powershell
+rt install
+rt dev
+rt server
+rt frontend
+```
+
+“本机工作台”会按平台启用能力：macOS 已支持 Docker、Clash Party/Mihomo、sub2api 脚本等常用入口；Windows 仍保留原有 `.bat/.ps1` 脚本和系统关机能力。
 
 ## 本地 API
 
@@ -96,51 +112,53 @@ POST /api/memo/translate-key
 
 Clash Party / Mihomo API 默认读取：
 
-```powershell
-$env:RUSTTOOL_CLASH_PARTY_API_URL = "http://127.0.0.1:9998"
-$env:RUSTTOOL_CLASH_PARTY_API_SECRET = "your-secret"
-$env:RUSTTOOL_CLASH_PARTY_DATA_DIR = "$env:APPDATA\mihomo-party"
-$env:RUSTTOOL_CLASH_PARTY_DELAY_TIMEOUT_MS = "5000"
-$env:RUSTTOOL_CLASH_PARTY_DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
+```sh
+export RUSTTOOL_CLASH_PARTY_API_URL="http://127.0.0.1:9998"
+export RUSTTOOL_CLASH_PARTY_API_SECRET="your-secret"
+export RUSTTOOL_CLASH_PARTY_DATA_DIR="$HOME/Library/Application Support/mihomo-party"
+export RUSTTOOL_CLASH_PARTY_DELAY_TIMEOUT_MS="5000"
+export RUSTTOOL_CLASH_PARTY_DELAY_TEST_URL="https://www.gstatic.com/generate_204"
 ```
 
 切换节点前会主动调用 Mihomo 节点测速接口。检测超时或不可用时，RustTool 会拒绝切换。
 
 检测节点：
 
-```powershell
-Invoke-RestMethod -Method Post -ContentType "application/json" `
-  -Uri "http://127.0.0.1:5172/api/clash-party/nodes/check" `
-  -Body '{"nodeName":"raw-node-name"}'
+```sh
+curl -sS -X POST "http://127.0.0.1:5172/api/clash-party/nodes/check" \
+  -H "content-type: application/json" \
+  -d '{"nodeName":"raw-node-name"}'
 ```
 
 切换订阅：
 
-```powershell
-Invoke-RestMethod -Method Post -ContentType "application/json" `
-  -Uri "http://127.0.0.1:5172/api/clash-party/subscriptions/switch" `
-  -Body '{"subscriptionId":"your-profile-id"}'
+```sh
+curl -sS -X POST "http://127.0.0.1:5172/api/clash-party/subscriptions/switch" \
+  -H "content-type: application/json" \
+  -d '{"subscriptionId":"your-profile-id"}'
 ```
 
 切换节点：
 
-```powershell
-Invoke-RestMethod -Method Post -ContentType "application/json" `
-  -Uri "http://127.0.0.1:5172/api/clash-party/nodes/switch" `
-  -Body '{"groupName":"PROXY","nodeName":"raw-node-name"}'
+```sh
+curl -sS -X POST "http://127.0.0.1:5172/api/clash-party/nodes/switch" \
+  -H "content-type: application/json" \
+  -d '{"groupName":"PROXY","nodeName":"raw-node-name"}'
 ```
 
 ## AI 离线备忘
 
 AI 离线备忘默认使用本机数据目录：
 
-```powershell
-$env:RUSTTOOL_DATA_DIR = "D:\RustToolData" # 可选，未设置时使用 APPDATA\rust-tool
+```sh
+export RUSTTOOL_DATA_DIR="$HOME/RustToolData" # 可选
 ```
+
+未设置时，macOS 默认使用 `~/Library/Application Support/rust-tool`，Windows 默认使用 `%APPDATA%\rust-tool`，其他 Unix 系统默认使用 `$XDG_DATA_HOME/rust-tool` 或 `~/.local/share/rust-tool`。
 
 默认 OpenAI 兼容接口配置：
 
-```powershell
+```text
 Base URL:                 https://api.openai.com/v1
 Chat Model:               gpt-5.5
 Embedding Model:          text-embedding-3-small
@@ -180,44 +198,52 @@ Disable Response Storage: true
 
 ## 常用命令
 
-```powershell
-rt install    # 安装前端依赖
-rt dev        # 同时启动后端和前端开发服务
-rt server     # 只启动 Rust 后端
-rt frontend   # 只启动 Vue 前端
-rt test       # 跑 Rust + 前端测试
-rt build      # 构建前端 + Rust release exe
-rt run        # 运行 release 后端服务
-rt clean      # 清理构建产物
+```sh
+./rt                # 打开交互菜单
+./rt install        # 安装前端依赖
+./rt dev            # 同时启动后端和前端开发服务
+./rt desktop        # 启动 Tauri 桌面开发版
+./rt test           # 跑 Rust + 前端测试
+./rt build-desktop  # 构建 Tauri 桌面应用
+./rt clean          # 清理构建产物
+```
+
+高级命令仍然可直接输入：
+
+```sh
+./rt server    # 只启动 Rust 后端
+./rt frontend  # 只启动 Vue 前端
+./rt build     # 构建前端 + Rust release 二进制
+./rt run       # 运行 release 后端服务
 ```
 
 ## 构建检查
 
 推荐：
 
-```powershell
-rt test
-rt build
+```sh
+./rt test
+./rt build
 ```
 
 手动命令：
 
-```powershell
+```sh
 cargo test
 cd frontend
 pnpm run test:run
 pnpm run build
 ```
 
-发布时先执行 `npm run build`，再启动 `rust_tool_server`，后端会托管 `frontend/dist`。
+发布时先执行 `pnpm run build`，再启动 `rust_tool_server`，后端会托管 `frontend/dist`。
 
 ## 当前验证状态
 
 前端已通过：
 
-```powershell
-npm run test:run
-npm run build
+```sh
+pnpm run test:run
+pnpm run build
 ```
 
 当前机器的 PATH 中没有检测到 `cargo`/`rustc`，Rust 侧需要安装 Rust 工具链后再运行 `cargo test`。

@@ -436,7 +436,7 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
                     </div>
                     <p class="m-0">
                       浏览器无法与本地后端服务建立连接（报错：<code>{{ testingStates[endpoint.id].responseBody }}</code>）。<br/>
-                      这通常是因为本地后端服务未启动。请确保您已双击根目录下的 <code>start.bat</code> 启动服务，或者在命令行中运行了 <code>rt dev</code>。
+                      这通常是因为本地后端服务未启动。macOS/Unix 请在项目根目录运行 <code>./rt dev</code>；Windows 可双击 <code>start.bat</code> 或运行 <code>rt dev</code>。
                     </p>
                   </div>
 
@@ -528,5 +528,4 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
     </section>
   </ToolShell>
 </template>
-
 

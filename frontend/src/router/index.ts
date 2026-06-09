@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import VlessToMihomo from '../pages/VlessToMihomo.vue'
-import WindowsWorkbench from '../pages/WindowsWorkbench.vue'
+import LocalWorkbench from '../pages/WindowsWorkbench.vue'
 import ApiManagement from '../pages/ApiManagement.vue'
 import ApiDocs from '../pages/ApiDocs.vue'
 import OperationLogs from '../pages/OperationLogs.vue'
@@ -12,7 +12,7 @@ export const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/tools/windows-workbench',
+      redirect: '/tools/local-workbench',
     },
     {
       path: '/toolbox',
@@ -30,8 +30,12 @@ export const router = createRouter({
     },
     {
       path: '/tools/windows-workbench',
-      name: 'windows-workbench',
-      component: WindowsWorkbench,
+      redirect: '/tools/local-workbench',
+    },
+    {
+      path: '/tools/local-workbench',
+      name: 'local-workbench',
+      component: LocalWorkbench,
     },
     {
       path: '/tools/api-management',

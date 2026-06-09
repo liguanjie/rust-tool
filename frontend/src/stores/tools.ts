@@ -22,10 +22,10 @@ export const useToolsStore = defineStore('tools', () => {
       name: '工作台',
       items: [
         {
-          id: 'windows-workbench',
-          name: 'Windows 工作台',
-          path: '/tools/windows-workbench',
-          description: '管理本机 Docker 与 sub2api',
+          id: 'local-workbench',
+          name: '本机工作台',
+          path: '/tools/local-workbench',
+          description: '管理本机 Docker、代理客户端与脚本',
           icon: MonitorCog,
         },
         {

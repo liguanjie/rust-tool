@@ -343,7 +343,7 @@ onMounted(() => {
                 选择
               </button>
             </span>
-            <small class="field-hint">通常是 %APPDATA%\mihomo-party，里面应包含 profile.yaml 和 profiles 目录。</small>
+            <small class="field-hint">{{ workbench.platform.clashPartyDataDirHint }}</small>
           </label>
           <label class="field-control">
             <span class="field-label">Mihomo API 地址</span>

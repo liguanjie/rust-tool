@@ -68,9 +68,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <ToolShell title="Windows 工作台" description="管理本机 Docker、sub2api、Clash Party 和常用脚本。" eyebrow="工作台">
+  <ToolShell title="本机工作台" :description="`管理${workbench.platform.label}上的 Docker、sub2api、Clash Party 和常用脚本。`" eyebrow="工作台">
     <p v-if="!workbench.desktopAvailable" class="desktop-only-message">
-      Windows 工作台需要在 Tauri 桌面版中使用，Web 开发服务只支持页面预览。
+      本机工作台需要在 Tauri 桌面版中使用，Web 开发服务只支持页面预览。
     </p>
 
     <div class="workbench-grid">
@@ -254,7 +254,7 @@ onMounted(() => {
         <p class="service-note">首次使用请点击齿轮配置或自动侦测 Clash Party 路径。</p>
       </section>
 
-      <section class="service-card service-card--danger">
+      <section v-if="workbench.platform.supportsSystemShutdown" class="service-card service-card--danger">
         <header class="service-card-header">
           <div class="service-title">
             <span class="service-icon service-icon--danger">
@@ -262,16 +262,16 @@ onMounted(() => {
             </span>
             <div>
               <h3>系统电源</h3>
-              <p>关闭当前 Windows 电脑。</p>
+              <p>关闭当前{{ workbench.platform.label }}电脑。</p>
             </div>
           </div>
           <span class="status-pill status-pill--warn">高风险</span>
         </header>
 
-        <p class="service-note">点击后会二次确认；确认后 Windows 将在 10 秒后关机。</p>
+        <p class="service-note">点击后会二次确认；确认后系统将在短时间后关机。</p>
 
         <div class="card-button-row">
-          <button class="danger-button" type="button" :disabled="workbench.loading === 'system-shutdown'" @click="workbench.requestWindowsShutdown">
+          <button class="danger-button" type="button" :disabled="workbench.loading === 'system-shutdown'" @click="workbench.requestSystemShutdown">
             <Power class="h-4 w-4" aria-hidden="true" />
             <span>{{ workbench.loading === 'system-shutdown' ? '关机指令已发送' : '关机' }}</span>
           </button>
@@ -342,7 +342,7 @@ onMounted(() => {
                 选择
               </button>
             </span>
-            <small class="field-hint">通常是 %APPDATA%\mihomo-party，里面应包含 profile.yaml 和 profiles 目录。</small>
+            <small class="field-hint">{{ workbench.platform.clashPartyDataDirHint }}</small>
           </label>
           <label class="field-control">
             <span class="field-label">Mihomo API 地址</span>

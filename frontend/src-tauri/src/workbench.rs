@@ -12,6 +12,8 @@ pub use rust_tool_core::{
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -138,6 +140,60 @@ pub struct OperationLogPage {
     pub total_pages: u32,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchPlatform {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub executable_label: &'static str,
+    pub script_label: &'static str,
+    pub clash_party_data_dir_hint: &'static str,
+    pub supports_system_shutdown: bool,
+}
+
+pub fn get_platform() -> WorkbenchPlatform {
+    if cfg!(windows) {
+        WorkbenchPlatform {
+            id: "windows",
+            label: "Windows",
+            executable_label: ".exe 程序",
+            script_label: ".bat/.cmd/.ps1/.exe 脚本或程序",
+            clash_party_data_dir_hint:
+                "通常是 %APPDATA%\\mihomo-party，里面应包含 profile.yaml 和 profiles 目录。",
+            supports_system_shutdown: true,
+        }
+    } else if cfg!(target_os = "macos") {
+        WorkbenchPlatform {
+            id: "macos",
+            label: "macOS",
+            executable_label: ".app 应用或可执行文件",
+            script_label: ".sh 脚本或可执行文件",
+            clash_party_data_dir_hint:
+                "通常是 ~/Library/Application Support/mihomo-party，里面应包含 profile.yaml 和 profiles 目录。",
+            supports_system_shutdown: false,
+        }
+    } else if cfg!(target_os = "linux") {
+        WorkbenchPlatform {
+            id: "linux",
+            label: "Linux",
+            executable_label: "可执行文件",
+            script_label: ".sh 脚本或可执行文件",
+            clash_party_data_dir_hint:
+                "通常在 ~/.config 或 ~/.local/share 下，目录内应包含 profile.yaml 和 profiles 目录。",
+            supports_system_shutdown: false,
+        }
+    } else {
+        WorkbenchPlatform {
+            id: "unknown",
+            label: "当前系统",
+            executable_label: "可执行文件",
+            script_label: "脚本或可执行文件",
+            clash_party_data_dir_hint: "请选择包含 profile.yaml 和 profiles 目录的数据目录。",
+            supports_system_shutdown: false,
+        }
+    }
+}
+
 pub fn get_config(app: &AppHandle) -> Result<WorkbenchConfig, String> {
     let conn = open_db(app)?;
     ensure_schema(&conn)?;
@@ -191,15 +247,8 @@ pub fn save_config(
 
 pub fn detect_docker() -> DockerDetection {
     DockerDetection {
-        docker_desktop_path: first_existing_path(&[
-            r"C:\Program Files\Docker\Docker\Docker Desktop.exe",
-        ])
-        .unwrap_or_default(),
-        docker_cli_path: first_existing_path(&[
-            r"C:\Program Files\Docker\Docker\resources\bin\docker.exe",
-        ])
-        .or_else(find_docker_in_path)
-        .unwrap_or_default(),
+        docker_desktop_path: detect_docker_desktop_path().unwrap_or_default(),
+        docker_cli_path: detect_docker_cli_path().unwrap_or_default(),
     }
 }
 
@@ -212,6 +261,13 @@ pub fn detect_clash_party() -> ClashPartyDetection {
 }
 
 pub fn select_workbench_file(kind: WorkbenchPathKind) -> Result<Option<String>, String> {
+    if cfg!(target_os = "macos") {
+        return select_workbench_file_macos(kind);
+    }
+    if !cfg!(windows) {
+        return Err("当前平台暂不支持打开文件选择窗口，请手动填写路径".to_string());
+    }
+
     let (title, filter) = match kind {
         WorkbenchPathKind::Executable => {
             ("选择程序文件", "程序文件 (*.exe)|*.exe|所有文件 (*.*)|*.*")
@@ -237,6 +293,13 @@ pub fn select_workbench_file(kind: WorkbenchPathKind) -> Result<Option<String>, 
 }
 
 pub fn select_workbench_directory() -> Result<Option<String>, String> {
+    if cfg!(target_os = "macos") {
+        return select_workbench_directory_macos();
+    }
+    if !cfg!(windows) {
+        return Err("当前平台暂不支持打开目录选择窗口，请手动填写路径".to_string());
+    }
+
     let script = "$shell = New-Object -ComObject Shell.Application; \
          $folder = $shell.BrowseForFolder(0, '选择工作目录', 0x00000040); \
          if ($null -ne $folder) { \
@@ -367,6 +430,9 @@ pub fn get_docker_status(app: &AppHandle) -> Result<DockerStatus, String> {
 pub fn start_docker(app: &AppHandle) -> Result<TaskRun, String> {
     let config = get_config(app)?;
     validate_required_executable(&config.docker_desktop_path, "Docker Desktop 路径")?;
+    if cfg!(target_os = "macos") {
+        return open_macos_app(app, "docker.start", &config.docker_desktop_path);
+    }
     spawn_process(
         app,
         "docker.start",
@@ -378,6 +444,18 @@ pub fn start_docker(app: &AppHandle) -> Result<TaskRun, String> {
 }
 
 pub fn stop_docker(app: &AppHandle) -> Result<TaskRun, String> {
+    if cfg!(target_os = "macos") {
+        let script = "pkill -x Docker 2>/dev/null || true; echo 'Docker stop command sent.'";
+        return run_process(
+            app,
+            "docker.stop",
+            "sh",
+            &["-c", script],
+            None,
+            false,
+        );
+    }
+
     let script = format!(
         "{}\nWrite-Output 'Docker stop command sent.'",
         docker_stop_commands()
@@ -395,6 +473,10 @@ pub fn stop_docker(app: &AppHandle) -> Result<TaskRun, String> {
 pub fn restart_docker(app: &AppHandle) -> Result<TaskRun, String> {
     let config = get_config(app)?;
     validate_required_executable(&config.docker_desktop_path, "Docker Desktop 路径")?;
+    if cfg!(target_os = "macos") {
+        let _ = stop_docker(app)?;
+        return open_macos_app(app, "docker.restart", &config.docker_desktop_path);
+    }
     let script = format!(
         "{}\nStart-Sleep -Seconds 2\nStart-Process -FilePath {}\nWrite-Output 'Docker restart command sent.'",
         docker_stop_commands(),
@@ -457,6 +539,9 @@ pub fn get_clash_party_status(app: &AppHandle) -> Result<ClashPartyStatus, Strin
 pub fn start_clash_party(app: &AppHandle) -> Result<TaskRun, String> {
     let config = get_config(app)?;
     validate_required_executable(&config.clash_party_path, "Clash Party 路径")?;
+    if cfg!(target_os = "macos") {
+        return open_macos_app(app, "clash_party.start", &config.clash_party_path);
+    }
     match spawn_process(
         app,
         "clash_party.start",
@@ -474,6 +559,18 @@ pub fn start_clash_party(app: &AppHandle) -> Result<TaskRun, String> {
 }
 
 pub fn stop_clash_party(app: &AppHandle) -> Result<TaskRun, String> {
+    if cfg!(target_os = "macos") {
+        let script = "pkill -f 'Clash Party|clash-party|Mihomo Party|mihomo-party|mihomo' 2>/dev/null || true; echo 'Clash Party stop command sent.'";
+        return run_process(
+            app,
+            "clash_party.stop",
+            "sh",
+            &["-c", script],
+            None,
+            false,
+        );
+    }
+
     let config = get_config(app)?;
     let configured_path = config.clash_party_path.trim();
     let stop_by_path = if configured_path.is_empty() {
@@ -659,6 +756,13 @@ pub fn check_clash_party_node(
 }
 
 pub fn shutdown_windows(app: &AppHandle) -> Result<TaskRun, String> {
+    shutdown_system(app)
+}
+
+pub fn shutdown_system(app: &AppHandle) -> Result<TaskRun, String> {
+    if !cfg!(windows) {
+        return Err("当前平台暂不支持从 RustTool 发送关机命令".to_string());
+    }
     run_process(
         app,
         "system.shutdown",
@@ -755,18 +859,26 @@ fn check_sub2api_api_health(url: &str, api_key: &str) -> Result<Sub2apiCheckResu
         });
     }
 
-    let script = build_sub2api_health_script(url, (!api_key.is_empty()).then_some(api_key));
-    let output = hidden_command("powershell")
-        .args(["-NoProfile", "-Command", &script])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| format!("健康检查失败: {error}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let probe = parse_sub2api_probe(&stdout, &stderr);
-    let ok = output.status.success()
+    let (command_ok, probe) = if cfg!(windows) {
+        let script = build_sub2api_health_script(url, (!api_key.is_empty()).then_some(api_key));
+        run_sub2api_powershell_probe(&script).map_err(|error| format!("健康检查失败: {error}"))?
+    } else {
+        let mut args = vec![
+            "-sS".to_string(),
+            "-o".to_string(),
+            "/dev/null".to_string(),
+            "-w".to_string(),
+            "HTTP_STATUS=%{http_code}".to_string(),
+            "--max-time".to_string(),
+            "5".to_string(),
+        ];
+        if !api_key.is_empty() {
+            args.extend(["-H".to_string(), format!("Authorization: Bearer {api_key}")]);
+        }
+        args.push(url.to_string());
+        run_sub2api_curl_probe(args).map_err(|error| format!("健康检查失败: {error}"))?
+    };
+    let ok = command_ok
         && probe
             .status_code
             .is_some_and(|code| (200..300).contains(&code));
@@ -808,29 +920,40 @@ fn check_sub2api_login(config: &WorkbenchConfig) -> Result<Sub2apiCheckResult, S
         "password": password,
     })
     .to_string();
-    let script = format!(
-        "{} \
-         try {{ \
-           $body = '{}'; \
-           $response = Invoke-WebRequest -Method Post -UseBasicParsing -Uri '{}' -ContentType 'application/json' -Body $body -TimeoutSec 8; \
-           [Console]::Out.Write('HTTP_STATUS=' + [int]$response.StatusCode) \
-         }} catch {{ Write-Sub2apiProbeError $_ }}",
-        sub2api_probe_powershell_preamble(),
-        escape_powershell_single_quoted(&body),
-        escape_powershell_single_quoted(login_url),
-    );
-
-    let output = hidden_command("powershell")
-        .args(["-NoProfile", "-Command", &script])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| format!("后台登录检查失败: {error}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let probe = parse_sub2api_probe(&stdout, &stderr);
-    let ok = output.status.success()
+    let (command_ok, probe) = if cfg!(windows) {
+        let script = format!(
+            "{} \
+             try {{ \
+               $body = '{}'; \
+               $response = Invoke-WebRequest -Method Post -UseBasicParsing -Uri '{}' -ContentType 'application/json' -Body $body -TimeoutSec 8; \
+               [Console]::Out.Write('HTTP_STATUS=' + [int]$response.StatusCode) \
+             }} catch {{ Write-Sub2apiProbeError $_ }}",
+            sub2api_probe_powershell_preamble(),
+            escape_powershell_single_quoted(&body),
+            escape_powershell_single_quoted(login_url),
+        );
+        run_sub2api_powershell_probe(&script)
+            .map_err(|error| format!("后台登录检查失败: {error}"))?
+    } else {
+        run_sub2api_curl_probe(vec![
+            "-sS".to_string(),
+            "-o".to_string(),
+            "/dev/null".to_string(),
+            "-w".to_string(),
+            "HTTP_STATUS=%{http_code}".to_string(),
+            "--max-time".to_string(),
+            "8".to_string(),
+            "-X".to_string(),
+            "POST".to_string(),
+            "-H".to_string(),
+            "Content-Type: application/json".to_string(),
+            "-d".to_string(),
+            body,
+            login_url.to_string(),
+        ])
+        .map_err(|error| format!("后台登录检查失败: {error}"))?
+    };
+    let ok = command_ok
         && probe
             .status_code
             .is_some_and(|code| (200..300).contains(&code));
@@ -874,6 +997,32 @@ fn build_sub2api_health_script(url: &str, token: Option<&str>) -> String {
             escape_powershell_single_quoted(url),
         ),
     }
+}
+
+fn run_sub2api_powershell_probe(script: &str) -> Result<(bool, Sub2apiProbe), String> {
+    let output = hidden_command("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Ok((output.status.success(), parse_sub2api_probe(&stdout, &stderr)))
+}
+
+fn run_sub2api_curl_probe(args: Vec<String>) -> Result<(bool, Sub2apiProbe), String> {
+    let output = hidden_command("curl")
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Ok((output.status.success(), parse_sub2api_probe(&stdout, &stderr)))
 }
 
 #[derive(Default)]
@@ -1219,6 +1368,10 @@ fn run_process(
         let mut command = hidden_command("powershell");
         command.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", program]);
         command
+    } else if use_shell_for_scripts && extension == "sh" {
+        let mut command = hidden_command("sh");
+        command.arg(program);
+        command
     } else {
         let mut command = hidden_command(program);
         command.args(args);
@@ -1320,6 +1473,10 @@ fn spawn_process(
         let mut command = hidden_command("powershell");
         command.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", program]);
         command
+    } else if use_shell_for_scripts && extension == "sh" {
+        let mut command = hidden_command("sh");
+        command.arg(program);
+        command
     } else {
         let mut command = hidden_command(program);
         command.args(args);
@@ -1403,6 +1560,15 @@ fn run_process_elevated(app: &AppHandle, task_key: &str, program: &str) -> Resul
         script.as_str(),
     ];
     run_process(app, task_key, "powershell", &args, None, false)
+}
+
+fn open_macos_app(app: &AppHandle, task_key: &str, path: &str) -> Result<TaskRun, String> {
+    let path = path.trim();
+    if path.ends_with(".app") {
+        run_process(app, task_key, "open", &[path], None, false)
+    } else {
+        spawn_process(app, task_key, path, &[], None, false)
+    }
 }
 
 fn operation_module_for_task(task_key: &str) -> &'static str {
@@ -1621,9 +1787,24 @@ fn validate_required_executable(value: &str, label: &str) -> Result<(), String> 
     if !path.exists() {
         return Err(format!("{label}不存在"));
     }
+    if cfg!(target_os = "macos") && path.is_dir() {
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if extension == "app" {
+            return Ok(());
+        }
+    }
     if !path.is_file() {
         return Err(format!("{label}不是文件"));
     }
+
+    if !cfg!(windows) {
+        return Ok(());
+    }
+
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
@@ -1655,8 +1836,12 @@ fn validate_required_script(value: &str, label: &str) -> Result<(), String> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if !matches!(extension.as_str(), "bat" | "cmd" | "ps1" | "exe") {
+
+    if cfg!(windows) && !matches!(extension.as_str(), "bat" | "cmd" | "ps1" | "exe") {
         return Err(format!("{label}只支持 .bat/.cmd/.ps1/.exe"));
+    }
+    if !cfg!(windows) && extension != "sh" && !is_unix_executable(path) {
+        return Err(format!("{label}只支持 .sh 或可执行文件"));
     }
     Ok(())
 }
@@ -1673,6 +1858,20 @@ fn validate_optional_directory(value: &str, label: &str) -> Result<(), String> {
         return Err(format!("{label}不是目录"));
     }
     Ok(())
+}
+
+fn is_unix_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        path.metadata()
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }
 
 fn clash_party_config_from_workbench(config: &WorkbenchConfig) -> ClashPartyConfig {
@@ -1693,8 +1892,33 @@ fn first_existing_path(paths: &[&str]) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn detect_docker_desktop_path() -> Option<String> {
+    if cfg!(target_os = "macos") {
+        return first_existing_path(&[
+            "/Applications/Docker.app",
+            "/Applications/Utilities/Docker.app",
+        ]);
+    }
+
+    first_existing_path(&[r"C:\Program Files\Docker\Docker\Docker Desktop.exe"])
+}
+
+fn detect_docker_cli_path() -> Option<String> {
+    if cfg!(target_os = "macos") {
+        return first_existing_path(&[
+            "/usr/local/bin/docker",
+            "/opt/homebrew/bin/docker",
+            "/Applications/Docker.app/Contents/Resources/bin/docker",
+        ])
+        .or_else(|| find_executable_in_path("docker"));
+    }
+
+    first_existing_path(&[r"C:\Program Files\Docker\Docker\resources\bin\docker.exe"])
+        .or_else(find_docker_in_path)
+}
+
 fn find_docker_in_path() -> Option<String> {
-    let output = hidden_command("where")
+    let output = hidden_command(path_lookup_command())
         .arg("docker")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -1711,6 +1935,17 @@ fn find_docker_in_path() -> Option<String> {
 }
 
 fn detect_clash_party_path() -> Option<String> {
+    if cfg!(target_os = "macos") {
+        return first_existing_path(&[
+            "/Applications/Clash Party.app",
+            "/Applications/Mihomo Party.app",
+            "/Applications/clash-party.app",
+            "/Applications/mihomo-party.app",
+        ])
+        .or_else(|| find_executable_in_path("clash-party"))
+        .or_else(|| find_executable_in_path("mihomo-party"));
+    }
+
     let mut candidates = vec![
         r"C:\Program Files\Clash Party\Clash Party.exe".to_string(),
         r"C:\Program Files\Clash Party\clash-party.exe".to_string(),
@@ -1750,6 +1985,15 @@ fn detect_clash_party_path() -> Option<String> {
 
 fn detect_clash_party_data_dir() -> Option<String> {
     let mut candidates = Vec::new();
+    if cfg!(target_os = "macos") {
+        if let Ok(home) = env::var("HOME") {
+            candidates.extend([
+                format!("{home}/Library/Application Support/mihomo-party"),
+                format!("{home}/Library/Application Support/clash-party"),
+                format!("{home}/Library/Application Support/clashmi"),
+            ]);
+        }
+    }
     if let Ok(app_data) = env::var("APPDATA") {
         candidates.extend([
             format!(r"{app_data}\mihomo-party"),
@@ -1777,7 +2021,7 @@ fn default_clash_party_api_url() -> String {
 }
 
 fn find_executable_in_path(name: &str) -> Option<String> {
-    let output = hidden_command("where")
+    let output = hidden_command(path_lookup_command())
         .arg(name)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -1793,13 +2037,31 @@ fn find_executable_in_path(name: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn path_lookup_command() -> &'static str {
+    if cfg!(windows) {
+        "where"
+    } else {
+        "which"
+    }
+}
+
 fn is_docker_desktop_running() -> bool {
+    if cfg!(target_os = "macos") {
+        return is_process_running_by_pattern("Docker");
+    }
+
     ["Docker Desktop.exe", "com.docker.backend.exe"]
         .iter()
         .any(|image_name| is_windows_process_running(image_name))
 }
 
 fn is_clash_party_running() -> bool {
+    if cfg!(target_os = "macos") {
+        return is_process_running_by_pattern(
+            "Clash Party|clash-party|Mihomo Party|mihomo-party|mihomo",
+        );
+    }
+
     [
         "Clash Party.exe",
         "clash-party.exe",
@@ -1840,6 +2102,53 @@ fn powershell_single_quoted(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
+fn select_workbench_file_macos(kind: WorkbenchPathKind) -> Result<Option<String>, String> {
+    let script = match kind {
+        WorkbenchPathKind::Executable => format!(
+            "POSIX path of (choose file with prompt \"{}\")",
+            escape_applescript_string("选择应用或可执行文件")
+        ),
+        WorkbenchPathKind::Script => format!(
+            "POSIX path of (choose file with prompt \"{}\")",
+            escape_applescript_string("选择脚本或可执行文件")
+        ),
+    };
+    run_osascript_selection(&script)
+}
+
+fn select_workbench_directory_macos() -> Result<Option<String>, String> {
+    let script =
+        "POSIX path of (choose folder with prompt \"选择工作目录\")".to_string();
+    run_osascript_selection(&script)
+}
+
+fn run_osascript_selection(script: &str) -> Result<Option<String>, String> {
+    let output = hidden_command("osascript")
+        .args(["-e", script])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("打开选择窗口失败: {error}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if output.status.success() {
+        Ok((!stdout.is_empty()).then_some(stdout.trim_end_matches('/').to_string()))
+    } else if stderr.contains("User canceled") || stderr.contains("-128") {
+        Ok(None)
+    } else {
+        Err(if stderr.is_empty() {
+            "选择窗口已异常关闭".to_string()
+        } else {
+            stderr
+        })
+    }
+}
+
+fn escape_applescript_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 fn is_windows_process_running(image_name: &str) -> bool {
     let output = hidden_command("tasklist")
         .args(["/FI", &format!("IMAGENAME eq {image_name}"), "/NH"])
@@ -1856,6 +2165,15 @@ fn is_windows_process_running(image_name: &str) -> bool {
     String::from_utf8_lossy(&output.stdout)
         .to_ascii_lowercase()
         .contains(&image_name.to_ascii_lowercase())
+}
+
+fn is_process_running_by_pattern(pattern: &str) -> bool {
+    let output = hidden_command("pgrep")
+        .args(["-f", pattern])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+    output.map(|output| output.status.success()).unwrap_or(false)
 }
 
 fn run_selection_dialog(script: &str) -> Result<Option<String>, String> {
