@@ -808,10 +808,6 @@ button:disabled {
     @apply m-0 max-h-[52vh] min-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-lg p-4 font-mono text-[13px] leading-6 text-emerald-300;
   }
 
-  .workbench-grid {
-    @apply grid grid-cols-2 gap-4 max-[1100px]:grid-cols-1;
-  }
-
   .api-card-grid {
     @apply grid max-w-[720px] gap-3;
   }

@@ -72,7 +72,7 @@ RUSTTOOL_SERVER_PORT=18080 ./rt dev
 
 ### Windows
 
-Windows 下仍可双击项目根目录的 `start.bat`，或使用：
+Windows 下仍可使用：
 
 ```powershell
 rt install
@@ -80,8 +80,6 @@ rt dev
 rt server
 rt frontend
 ```
-
-“本机工作台”会按平台启用能力：macOS 已支持 Docker、Clash Party/Mihomo、sub2api 脚本等常用入口；Windows 仍保留原有 `.bat/.ps1` 脚本和系统关机能力。
 
 ## 本地 API
 

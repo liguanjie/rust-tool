@@ -1,9 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import VlessToMihomo from '../pages/VlessToMihomo.vue'
-import LocalWorkbench from '../pages/WindowsWorkbench.vue'
-import ApiManagement from '../pages/ApiManagement.vue'
 import ApiDocs from '../pages/ApiDocs.vue'
-import OperationLogs from '../pages/OperationLogs.vue'
 import Toolbox from '../pages/Toolbox.vue'
 import AiMemo from '../pages/AiMemo.vue'
 
@@ -12,7 +9,7 @@ export const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/tools/local-workbench',
+      redirect: '/toolbox',
     },
     {
       path: '/toolbox',
@@ -29,28 +26,9 @@ export const router = createRouter({
       redirect: '/toolbox/vless-to-mihomo',
     },
     {
-      path: '/tools/windows-workbench',
-      redirect: '/tools/local-workbench',
-    },
-    {
-      path: '/tools/local-workbench',
-      name: 'local-workbench',
-      component: LocalWorkbench,
-    },
-    {
-      path: '/tools/api-management',
-      name: 'api-management',
-      component: ApiManagement,
-    },
-    {
       path: '/tools/api-docs',
       name: 'api-docs',
       component: ApiDocs,
-    },
-    {
-      path: '/tools/operation-logs',
-      name: 'operation-logs',
-      component: OperationLogs,
     },
     {
       path: '/tools/ai-memo',
