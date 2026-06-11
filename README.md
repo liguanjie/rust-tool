@@ -18,7 +18,7 @@ RustTool 是一个本地工具站，后端使用 Rust，前端使用 Vue。
 
 ## 桌面与 Web 一致性
 
-RustTool 的桌面版和 Web 版共用同一套 Vue 页面和 `rust_tool_core` 业务核心。Web 模式通过 HTTP API 调用 `rust_tool_server`；桌面模式通过 Tauri command 直接调用 Rust 核心，不依赖本地后端端口。AI 安全文档前端调用必须经过 `frontend/src/services/memoApi.ts` 适配层，新增接口时需要同步维护 HTTP 路由、Tauri command 和前端适配映射。长期规范见根目录 `AGENTS.md`，实施记录见 `.agents/16_桌面与Web一致性规范.md`。
+RustTool 的桌面版和 Web 版共用同一套 Vue 页面和 `rust_tool_core` 业务核心。Web 模式通过 HTTP API 调用 `rust_tool_server`；桌面模式通过 Tauri command 直接调用 Rust 核心，不依赖本地后端端口。AI 安全文档前端调用必须经过 `frontend/src/services/memoApi.ts` 适配层，新增接口时需要同步维护 HTTP 路由、Tauri command 和前端适配映射。长期规范见根目录 `AGENTS.md`，实施记录见 `.agents/06_桌面与Web一致性规范.md`。
 
 后续使用 Codex 新窗口继续开发时，请先阅读根目录 `AGENTS.md`；AI 安全文档功能不得在桌面版和 Web 版之间拆成两套页面或两套业务逻辑。
 

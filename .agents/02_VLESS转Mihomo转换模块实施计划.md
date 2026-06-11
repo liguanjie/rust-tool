@@ -115,7 +115,7 @@ MATCH,PROXY
 2. 下载文件名从单条 VLESS `#` 后面的名称自动推断。
 3. 多条 VLESS 时下载文件名保留用户自定义或默认 `mihomo`。
 4. 增加特殊直连域名输入区。
-5. 将用户输入落盘到 SQLite 或 Web localStorage。
+5. 将用户输入保存到桌面端 Tauri 设置或 Web localStorage。
 
 ## 验收标准
 
