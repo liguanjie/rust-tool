@@ -14,15 +14,22 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 #[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(default)]
 pub struct LocalConfig {
+    #[serde(alias = "customDataDir")]
     pub custom_data_dir: Option<String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Clone)]
 pub struct AppState {
     pub memo_manager: Arc<rust_tool_core::memo::MemoManager>,
+    pub default_data_dir: PathBuf,
+    pub active_data_dir: PathBuf,
 }
 
 pub fn get_default_base_dir() -> PathBuf {
@@ -47,9 +54,7 @@ pub fn get_default_base_dir() -> PathBuf {
     } else if cfg!(unix) {
         std::env::var("XDG_DATA_HOME")
             .map(PathBuf::from)
-            .or_else(|_| {
-                std::env::var("HOME").map(|home| PathBuf::from(home).join(".local/share"))
-            })
+            .or_else(|_| std::env::var("HOME").map(|home| PathBuf::from(home).join(".local/share")))
             .map(|base| base.join("rust-tool"))
             .unwrap_or_else(|_| PathBuf::from(".").join("memos_data"))
     } else {
@@ -57,30 +62,64 @@ pub fn get_default_base_dir() -> PathBuf {
     }
 }
 
-fn get_memo_data_dir() -> PathBuf {
-    let default_dir = get_default_base_dir();
+pub fn get_local_config_path(default_dir: &std::path::Path) -> PathBuf {
+    default_dir.join("config.json")
+}
+
+pub fn read_local_config(default_dir: &std::path::Path) -> LocalConfig {
     let config_path = default_dir.join("config.json");
     if config_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&config_path) {
             if let Ok(cfg) = serde_json::from_str::<LocalConfig>(&content) {
-                if let Some(custom) = cfg.custom_data_dir {
-                    if !custom.trim().is_empty() {
-                        return PathBuf::from(custom);
-                    }
-                }
+                return cfg;
             }
         }
     }
-    default_dir
+    LocalConfig::default()
+}
+
+pub fn write_local_config(
+    default_dir: &std::path::Path,
+    config: &LocalConfig,
+) -> Result<(), String> {
+    std::fs::create_dir_all(default_dir)
+        .map_err(|error| format!("Failed to create config directory: {error:?}"))?;
+    let mut merged = read_local_config(default_dir);
+    merged.custom_data_dir = config.custom_data_dir.clone();
+    let config_path = get_local_config_path(default_dir);
+    let json = serde_json::to_string_pretty(&merged)
+        .map_err(|error| format!("Failed to serialize local config: {error:?}"))?;
+    std::fs::write(&config_path, json)
+        .map_err(|error| format!("Failed to write local config: {error:?}"))
+}
+
+pub fn resolve_memo_data_dir(default_dir: &std::path::Path) -> PathBuf {
+    let cfg = read_local_config(default_dir);
+    if let Some(custom) = cfg.custom_data_dir {
+        if !custom.trim().is_empty() {
+            return PathBuf::from(custom);
+        }
+    }
+    default_dir.to_path_buf()
+}
+
+fn get_memo_data_dir() -> PathBuf {
+    let default_dir = get_default_base_dir();
+    resolve_memo_data_dir(&default_dir)
 }
 
 pub fn build_app() -> Router {
+    let default_data_dir = get_default_base_dir();
     let data_dir = get_memo_data_dir();
     let memo_manager = Arc::new(
         rust_tool_core::memo::MemoManager::new(&data_dir)
             .expect("Failed to initialize MemoManager"),
     );
-    let state = AppState { memo_manager };
+    let state = AppState {
+        memo_manager,
+        default_data_dir,
+        active_data_dir: data_dir,
+    };
 
     build_app_with_state(state)
 }
@@ -116,9 +155,17 @@ pub fn build_app_with_state(state: AppState) -> Router {
         .route("/api/memo/lock", post(memo::lock))
         .route("/api/memo/status", get(memo::status))
         .route("/api/memo/settings", post(memo::update_settings))
+        .route("/api/memo/data-dir", get(memo::data_dir))
+        .route("/api/memo/data-dir/migrate", post(memo::migrate_data_dir))
         .route("/api/memo/test-connection", post(memo::test_connection))
         .route("/api/memo/list", get(memo::list_documents))
         .route("/api/memo/doc/:id", get(memo::get_document))
+        .route("/api/memo/secrets", get(memo::list_secrets))
+        .route("/api/memo/secrets/reveal", post(memo::reveal_secret))
+        .route(
+            "/api/memo/change-master-password",
+            post(memo::change_master_password),
+        )
         .route("/api/memo/save", post(memo::save_document))
         .route("/api/memo/draft", post(memo::draft_document))
         .route("/api/memo/delete", post(memo::delete_document))
@@ -156,7 +203,11 @@ mod tests {
     fn test_app(data_dir: &std::path::Path) -> Router {
         let memo_manager =
             Arc::new(rust_tool_core::memo::MemoManager::new(data_dir).expect("memo manager"));
-        build_app_with_state(AppState { memo_manager })
+        build_app_with_state(AppState {
+            memo_manager,
+            default_data_dir: data_dir.to_path_buf(),
+            active_data_dir: data_dir.to_path_buf(),
+        })
     }
 
     async fn response_json(response: axum::response::Response) -> Value {
@@ -172,7 +223,20 @@ mod tests {
     #[tokio::test]
     async fn memo_routes_return_unauthorized_when_locked() {
         let data_dir = make_test_dir("locked_routes");
+        let locked_migration_target = make_test_dir("locked_migration_target");
         let app = test_app(&data_dir);
+
+        let data_dir_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/memo/data-dir")
+                    .body(Body::empty())
+                    .expect("data dir request"),
+            )
+            .await
+            .expect("data dir response");
+        assert_eq!(data_dir_response.status(), StatusCode::OK);
 
         let response = app
             .clone()
@@ -208,6 +272,28 @@ mod tests {
         let body = response_json(test_connection_response).await;
         assert_eq!(body["error"]["code"], "vault_locked");
 
+        let migrate_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/memo/data-dir/migrate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "targetDir": locked_migration_target.to_string_lossy().to_string()
+                        })
+                        .to_string(),
+                    ))
+                    .expect("migrate request"),
+            )
+            .await
+            .expect("migrate response");
+
+        assert_eq!(migrate_response.status(), StatusCode::UNAUTHORIZED);
+        let body = response_json(migrate_response).await;
+        assert_eq!(body["error"]["code"], "vault_locked");
+
         let chat_response = app
             .oneshot(
                 Request::builder()
@@ -225,6 +311,7 @@ mod tests {
         assert_eq!(body["error"]["code"], "vault_locked");
 
         let _ = std::fs::remove_dir_all(data_dir);
+        let _ = std::fs::remove_dir_all(locked_migration_target);
     }
 
     #[tokio::test]
@@ -261,5 +348,104 @@ mod tests {
         assert_eq!(body, Value::Array(Vec::new()));
 
         let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn memo_data_dir_migration_copies_data_and_locks_vault() {
+        let data_dir = make_test_dir("migration_source");
+        let target_dir = make_test_dir("migration_target");
+        let app = test_app(&data_dir);
+
+        let unlock_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/memo/unlock")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"password":"test-password"}"#))
+                    .expect("unlock request"),
+            )
+            .await
+            .expect("unlock response");
+        assert_eq!(unlock_response.status(), StatusCode::OK);
+
+        let save_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/memo/save")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "id": null,
+                            "fileName": "server.md",
+                            "title": "Server",
+                            "markdown": "Password: {{secret:sshPassword}}",
+                            "secrets": { "sshPassword": "abc123" },
+                            "summary": "Server credentials"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("save request"),
+            )
+            .await
+            .expect("save response");
+        assert_eq!(save_response.status(), StatusCode::OK);
+
+        let migrate_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/memo/data-dir/migrate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "targetDir": target_dir.to_string_lossy().to_string()
+                        })
+                        .to_string(),
+                    ))
+                    .expect("migrate request"),
+            )
+            .await
+            .expect("migrate response");
+        assert_eq!(migrate_response.status(), StatusCode::OK);
+        let body = response_json(migrate_response).await;
+        assert_eq!(body["ok"], true);
+
+        assert!(target_dir.join("documents/server.md").exists());
+        assert!(target_dir.join("config.json").exists());
+        assert!(target_dir.join("secrets.kdbx").exists());
+        assert!(target_dir.join(".rusttool-migration-backups").exists());
+        assert!(
+            std::fs::read_dir(target_dir.join(".rusttool-migration-backups"))
+                .expect("backup dir")
+                .any(|entry| entry
+                    .expect("backup entry")
+                    .path()
+                    .extension()
+                    .map(|extension| extension == "zip")
+                    .unwrap_or(false))
+        );
+
+        let config_text =
+            std::fs::read_to_string(data_dir.join("config.json")).expect("migration config");
+        assert!(config_text.contains(&target_dir.to_string_lossy().to_string()));
+
+        let list_response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/memo/list")
+                    .body(Body::empty())
+                    .expect("list request"),
+            )
+            .await
+            .expect("list response");
+        assert_eq!(list_response.status(), StatusCode::UNAUTHORIZED);
+
+        let _ = std::fs::remove_dir_all(data_dir);
+        let _ = std::fs::remove_dir_all(target_dir);
     }
 }

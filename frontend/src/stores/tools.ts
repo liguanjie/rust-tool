@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { BookOpen, Cable, Brain } from '@lucide/vue'
+import { BookOpen, Cable, Brain, KeyRound } from '@lucide/vue'
 
 export interface ToolItem {
   id: string
@@ -30,10 +30,17 @@ export const useToolsStore = defineStore('tools', () => {
         },
         {
           id: 'ai-memo',
-          name: 'AI 离线备忘',
+          name: 'AI 安全文档',
           path: '/tools/ai-memo',
-          description: '100% 离线、支持加密与 AI 检索的个人备忘助手',
+          description: '本地 Markdown 文档库、secret 脱敏与 AI 检索问答',
           icon: Brain,
+        },
+        {
+          id: 'secret-vault',
+          name: '密码库',
+          path: '/tools/secrets',
+          description: '查看本地保密库中的 secret 索引并临时解密复制',
+          icon: KeyRound,
         },
         {
           id: 'api-docs',

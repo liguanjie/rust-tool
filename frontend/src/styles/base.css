@@ -5,94 +5,9 @@
   --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-:root {
-  /* Light Theme Variables */
-  --bg-app: #fafaf9;
-  --text-base: #1c211d;
-  --text-muted: #78716c;
-  --bg-card: #ffffff;
-  --border-card: #e7e5e4;
-  --shadow-card: none;
-  --backdrop-card: none;
-  --hover-border-card: #10b981;
-  --hover-shadow-card: none;
-
-  --bg-sidebar: #f5f5f4;
-  --border-sidebar: #e7e5e4;
-  --text-sidebar-title: #0c0a09;
-  --text-sidebar-sub: #78716c;
-  --bg-sidebar-item: #ffffff;
-  --border-sidebar-item: #e7e5e4;
-  --text-sidebar-item: #292524;
-  --bg-sidebar-active: #ffffff;
-  --border-sidebar-active: #065f46;
-  --shadow-sidebar-active: inset 3px 0 0 #065f46;
-  --text-sidebar-active: #065f46;
-  --icon-sidebar-active: #065f46;
-  --logo-bg: #065f46;
-  --logo-shadow: none;
-
-  --text-title: #0c0a09;
-  --text-subtitle: #57534e;
-  --text-eyebrow: #065f46;
-  --text-eyebrow-shadow: none;
-
-  --bg-fact-item: #fafaf9;
-  --border-fact-item: transparent;
-  --text-fact-dt: #78716c;
-  --text-fact-dd: #292524;
-
-  --bg-btn-sec: #ffffff;
-  --border-btn-sec: #e7e5e4;
-  --text-btn-sec: #1c1917;
-  --hover-border-btn-sec: #065f46;
-  --hover-bg-btn-sec: #f0fdf4;
-  --hover-text-btn-sec: #065f46;
-  --hover-shadow-btn-sec: none;
-
-  --bg-input: #ffffff;
-  --border-input: #d6d3d1;
-  --text-input-color: #1c1917;
-
-  --bg-pill-good: #f0fdf4;
-  --border-pill-good: transparent;
-  --text-pill-good: #166534;
-  --shadow-pill-good: none;
-
-  --bg-pill-warn: #fef3c7;
-  --border-pill-warn: transparent;
-  --text-pill-warn: #92400e;
-  --shadow-pill-warn: none;
-
-  --bg-pill-muted: #f5f5f4;
-  --border-pill-muted: transparent;
-  --text-pill-muted: #4e463f;
-
-  --bg-icon: #f0fdf4;
-  --border-icon: transparent;
-  --text-icon: #065f46;
-
-  --drawer-bg: #ffffff;
-  --drawer-border: #e7e5e4;
-  --drawer-footer-bg: #ffffff;
-
-  --confirm-bg: #ffffff;
-  --confirm-border: #e7e5e4;
-
-  --bg-theme-trigger: #ffffff;
-  --border-theme-trigger: #e7e5e4;
-  --text-theme-trigger: #44403c;
-  --bg-theme-popover: #ffffff;
-  --border-theme-popover: #e7e5e4;
-  --text-theme-popover-item: #44403c;
-  --bg-theme-popover-item-hover: #f5f5f4;
-  --text-theme-popover-item-active: #065f46;
-  --check-theme-popover-item: #065f46;
-  --shadow-theme-popover: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-}
-
+:root,
 .dark {
-  /* Dark Glassmorphism Theme Variables */
+  /* Geek dark theme variables */
   --bg-app: #070c14;
   --text-base: #cbd5e1;
   --text-muted: #94a3b8;
@@ -172,8 +87,6 @@
   --border-theme-popover: rgba(255, 255, 255, 0.08);
   --text-theme-popover-item: #9ca3af;
   --bg-theme-popover-item-hover: rgba(255, 255, 255, 0.04);
-  --text-theme-popover-item-active: #34d399;
-  --check-theme-popover-item: #34d399;
   --shadow-theme-popover: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
 }
 
@@ -244,12 +157,6 @@ button:disabled {
     @apply justify-center px-0 w-10 h-10 mx-auto rounded-xl;
   }
 
-  .theme-popover-menu--collapsed {
-    bottom: 0 !important;
-    left: calc(100% + 12px) !important;
-    width: 150px !important;
-  }
-
   .logo-box {
     background: var(--logo-bg);
     box-shadow: var(--logo-shadow);
@@ -306,44 +213,18 @@ button:disabled {
     @apply flex min-h-[38px] w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-bold transition-all duration-200;
   }
 
-  .theme-trigger-btn:hover,
-  .theme-trigger-btn--active {
+  .theme-trigger-btn:hover {
     border-color: var(--hover-border-btn-sec);
     background: var(--hover-bg-btn-sec);
     color: var(--hover-text-btn-sec);
   }
 
-  .theme-popover-menu {
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 0;
-    width: 100%;
-    background: var(--bg-theme-popover);
-    border: 1px solid var(--border-theme-popover);
-    box-shadow: var(--shadow-theme-popover);
-    backdrop-filter: blur(12px);
-    z-index: 50;
-    @apply grid gap-0.5 rounded-xl p-1.5 transition-all duration-300;
-  }
-
-  .theme-popover-item {
-    color: var(--text-theme-popover-item);
-    border: 0;
-    background: transparent;
-    @apply flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-xs font-semibold transition-all duration-150;
-  }
-
-  .theme-popover-item:hover {
-    background: var(--bg-theme-popover-item-hover);
-    color: var(--text-base);
-  }
-
-  .theme-popover-item.active {
-    color: var(--text-theme-popover-item-active);
-  }
-
-  .theme-check-icon {
-    color: var(--check-theme-popover-item);
+  .theme-trigger-btn--locked,
+  .theme-trigger-btn--locked:hover {
+    background: var(--bg-theme-trigger);
+    border-color: var(--border-theme-trigger);
+    color: var(--text-theme-trigger);
+    @apply cursor-default;
   }
 
   /* Global layouts and elements */

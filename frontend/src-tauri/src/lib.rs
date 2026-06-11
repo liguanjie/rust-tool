@@ -1,4 +1,3 @@
-use rusqlite::{params, Connection, OptionalExtension};
 use rust_tool_core::{
     convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
     TransitProviderOptions, TransitProxyOptions,
@@ -6,10 +5,9 @@ use rust_tool_core::{
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
-const VLESS_TOOL_SETTINGS_KEY: &str = "toolbox.vless_to_mihomo.settings";
+mod memo_commands;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -109,6 +107,12 @@ impl Default for VlessToolSettings {
     }
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+struct DesktopSettings {
+    vless_to_mihomo: VlessToolSettings,
+}
+
 #[tauri::command]
 fn convert_vless_to_mihomo(request: ConvertVlessRequest) -> Result<ConvertVlessResponse, String> {
     let output_mode = match request.mode.unwrap_or(VlessOutputMode::FullConfig) {
@@ -137,22 +141,7 @@ fn convert_vless_to_mihomo(request: ConvertVlessRequest) -> Result<ConvertVlessR
 
 #[tauri::command]
 fn get_vless_tool_settings(app: tauri::AppHandle) -> Result<VlessToolSettings, String> {
-    let conn = open_app_db(&app)?;
-    ensure_app_settings_schema(&conn)?;
-    let value = conn
-        .query_row(
-            "SELECT value FROM app_settings WHERE key = ?1",
-            params![VLESS_TOOL_SETTINGS_KEY],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| format!("读取 VLESS 工具配置失败: {error}"))?;
-
-    match value {
-        Some(value) => serde_json::from_str(&value)
-            .map_err(|error| format!("解析 VLESS 工具配置失败: {error}")),
-        None => Ok(VlessToolSettings::default()),
-    }
+    Ok(read_desktop_settings(&app)?.vless_to_mihomo)
 }
 
 #[tauri::command]
@@ -160,17 +149,9 @@ fn save_vless_tool_settings(
     app: tauri::AppHandle,
     settings: VlessToolSettings,
 ) -> Result<VlessToolSettings, String> {
-    let conn = open_app_db(&app)?;
-    ensure_app_settings_schema(&conn)?;
-    let value = serde_json::to_string(&settings)
-        .map_err(|error| format!("序列化 VLESS 工具配置失败: {error}"))?;
-    conn.execute(
-        "INSERT INTO app_settings (key, value, updated_at)
-         VALUES (?1, ?2, ?3)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        params![VLESS_TOOL_SETTINGS_KEY, value, now_text()],
-    )
-    .map_err(|error| format!("保存 VLESS 工具配置失败: {error}"))?;
+    let mut desktop_settings = read_desktop_settings(&app)?;
+    desktop_settings.vless_to_mihomo = settings.clone();
+    write_desktop_settings(&app, &desktop_settings)?;
 
     Ok(settings)
 }
@@ -199,12 +180,36 @@ fn save_yaml_file(
 }
 
 pub fn run() {
+    let memo_state =
+        memo_commands::create_memo_state().expect("failed to initialize RustTool memo state");
+
     tauri::Builder::default()
+        .manage(memo_state)
         .invoke_handler(tauri::generate_handler![
             convert_vless_to_mihomo,
             save_yaml_file,
             get_vless_tool_settings,
-            save_vless_tool_settings
+            save_vless_tool_settings,
+            memo_commands::memo_unlock,
+            memo_commands::memo_lock,
+            memo_commands::memo_status,
+            memo_commands::memo_data_dir,
+            memo_commands::memo_update_settings,
+            memo_commands::memo_test_connection,
+            memo_commands::memo_list_documents,
+            memo_commands::memo_get_document,
+            memo_commands::memo_list_secrets,
+            memo_commands::memo_reveal_secret,
+            memo_commands::memo_change_master_password,
+            memo_commands::memo_save_document,
+            memo_commands::memo_draft_document,
+            memo_commands::memo_delete_document,
+            memo_commands::memo_query,
+            memo_commands::memo_chat,
+            memo_commands::memo_backup,
+            memo_commands::memo_restore,
+            memo_commands::memo_translate_key,
+            memo_commands::memo_migrate_data_dir
         ])
         .run(tauri::generate_context!())
         .expect("failed to run RustTool desktop app");
@@ -244,35 +249,33 @@ impl From<VlessTransitProviderRequest> for TransitProviderOptions {
     }
 }
 
-fn open_app_db(app: &tauri::AppHandle) -> Result<Connection, String> {
+fn desktop_settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|error| format!("无法定位应用数据目录: {error}"))?;
     fs::create_dir_all(&data_dir).map_err(|error| format!("创建应用数据目录失败: {error}"))?;
-    Connection::open(data_dir.join("rusttool.sqlite"))
-        .map_err(|error| format!("打开本地数据库失败: {error}"))
+    Ok(data_dir.join("rusttool-settings.json"))
 }
 
-fn ensure_app_settings_schema(conn: &Connection) -> Result<(), String> {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )",
-        [],
-    )
-    .map_err(|error| format!("初始化配置表失败: {error}"))?;
-
-    Ok(())
+fn read_desktop_settings(app: &tauri::AppHandle) -> Result<DesktopSettings, String> {
+    let path = desktop_settings_path(app)?;
+    if !path.exists() {
+        return Ok(DesktopSettings::default());
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|error| format!("读取桌面配置失败: {error}"))?;
+    serde_json::from_str(&content).map_err(|error| format!("解析桌面配置失败: {error}"))
 }
 
-fn now_text() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs().to_string())
-        .unwrap_or_else(|_| "0".to_string())
+fn write_desktop_settings(
+    app: &tauri::AppHandle,
+    settings: &DesktopSettings,
+) -> Result<(), String> {
+    let path = desktop_settings_path(app)?;
+    let json = serde_json::to_string_pretty(settings)
+        .map_err(|error| format!("序列化桌面配置失败: {error}"))?;
+    fs::write(path, json).map_err(|error| format!("保存桌面配置失败: {error}"))
 }
 
 fn sanitize_yaml_filename(filename: &str) -> String {

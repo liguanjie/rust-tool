@@ -1,8 +1,13 @@
-use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::markdown_store;
+
+const MEMO_CONFIG_KEY: &str = "memoConfig";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -21,131 +26,94 @@ pub struct MemoSecretInfo {
     pub description: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct EmbeddingRecord {
+    id: String,
+    embedding: Vec<f32>,
+}
+
 pub struct MemoStore {
-    pub db_path: PathBuf,
-    pub vault_path: PathBuf,
+    data_dir: PathBuf,
+    config_path: PathBuf,
+    vault_path: PathBuf,
+    embeddings_path: PathBuf,
 }
 
 impl MemoStore {
     pub fn new(data_dir: &Path) -> Result<Self, String> {
-        let db_path = data_dir.join("memos.db");
+        let data_dir = data_dir.to_path_buf();
+        let config_path = data_dir.join("config.json");
         let vault_path = data_dir.join("documents");
+        let embeddings_path = data_dir.join("embeddings");
 
-        // Ensure directories exist
+        fs::create_dir_all(&data_dir)
+            .map_err(|e| format!("Failed to create data directory: {:?}", e))?;
         fs::create_dir_all(&vault_path)
-            .map_err(|e| format!("Failed to create vault directory: {:?}", e))?;
+            .map_err(|e| format!("Failed to create documents directory: {:?}", e))?;
 
-        let store = Self {
-            db_path,
+        Ok(Self {
+            data_dir,
+            config_path,
             vault_path,
-        };
-        store
-            .init_db()
-            .map_err(|e| format!("Database initialization failed: {}", e))?;
-
-        Ok(store)
-    }
-
-    pub fn connect(&self) -> Result<Connection, rusqlite::Error> {
-        Connection::open(&self.db_path)
-    }
-
-    fn init_db(&self) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS memo_config (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            );",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS memo_secrets (
-                id TEXT PRIMARY KEY,
-                encrypted_value TEXT,
-                description TEXT
-            );",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS memos (
-                id TEXT PRIMARY KEY,
-                file_name TEXT,
-                title TEXT,
-                summary TEXT,
-                updated_at INTEGER
-            );",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-
-        let duplicate_file_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM (
-                SELECT file_name FROM memos
-                WHERE file_name IS NOT NULL AND file_name != ''
-                GROUP BY file_name
-                HAVING COUNT(*) > 1
-            )",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        if duplicate_file_count > 0 {
-            return Err(
-                "Duplicate memo file names exist; please resolve them before upgrading."
-                    .to_string(),
-            );
-        }
-
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_memos_file_name_unique
-             ON memos(file_name)",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS memo_embeddings (
-                id TEXT PRIMARY KEY,
-                embedding BLOB
-            );",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-
-        Ok(())
+            embeddings_path,
+        })
     }
 
     // --- Configuration management ---
 
     pub fn get_config(&self, key: &str) -> Result<Option<String>, String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT value FROM memo_config WHERE key = ?")
-            .map_err(|e| e.to_string())?;
+        let document = self.read_config_document()?;
+        let Some(Value::Object(config)) = document.get(MEMO_CONFIG_KEY) else {
+            return Ok(None);
+        };
 
-        let val: Option<String> = stmt
-            .query_row(params![key], |row| row.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-
-        Ok(val)
+        Ok(config.get(key).and_then(Value::as_str).map(str::to_string))
     }
 
     pub fn set_config(&self, key: &str, value: &str) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        conn.execute(
-            "INSERT OR REPLACE INTO memo_config (key, value) VALUES (?, ?)",
-            params![key, value],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+        let mut document = self.read_config_document()?;
+        let config = ensure_memo_config_object(&mut document)?;
+        config.insert(key.to_string(), Value::String(value.to_string()));
+        self.write_config_document(&document)
+    }
+
+    pub fn delete_config(&self, key: &str) -> Result<(), String> {
+        let mut document = self.read_config_document()?;
+        if let Some(Value::Object(config)) = document.get_mut(MEMO_CONFIG_KEY) {
+            config.remove(key);
+        }
+        self.write_config_document(&document)
+    }
+
+    fn read_config_document(&self) -> Result<Map<String, Value>, String> {
+        if !self.config_path.exists() {
+            return Ok(Map::new());
+        }
+
+        let content = fs::read_to_string(&self.config_path)
+            .map_err(|e| format!("Failed to read config.json: {:?}", e))?;
+        if content.trim().is_empty() {
+            return Ok(Map::new());
+        }
+
+        match serde_json::from_str::<Value>(&content)
+            .map_err(|e| format!("Failed to parse config.json: {:?}", e))?
+        {
+            Value::Object(object) => Ok(object),
+            _ => Err("config.json must contain a JSON object".to_string()),
+        }
+    }
+
+    fn write_config_document(&self, document: &Map<String, Value>) -> Result<(), String> {
+        if let Some(parent) = self.config_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create config directory: {:?}", e))?;
+        }
+        let value = Value::Object(document.clone());
+        let json = serde_json::to_string_pretty(&value)
+            .map_err(|e| format!("Failed to serialize config.json: {:?}", e))?;
+        fs::write(&self.config_path, json)
+            .map_err(|e| format!("Failed to write config.json: {:?}", e))
     }
 
     // --- Password master salt & validation ---
@@ -172,59 +140,26 @@ impl MemoStore {
         self.get_config("password_verifier")
     }
 
-    // --- Secrets management ---
-
-    pub fn get_secret(&self, id: &str) -> Result<Option<String>, String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT encrypted_value FROM memo_secrets WHERE id = ?")
-            .map_err(|e| e.to_string())?;
-
-        let val: Option<String> = stmt
-            .query_row(params![id], |row| row.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-
-        Ok(val)
-    }
-
-    pub fn delete_secret(&self, id: &str) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM memo_secrets WHERE id = ?", params![id])
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    pub fn replace_document_secrets(
-        &self,
-        doc_id: &str,
-        secrets: &[(String, String, String)],
-    ) -> Result<(), String> {
-        let mut conn = self.connect().map_err(|e| e.to_string())?;
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-        tx.execute(
-            "DELETE FROM memo_secrets WHERE id LIKE ?",
-            params![format!("{}:%", doc_id)],
-        )
-        .map_err(|e| e.to_string())?;
-
-        for (id, encrypted_value, description) in secrets {
-            tx.execute(
-                "INSERT INTO memo_secrets (id, encrypted_value, description) VALUES (?, ?, ?)",
-                params![id, encrypted_value, description],
-            )
-            .map_err(|e| e.to_string())?;
-        }
-
-        tx.commit().map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
     // --- Documents read/write ---
+
+    pub fn get_data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    pub fn get_config_path(&self) -> &Path {
+        &self.config_path
+    }
 
     pub fn get_vault_path(&self) -> &Path {
         &self.vault_path
+    }
+
+    pub fn get_embeddings_path(&self) -> &Path {
+        &self.embeddings_path
+    }
+
+    pub fn get_secret_vault_path(&self) -> PathBuf {
+        self.data_dir.join("secrets.kdbx")
     }
 
     fn resolve_document_path(&self, file_name: &str) -> Result<PathBuf, String> {
@@ -256,7 +191,6 @@ impl MemoStore {
     pub fn save_document_file(&self, file_name: &str, markdown: &str) -> Result<PathBuf, String> {
         let doc_path = self.resolve_document_path(file_name)?;
 
-        // Create parent directories if any
         if let Some(parent) = doc_path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create subdirectories: {:?}", e))?;
@@ -267,10 +201,23 @@ impl MemoStore {
         Ok(doc_path)
     }
 
+    pub fn save_document_with_metadata(
+        &self,
+        meta: &MemoMetadata,
+        markdown: &str,
+    ) -> Result<PathBuf, String> {
+        let rendered = markdown_store::render_document(meta, markdown)?;
+        self.save_document_file(&meta.file_name, &rendered)
+    }
+
     pub fn read_document_file(&self, file_name: &str) -> Result<String, String> {
         let doc_path = self.resolve_document_path(file_name)?;
 
-        fs::read_to_string(&doc_path).map_err(|e| format!("Failed to read document: {:?}", e))
+        let content = fs::read_to_string(&doc_path)
+            .map_err(|e| format!("Failed to read document: {:?}", e))?;
+        Ok(markdown_store::strip_frontmatter(&content)
+            .trim_start_matches('\n')
+            .to_string())
     }
 
     pub fn delete_document_file(&self, file_name: &str) -> Result<(), String> {
@@ -285,164 +232,140 @@ impl MemoStore {
 
     // --- Metadata management ---
 
-    pub fn upsert_memo_metadata(&self, meta: &MemoMetadata) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        conn.execute(
-            "INSERT OR REPLACE INTO memos (id, file_name, title, summary, updated_at) VALUES (?, ?, ?, ?, ?)",
-            params![meta.id, meta.file_name, meta.title, meta.summary, meta.updated_at],
-        )
-        .map_err(|e| e.to_string())?;
+    pub fn upsert_memo_metadata(&self, _meta: &MemoMetadata) -> Result<(), String> {
+        // Metadata lives in each Markdown file's frontmatter.
         Ok(())
     }
 
     pub fn get_all_memos(&self) -> Result<Vec<MemoMetadata>, String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT id, file_name, title, summary, updated_at FROM memos ORDER BY updated_at DESC")
-            .map_err(|e| e.to_string())?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(MemoMetadata {
-                    id: row.get(0)?,
-                    file_name: row.get(1)?,
-                    title: row.get(2)?,
-                    summary: row.get(3)?,
-                    updated_at: row.get(4)?,
-                })
-            })
-            .map_err(|e| e.to_string())?;
-
-        let mut list = Vec::new();
-        for r in rows {
-            list.push(r.map_err(|e| e.to_string())?);
-        }
-        Ok(list)
+        markdown_store::list_documents(&self.vault_path, &HashMap::new())
     }
 
     pub fn get_memo_metadata(&self, id: &str) -> Result<Option<MemoMetadata>, String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT id, file_name, title, summary, updated_at FROM memos WHERE id = ?")
-            .map_err(|e| e.to_string())?;
-
-        let meta = stmt
-            .query_row(params![id], |row| {
-                Ok(MemoMetadata {
-                    id: row.get(0)?,
-                    file_name: row.get(1)?,
-                    title: row.get(2)?,
-                    summary: row.get(3)?,
-                    updated_at: row.get(4)?,
-                })
-            })
-            .optional()
-            .map_err(|e| e.to_string())?;
-
-        Ok(meta)
+        Ok(self.get_all_memos()?.into_iter().find(|meta| meta.id == id))
     }
 
     pub fn file_name_owner(&self, file_name: &str) -> Result<Option<String>, String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT id FROM memos WHERE file_name = ?")
-            .map_err(|e| e.to_string())?;
-
-        stmt.query_row(params![file_name], |row| row.get(0))
-            .optional()
-            .map_err(|e| e.to_string())
+        Ok(self
+            .get_all_memos()?
+            .into_iter()
+            .find(|meta| meta.file_name == file_name)
+            .map(|meta| meta.id))
     }
 
     pub fn delete_memo_metadata(&self, id: &str) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM memos WHERE id = ?", params![id])
-            .map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM memo_embeddings WHERE id = ?", params![id])
-            .map_err(|e| e.to_string())?;
-        Ok(())
+        self.delete_embedding(id)
     }
 
     // --- Vector Embeddings ---
 
     pub fn save_embedding(&self, id: &str, embedding: &[f32]) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-
-        // Convert Vec<f32> to Vec<u8> byte array (little-endian representation)
-        let mut blob = Vec::with_capacity(embedding.len() * 4);
-        for &val in embedding {
-            blob.extend_from_slice(&val.to_le_bytes());
-        }
-
-        conn.execute(
-            "INSERT OR REPLACE INTO memo_embeddings (id, embedding) VALUES (?, ?)",
-            params![id, blob],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+        fs::create_dir_all(&self.embeddings_path)
+            .map_err(|e| format!("Failed to create embeddings directory: {:?}", e))?;
+        let record = EmbeddingRecord {
+            id: id.to_string(),
+            embedding: embedding.to_vec(),
+        };
+        let json = serde_json::to_vec(&record)
+            .map_err(|e| format!("Failed to serialize embedding: {:?}", e))?;
+        fs::write(self.embedding_path(id), json)
+            .map_err(|e| format!("Failed to write embedding: {:?}", e))
     }
 
     pub fn get_embedding(&self, id: &str) -> Result<Option<Vec<f32>>, String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT embedding FROM memo_embeddings WHERE id = ?")
-            .map_err(|e| e.to_string())?;
-
-        let blob: Option<Vec<u8>> = stmt
-            .query_row(params![id], |row| row.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-
-        match blob {
-            Some(bytes) => {
-                if bytes.len() % 4 != 0 {
-                    return Err("Malformed embedding blob size".to_string());
-                }
-                let mut vec = Vec::with_capacity(bytes.len() / 4);
-                for chunk in bytes.chunks_exact(4) {
-                    let mut arr = [0u8; 4];
-                    arr.copy_from_slice(chunk);
-                    vec.push(f32::from_le_bytes(arr));
-                }
-                Ok(Some(vec))
-            }
-            None => Ok(None),
+        let path = self.embedding_path(id);
+        if !path.exists() {
+            return Ok(None);
         }
+        let bytes = fs::read(&path).map_err(|e| format!("Failed to read embedding: {:?}", e))?;
+        let record: EmbeddingRecord = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("Failed to parse embedding: {:?}", e))?;
+        Ok(Some(record.embedding))
     }
 
     pub fn get_all_embeddings(&self) -> Result<Vec<(String, Vec<f32>)>, String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT id, embedding FROM memo_embeddings")
-            .map_err(|e| e.to_string())?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let bytes: Vec<u8> = row.get(1)?;
-                Ok((id, bytes))
-            })
-            .map_err(|e| e.to_string())?;
-
         let mut list = Vec::new();
-        for r in rows {
-            let (id, bytes) = r.map_err(|e| e.to_string())?;
-            if bytes.len() % 4 != 0 {
-                return Err("Malformed embedding blob".to_string());
-            }
-            let mut vec = Vec::with_capacity(bytes.len() / 4);
-            for chunk in bytes.chunks_exact(4) {
-                let mut arr = [0u8; 4];
-                arr.copy_from_slice(chunk);
-                vec.push(f32::from_le_bytes(arr));
-            }
-            list.push((id, vec));
+        if !self.embeddings_path.exists() {
+            return Ok(list);
         }
+
+        for entry in fs::read_dir(&self.embeddings_path)
+            .map_err(|e| format!("Failed to read embeddings directory: {:?}", e))?
+        {
+            let entry = entry.map_err(|e| format!("Failed to read embedding entry: {:?}", e))?;
+            let path = entry.path();
+            if !path.is_file()
+                || !path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+            {
+                continue;
+            }
+            let bytes =
+                fs::read(&path).map_err(|e| format!("Failed to read embedding: {:?}", e))?;
+            let record: EmbeddingRecord = serde_json::from_slice(&bytes)
+                .map_err(|e| format!("Failed to parse embedding: {:?}", e))?;
+            list.push((record.id, record.embedding));
+        }
+
         Ok(list)
     }
 
-    pub fn get_db_path(&self) -> &Path {
-        &self.db_path
+    fn delete_embedding(&self, id: &str) -> Result<(), String> {
+        let path = self.embedding_path(id);
+        if path.exists() {
+            fs::remove_file(path).map_err(|e| format!("Failed to delete embedding: {:?}", e))?;
+        }
+        Ok(())
     }
+
+    fn embedding_path(&self, id: &str) -> PathBuf {
+        self.embeddings_path
+            .join(format!("{}.json", hex_encode(id.as_bytes())))
+    }
+}
+
+fn ensure_memo_config_object(
+    document: &mut Map<String, Value>,
+) -> Result<&mut Map<String, Value>, String> {
+    if !document.contains_key(MEMO_CONFIG_KEY) {
+        document.insert(MEMO_CONFIG_KEY.to_string(), Value::Object(Map::new()));
+    }
+
+    match document.get_mut(MEMO_CONFIG_KEY) {
+        Some(Value::Object(config)) => Ok(config),
+        _ => Err("config.json field memoConfig must contain an object".to_string()),
+    }
+}
+
+// Helpers for hex encoding/decoding without external crate dependencies
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
+}
+
+fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
+    if s.len() % 2 != 0 {
+        return Err("Invalid hex string length".to_string());
+    }
+    let mut bytes = Vec::with_capacity(s.len() / 2);
+    for i in (0..s.len()).step_by(2) {
+        let res = u8::from_str_radix(&s[i..i + 2], 16)
+            .map_err(|e| format!("Hex decode error: {:?}", e))?;
+        bytes.push(res);
+    }
+    Ok(bytes)
+}
+
+pub fn current_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 #[cfg(test)]
@@ -492,33 +415,103 @@ mod tests {
 
         let _ = fs::remove_dir_all(temp_dir);
     }
-}
 
-// Helpers for hex encoding/decoding without external crate dependencies
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        s.push_str(&format!("{:02x}", b));
-    }
-    s
-}
+    #[test]
+    fn lists_markdown_files_created_without_database() {
+        let temp_dir = make_test_dir("markdown_list");
+        let store = MemoStore::new(&temp_dir).expect("store");
+        let doc_dir = store.get_vault_path().join("servers");
+        fs::create_dir_all(&doc_dir).expect("doc dir");
+        fs::write(
+            doc_dir.join("prod.md"),
+            "---\nid: prod-server\ntitle: 生产服务器\nsummary: 外部创建的 Markdown\nupdatedAt: 99\n---\n\n# 生产服务器",
+        )
+        .expect("write markdown");
 
-fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
-    if s.len() % 2 != 0 {
-        return Err("Invalid hex string length".to_string());
-    }
-    let mut bytes = Vec::with_capacity(s.len() / 2);
-    for i in (0..s.len()).step_by(2) {
-        let res = u8::from_str_radix(&s[i..i + 2], 16)
-            .map_err(|e| format!("Hex decode error: {:?}", e))?;
-        bytes.push(res);
-    }
-    Ok(bytes)
-}
+        let docs = store.get_all_memos().expect("list memos");
 
-pub fn current_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].id, "prod-server");
+        assert_eq!(docs[0].file_name, "servers/prod.md");
+        assert_eq!(docs[0].title, "生产服务器");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn saves_frontmatter_but_reads_editor_body() {
+        let temp_dir = make_test_dir("markdown_frontmatter");
+        let store = MemoStore::new(&temp_dir).expect("store");
+        let meta = MemoMetadata {
+            id: "doc-1".to_string(),
+            file_name: "doc.md".to_string(),
+            title: "文档标题".to_string(),
+            summary: "文档摘要".to_string(),
+            updated_at: 123,
+        };
+
+        store
+            .save_document_with_metadata(&meta, "# 文档标题\n\n正文")
+            .expect("save markdown with frontmatter");
+
+        let raw = fs::read_to_string(store.get_vault_path().join("doc.md")).expect("raw file");
+        assert!(raw.contains("id: doc-1"));
+        assert_eq!(
+            store.read_document_file("doc.md").expect("read doc"),
+            "# 文档标题\n\n正文"
+        );
+
+        let docs = store.get_all_memos().expect("list memos");
+        assert_eq!(docs[0].id, "doc-1");
+        assert_eq!(docs[0].summary, "文档摘要");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn stores_config_in_json_without_clobbering_local_fields() {
+        let temp_dir = make_test_dir("json_config");
+        fs::write(
+            temp_dir.join("config.json"),
+            r#"{"customDataDir":"/tmp/elsewhere"}"#,
+        )
+        .expect("seed config");
+        let store = MemoStore::new(&temp_dir).expect("store");
+
+        store
+            .set_config("ollama_base_url", "https://api.openai.com/v1")
+            .expect("set config");
+
+        assert_eq!(
+            store.get_config("ollama_base_url").expect("read config"),
+            Some("https://api.openai.com/v1".to_string())
+        );
+        let content = fs::read_to_string(temp_dir.join("config.json")).expect("read config file");
+        assert!(content.contains("customDataDir"));
+        assert!(content.contains("memoConfig"));
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn stores_embeddings_as_json_files() {
+        let temp_dir = make_test_dir("embeddings");
+        let store = MemoStore::new(&temp_dir).expect("store");
+
+        store
+            .save_embedding("doc-1", &[0.1, 0.2, 0.3])
+            .expect("save embedding");
+
+        assert_eq!(
+            store.get_embedding("doc-1").expect("read embedding"),
+            Some(vec![0.1, 0.2, 0.3])
+        );
+        assert_eq!(store.get_all_embeddings().expect("all embeddings").len(), 1);
+        store
+            .delete_memo_metadata("doc-1")
+            .expect("delete embedding");
+        assert_eq!(store.get_embedding("doc-1").expect("read missing"), None);
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
 }

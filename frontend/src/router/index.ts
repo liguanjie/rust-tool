@@ -3,6 +3,7 @@ import VlessToMihomo from '../pages/VlessToMihomo.vue'
 import ApiDocs from '../pages/ApiDocs.vue'
 import Toolbox from '../pages/Toolbox.vue'
 import AiMemo from '../pages/AiMemo.vue'
+import SecretVault from '../pages/SecretVault.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -34,6 +35,11 @@ export const router = createRouter({
       path: '/tools/ai-memo',
       name: 'ai-memo',
       component: AiMemo,
+    },
+    {
+      path: '/tools/secrets',
+      name: 'secret-vault',
+      component: SecretVault,
     },
   ],
 })

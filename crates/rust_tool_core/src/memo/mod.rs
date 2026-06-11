@@ -1,19 +1,27 @@
 pub mod backup;
 pub mod crypto;
+pub mod markdown_store;
+pub mod redactor;
+pub mod secret_vault;
 pub mod store;
 pub mod vector;
 
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use self::secret_vault::{KdbxSecretVault, SecretMetadata, SecretVault};
+
 pub use store::{current_timestamp, MemoMetadata, MemoStore};
 pub use vector::{cosine_similarity, ChatMessage, LlmClient};
+
+const LLM_API_KEY_SECRET_ID: &str = "__rusttool_config:llm_api_key";
+const LLM_API_KEY_PRESENT_CONFIG: &str = "ollama_api_key_saved";
+const LEGACY_LLM_API_KEY_CONFIG: &str = "ollama_api_key";
 
 pub struct LlmConfig {
     pub base_url: String,
@@ -30,17 +38,20 @@ pub struct MemoManager {
     llm_config: Arc<std::sync::RwLock<LlmConfig>>,
     // Store derived master key in memory when unlocked. None means locked.
     master_key: Arc<RwLock<Option<[u8; 32]>>>,
+    // Keep the KDBX vault open only while the app is unlocked.
+    secret_vault: Arc<RwLock<Option<KdbxSecretVault>>>,
+    secret_vault_path: PathBuf,
 }
 
 impl MemoManager {
     pub fn new(data_dir: &Path) -> Result<Self, String> {
         let store = MemoStore::new(data_dir)?;
+        let secret_vault_path = store.get_secret_vault_path();
 
         // Read configs or set defaults
         let llm_base_url = store
             .get_config("ollama_base_url")?
             .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-        let llm_api_key = store.get_config("ollama_api_key")?.unwrap_or_default();
         let llm_chat_model = store
             .get_config("ollama_chat_model")?
             .unwrap_or_else(|| "gpt-5.5".to_string());
@@ -61,7 +72,8 @@ impl MemoManager {
 
         let llm_config = Arc::new(std::sync::RwLock::new(LlmConfig {
             base_url: llm_base_url,
-            api_key: llm_api_key,
+            // Loaded from KDBX after unlock. Do not keep API keys in JSON config.
+            api_key: String::new(),
             chat_model: llm_chat_model,
             embedding_model: llm_embedding_model,
             reasoning_effort,
@@ -73,6 +85,8 @@ impl MemoManager {
             store,
             llm_config,
             master_key: Arc::new(RwLock::new(None)),
+            secret_vault: Arc::new(RwLock::new(None)),
+            secret_vault_path,
         })
     }
 
@@ -97,8 +111,12 @@ impl MemoManager {
                     Ok(decrypted_bytes) => {
                         let val = String::from_utf8_lossy(&decrypted_bytes);
                         if val == "verified_token" {
-                            let mut lock = self.master_key.write().await;
-                            *lock = Some(derived);
+                            {
+                                let mut lock = self.master_key.write().await;
+                                *lock = Some(derived);
+                            }
+                            self.open_or_create_secret_vault(password).await?;
+                            self.load_or_migrate_llm_api_key().await?;
                             Ok(true)
                         } else {
                             Ok(false)
@@ -108,12 +126,35 @@ impl MemoManager {
                 }
             }
             None => {
-                // No password set yet. We initialize it with this password!
+                if self.secret_vault_path.exists() {
+                    let vault = match KdbxSecretVault::open(&self.secret_vault_path, password) {
+                        Ok(vault) => vault,
+                        Err(_) => return Ok(false),
+                    };
+                    let verifier_str = crypto::encrypt(b"verified_token", &derived)?;
+                    self.store.set_password_verifier(&verifier_str)?;
+                    {
+                        let mut lock = self.master_key.write().await;
+                        *lock = Some(derived);
+                    }
+                    {
+                        let mut guard = self.secret_vault.write().await;
+                        *guard = Some(vault);
+                    }
+                    self.load_or_migrate_llm_api_key().await?;
+                    return Ok(true);
+                }
+
+                // No password set yet and no existing KDBX vault. Initialize a new vault.
                 let verifier_str = crypto::encrypt(b"verified_token", &derived)?;
                 self.store.set_password_verifier(&verifier_str)?;
 
-                let mut lock = self.master_key.write().await;
-                *lock = Some(derived);
+                {
+                    let mut lock = self.master_key.write().await;
+                    *lock = Some(derived);
+                }
+                self.open_or_create_secret_vault(password).await?;
+                self.load_or_migrate_llm_api_key().await?;
                 Ok(true)
             }
         }
@@ -121,8 +162,16 @@ impl MemoManager {
 
     /// Lock the vault, erasing the key from memory.
     pub async fn lock(&self) {
-        let mut lock = self.master_key.write().await;
-        *lock = None;
+        {
+            let mut lock = self.master_key.write().await;
+            *lock = None;
+        }
+        {
+            let mut config = self.llm_config.write().unwrap();
+            config.api_key.clear();
+        }
+        let mut vault = self.secret_vault.write().await;
+        *vault = None;
     }
 
     /// Get current master key if unlocked, otherwise return error.
@@ -133,8 +182,259 @@ impl MemoManager {
             .ok_or_else(|| "Vault is locked. Please unlock first.".to_string())
     }
 
+    async fn open_or_create_secret_vault(&self, password: &str) -> Result<(), String> {
+        let vault = if self.secret_vault_path.exists() {
+            KdbxSecretVault::open(&self.secret_vault_path, password)?
+        } else {
+            KdbxSecretVault::create(&self.secret_vault_path, password)?
+        };
+
+        let mut guard = self.secret_vault.write().await;
+        *guard = Some(vault);
+        Ok(())
+    }
+
+    async fn load_or_migrate_llm_api_key(&self) -> Result<(), String> {
+        let legacy_api_key = self
+            .store
+            .get_config(LEGACY_LLM_API_KEY_CONFIG)?
+            .unwrap_or_default();
+        if !legacy_api_key.trim().is_empty() {
+            self.store_llm_api_key(legacy_api_key.trim()).await?;
+            return Ok(());
+        }
+        if self.store.get_config(LEGACY_LLM_API_KEY_CONFIG)?.is_some() {
+            self.store.delete_config(LEGACY_LLM_API_KEY_CONFIG)?;
+        }
+
+        let api_key = {
+            let guard = self.secret_vault.read().await;
+            match guard.as_ref() {
+                Some(vault) => vault.get_secret(LLM_API_KEY_SECRET_ID)?,
+                None => None,
+            }
+        };
+
+        {
+            let mut config = self.llm_config.write().unwrap();
+            config.api_key = api_key.clone().unwrap_or_default();
+        }
+        self.store.set_config(
+            LLM_API_KEY_PRESENT_CONFIG,
+            if api_key
+                .as_deref()
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false)
+            {
+                "true"
+            } else {
+                "false"
+            },
+        )?;
+        Ok(())
+    }
+
+    async fn store_llm_api_key(&self, api_key: &str) -> Result<(), String> {
+        let api_key = api_key.trim();
+        if api_key.is_empty() {
+            return Ok(());
+        }
+
+        {
+            let mut guard = self.secret_vault.write().await;
+            let vault = guard
+                .as_mut()
+                .ok_or_else(|| "Secret vault is locked. Please unlock first.".to_string())?;
+            vault.put_secret(
+                LLM_API_KEY_SECRET_ID,
+                api_key,
+                SecretMetadata {
+                    label: Some("OpenAI-compatible API Key".to_string()),
+                    document_path: None,
+                },
+            )?;
+            vault.save()?;
+        }
+
+        {
+            let mut config = self.llm_config.write().unwrap();
+            config.api_key = api_key.to_string();
+        }
+        self.store.set_config(LLM_API_KEY_PRESENT_CONFIG, "true")?;
+        self.store.delete_config(LEGACY_LLM_API_KEY_CONFIG)?;
+        Ok(())
+    }
+
+    fn verify_master_password(&self, password: &str) -> Result<[u8; 32], String> {
+        let salt = self.store.get_or_create_salt()?;
+        let derived = crypto::derive_key(password, &salt);
+        let verifier = self
+            .store
+            .get_password_verifier()?
+            .ok_or_else(|| "Master password is not initialized.".to_string())?;
+        let decrypted = crypto::decrypt(&verifier, &derived)
+            .map_err(|_| "Current master password is incorrect.".to_string())?;
+        if String::from_utf8_lossy(&decrypted) != "verified_token" {
+            return Err("Current master password is incorrect.".to_string());
+        }
+        Ok(derived)
+    }
+
+    fn create_password_change_backup(&self) -> Result<PathBuf, String> {
+        let data_dir = self.store.get_data_dir();
+        let backup_dir = data_dir.join("password-change-backups");
+        fs::create_dir_all(&backup_dir)
+            .map_err(|error| format!("Failed to create password backup directory: {error:?}"))?;
+        let backup_path = backup_dir.join(format!(
+            "rust_tool_before_password_change_{}.zip",
+            current_timestamp()
+        ));
+        backup::create_backup_zip(self.store.get_data_dir(), &backup_path)?;
+        Ok(backup_path)
+    }
+
+    pub async fn change_master_password(
+        &self,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<ChangeMasterPasswordResponse, String> {
+        let _current_key = self.get_key().await?;
+
+        if current_password.is_empty() {
+            return Err("Current master password cannot be empty.".to_string());
+        }
+        if new_password.is_empty() {
+            return Err("New master password cannot be empty.".to_string());
+        }
+        if current_password == new_password {
+            return Err(
+                "New master password must be different from the current password.".to_string(),
+            );
+        }
+
+        self.verify_master_password(current_password)?;
+        if self.secret_vault_path.exists() {
+            KdbxSecretVault::open(&self.secret_vault_path, current_password)?;
+        }
+
+        let backup_path = self.create_password_change_backup()?;
+        let salt = self.store.get_or_create_salt()?;
+        let new_key = crypto::derive_key(new_password, &salt);
+        let new_verifier = crypto::encrypt(b"verified_token", &new_key)?;
+
+        {
+            let mut guard = self.secret_vault.write().await;
+            if let Some(vault) = guard.as_mut() {
+                vault.change_password(new_password)?;
+            } else if self.secret_vault_path.exists() {
+                let mut vault = KdbxSecretVault::open(&self.secret_vault_path, current_password)?;
+                vault.change_password(new_password)?;
+                *guard = Some(vault);
+            }
+        }
+
+        if let Err(error) = self.store.set_password_verifier(&new_verifier) {
+            let mut guard = self.secret_vault.write().await;
+            if let Some(vault) = guard.as_mut() {
+                let _ = vault.change_password(current_password);
+            }
+            return Err(error);
+        }
+
+        self.lock().await;
+
+        Ok(ChangeMasterPasswordResponse {
+            ok: true,
+            message: "主密码已修改，请使用新主密码重新解锁。".to_string(),
+            backup_path: backup_path.to_string_lossy().to_string(),
+        })
+    }
+
+    async fn replace_document_secrets_in_kdbx(
+        &self,
+        doc_id: &str,
+        file_name: &str,
+        secrets: &HashMap<String, String>,
+        previous_secret_keys: &[String],
+    ) -> Result<(), String> {
+        let mut guard = self.secret_vault.write().await;
+        let vault = guard
+            .as_mut()
+            .ok_or_else(|| "Secret vault is locked. Please unlock first.".to_string())?;
+
+        for old_key in previous_secret_keys {
+            if !secrets.contains_key(old_key) {
+                vault.delete_secret(&document_secret_entry_key(doc_id, old_key))?;
+            }
+        }
+
+        for (secret_key, plain_value) in secrets {
+            vault.put_secret(
+                &document_secret_entry_key(doc_id, secret_key),
+                plain_value,
+                SecretMetadata {
+                    label: Some(secret_key.to_string()),
+                    document_path: Some(file_name.to_string()),
+                },
+            )?;
+        }
+
+        if !secrets.is_empty() || !previous_secret_keys.is_empty() {
+            vault.save()?;
+        }
+        Ok(())
+    }
+
+    async fn read_document_secrets_from_kdbx(
+        &self,
+        doc_id: &str,
+        markdown: &str,
+    ) -> Result<HashMap<String, String>, String> {
+        let mut decrypted_secrets = HashMap::new();
+        let secret_keys = extract_secret_placeholders(markdown);
+        if secret_keys.is_empty() {
+            return Ok(decrypted_secrets);
+        }
+
+        let guard = self.secret_vault.read().await;
+        let Some(vault) = guard.as_ref() else {
+            return Ok(decrypted_secrets);
+        };
+
+        for secret_key in secret_keys {
+            if let Some(value) =
+                vault.get_secret(&document_secret_entry_key(doc_id, &secret_key))?
+            {
+                decrypted_secrets.insert(secret_key, value);
+            }
+        }
+
+        Ok(decrypted_secrets)
+    }
+
+    async fn delete_document_secrets_from_kdbx(
+        &self,
+        doc_id: &str,
+        secret_keys: &[String],
+    ) -> Result<(), String> {
+        if secret_keys.is_empty() {
+            return Ok(());
+        }
+
+        let mut guard = self.secret_vault.write().await;
+        let Some(vault) = guard.as_mut() else {
+            return Ok(());
+        };
+
+        for secret_key in secret_keys {
+            vault.delete_secret(&document_secret_entry_key(doc_id, secret_key))?;
+        }
+        vault.save()?;
+        Ok(())
+    }
+
     /// Update OpenAI-compatible LLM configuration.
-    pub fn update_llm_config(
+    pub async fn update_llm_config(
         &self,
         base_url: &str,
         api_key: Option<&str>,
@@ -144,11 +444,15 @@ impl MemoManager {
         disable_response_storage: bool,
         allow_ai_secrets: bool,
     ) -> Result<(), String> {
+        let next_api_key = api_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
         {
             let mut config = self.llm_config.write().unwrap();
             config.base_url = base_url.to_string();
-            if let Some(api_key) = api_key {
-                config.api_key = api_key.to_string();
+            if let Some(api_key) = &next_api_key {
+                config.api_key = api_key.clone();
             }
             config.chat_model = chat_model.to_string();
             config.embedding_model = embedding_model.to_string();
@@ -158,8 +462,10 @@ impl MemoManager {
         }
 
         self.store.set_config("ollama_base_url", base_url)?;
-        if let Some(api_key) = api_key {
-            self.store.set_config("ollama_api_key", api_key)?;
+        if let Some(api_key) = next_api_key.as_deref() {
+            self.store_llm_api_key(api_key).await?;
+        } else {
+            self.store.delete_config(LEGACY_LLM_API_KEY_CONFIG)?;
         }
         self.store.set_config("ollama_chat_model", chat_model)?;
         self.store
@@ -179,6 +485,28 @@ impl MemoManager {
             if allow_ai_secrets { "true" } else { "false" },
         )?;
         Ok(())
+    }
+
+    pub fn has_llm_api_key(&self) -> Result<bool, String> {
+        let in_memory = {
+            let config = self.llm_config.read().unwrap();
+            !config.api_key.trim().is_empty()
+        };
+        if in_memory {
+            return Ok(true);
+        }
+
+        let encrypted_marker = self
+            .store
+            .get_config(LLM_API_KEY_PRESENT_CONFIG)?
+            .map(|value| value == "true")
+            .unwrap_or(false);
+        let legacy_marker = self
+            .store
+            .get_config(LEGACY_LLM_API_KEY_CONFIG)?
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+        Ok(encrypted_marker || legacy_marker)
     }
 
     pub fn get_llm_config(&self) -> (String, String, String, String, String, bool, bool) {
@@ -208,6 +536,7 @@ impl MemoManager {
 
     pub async fn chat_with_ai(&self, query: &str) -> Result<String, String> {
         let client = self.get_ollama_client();
+        let redacted_query = redactor::redact_secrets(query);
         let messages = vec![
             ChatMessage {
                 role: "system".to_string(),
@@ -215,7 +544,7 @@ impl MemoManager {
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: query.to_string(),
+                content: redacted_query.text,
             },
         ];
 
@@ -229,14 +558,17 @@ impl MemoManager {
         let _key = self.get_key().await?;
 
         let client = self.get_ollama_client();
+        let redacted_input = redactor::redact_secrets(raw_input);
 
         let system_prompt = "You are a professional documentation organizer. Your task is to organize the user's raw, unstructured, or dictation notes into a well-structured, neat Markdown document.
-Additionally, you must identify and extract sensitive information (such as passwords, API keys, credentials, secret tokens, etc.).
+The user input has already been redacted locally before it reaches you. Real passwords, API keys, credentials, secret tokens, and private keys have been replaced with placeholders like `{{secret:pending_1}}`.
 
-For each extracted secret:
-1. Generate a unique, descriptive key in camelCase (e.g. \"mysqlPassword\", \"awsAccessKey\").
-2. In the Markdown text, replace the plaintext value with a placeholder like `{{secret:key}}`.
-   For example, if you find \"password is admin123\", replace it with \"password is {{secret:adminPassword}}\".
+Rules for secret placeholders:
+1. Never invent, reveal, or ask for plaintext secret values.
+2. Preserve every `{{secret:pending_n}}` placeholder in the Markdown, or rename it to a unique descriptive camelCase key such as `{{secret:mysqlPassword}}`.
+3. If you rename a placeholder, add an entry to `secrets` where the final key maps to the original pending key.
+   Example: `\"mysqlPassword\": \"pending_1\"`.
+4. If you keep the pending key, add an entry like `\"pending_1\": \"pending_1\"`.
 
 Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do not use ```json or similar). The JSON structure:
 {
@@ -244,8 +576,8 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
   \"fileName\": \"A URL-safe filename ending with .md (e.g. vps_credentials.md)\",
   \"markdown\": \"The formatted Markdown content with secrets replaced by placeholders\",
   \"secrets\": {
-    \"key1\": \"plaintext_value1\",
-    \"key2\": \"plaintext_value2\"
+    \"finalKey1\": \"pending_1\",
+    \"finalKey2\": \"pending_2\"
   },
   \"summary\": \"A one-sentence summary of the document (max 50 characters)\"
 }";
@@ -257,7 +589,7 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: raw_input.to_string(),
+                content: redacted_input.text.clone(),
             },
         ];
 
@@ -271,7 +603,7 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             )
         })?;
 
-        Ok(draft)
+        Ok(resolve_redacted_draft_secrets(draft, &redacted_input))
     }
 
     /// Save a document, encrypting any secrets.
@@ -284,7 +616,7 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
         secrets: HashMap<String, String>,
         summary: &str,
     ) -> Result<MemoMetadata, String> {
-        let key = self.get_key().await?;
+        let _key = self.get_key().await?;
         let previous_meta = match id {
             Some(existing_id) => Some(
                 self.store
@@ -297,6 +629,11 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             .as_ref()
             .map(|meta| meta.id.clone())
             .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let previous_secret_keys = previous_meta
+            .as_ref()
+            .and_then(|meta| self.store.read_document_file(&meta.file_name).ok())
+            .map(|previous_markdown| extract_secret_placeholders(&previous_markdown))
+            .unwrap_or_default();
 
         if let Some(owner_id) = self.store.file_name_owner(file_name)? {
             if owner_id != doc_id {
@@ -304,29 +641,10 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             }
         }
 
-        // 1. Encrypt and replace the document's full secret set.
-        let mut encrypted_secrets = Vec::with_capacity(secrets.len());
-        for (sec_key, plain_val) in &secrets {
-            let full_secret_id = format!("{}:{}", doc_id, sec_key);
-            let encrypted = crypto::encrypt(plain_val.as_bytes(), &key)?;
-            encrypted_secrets.push((
-                full_secret_id,
-                encrypted,
-                format!("Secret for document: {}", title),
-            ));
-        }
-        self.store
-            .replace_document_secrets(&doc_id, &encrypted_secrets)?;
+        // 1. Replace the document's full secret set in KDBX.
+        self.replace_document_secrets_in_kdbx(&doc_id, file_name, &secrets, &previous_secret_keys)
+            .await?;
 
-        // 2. Save Markdown file
-        self.store.save_document_file(file_name, markdown)?;
-        if let Some(previous_meta) = &previous_meta {
-            if previous_meta.file_name != file_name {
-                self.store.delete_document_file(&previous_meta.file_name)?;
-            }
-        }
-
-        // 3. Upsert Metadata
         let meta = MemoMetadata {
             id: doc_id.clone(),
             file_name: file_name.to_string(),
@@ -334,6 +652,16 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             summary: summary.to_string(),
             updated_at: current_timestamp(),
         };
+
+        // 2. Save Markdown file with frontmatter so the file is self-describing.
+        self.store.save_document_with_metadata(&meta, markdown)?;
+        if let Some(previous_meta) = &previous_meta {
+            if previous_meta.file_name != file_name {
+                self.store.delete_document_file(&previous_meta.file_name)?;
+            }
+        }
+
+        // 3. Metadata is embedded in the Markdown frontmatter.
         self.store.upsert_memo_metadata(&meta)?;
 
         // 4. Generate & Save Vector Embedding asynchronously
@@ -345,16 +673,13 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             title, summary, markdown
         );
 
-        let manager_store = self.store.connect().map_err(|e| e.to_string())?; // Check database accessibility
-        drop(manager_store);
-
-        let store_clone = self.store.db_path.clone();
+        let data_dir = self.store.get_data_dir().to_path_buf();
         let doc_id_clone = doc_id.clone();
 
         // Spawn embedding generation in the background so API stays fast
         tokio::spawn(async move {
             if let Ok(vec) = client.get_embedding(&embedding_text).await {
-                let temp_store = MemoStore::new(store_clone.parent().unwrap()).unwrap();
+                let temp_store = MemoStore::new(&data_dir).unwrap();
                 let _ = temp_store.save_embedding(&doc_id_clone, &vec);
             }
         });
@@ -372,34 +697,10 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
         let markdown = self.store.read_document_file(&meta.file_name)?;
 
         let mut decrypted_secrets = HashMap::new();
-        let key_opt = self.master_key.read().await;
+        let key_opt = *self.master_key.read().await;
 
-        if let Some(key) = *key_opt {
-            // Document is unlocked, retrieve all secrets matching "doc_id:*"
-            let conn = self.store.connect().map_err(|e| e.to_string())?;
-            let mut stmt = conn
-                .prepare("SELECT id, encrypted_value FROM memo_secrets WHERE id LIKE ?")
-                .map_err(|e| e.to_string())?;
-
-            let prefix = format!("{}:%", id);
-            let rows = stmt
-                .query_map(params![prefix], |row| {
-                    let full_id: String = row.get(0)?;
-                    let enc: String = row.get(1)?;
-                    Ok((full_id, enc))
-                })
-                .map_err(|e| e.to_string())?;
-
-            for r in rows {
-                let (full_id, enc_val) = r.map_err(|e| e.to_string())?;
-                // Extract original key from "doc_id:key"
-                if let Some(sec_key) = full_id.strip_prefix(&format!("{}:", id)) {
-                    if let Ok(dec_bytes) = crypto::decrypt(&enc_val, &key) {
-                        let plain = String::from_utf8_lossy(&dec_bytes).to_string();
-                        decrypted_secrets.insert(sec_key.to_string(), plain);
-                    }
-                }
-            }
+        if key_opt.is_some() {
+            decrypted_secrets = self.read_document_secrets_from_kdbx(id, &markdown).await?;
         }
 
         Ok(DocumentDetail {
@@ -410,21 +711,124 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
         })
     }
 
+    pub async fn list_secrets(&self) -> Result<Vec<SecretListItem>, String> {
+        let _key = self.get_key().await?;
+        let docs = self.store.get_all_memos()?;
+        let mut referenced = HashMap::new();
+
+        for meta in &docs {
+            let markdown = self.store.read_document_file(&meta.file_name)?;
+            for secret_key in extract_secret_placeholders(&markdown) {
+                referenced.insert(
+                    document_secret_entry_key(&meta.id, &secret_key),
+                    (meta.clone(), secret_key),
+                );
+            }
+        }
+
+        let kdbx_ids = {
+            let guard = self.secret_vault.read().await;
+            match guard.as_ref() {
+                Some(vault) => vault
+                    .list_secret_keys()?
+                    .into_iter()
+                    .filter(|id| !is_system_secret_id(id))
+                    .collect::<Vec<_>>(),
+                None => Vec::new(),
+            }
+        };
+        let kdbx_id_set = kdbx_ids.into_iter().collect::<HashSet<_>>();
+        let mut all_ids = referenced.keys().cloned().collect::<HashSet<_>>();
+        all_ids.extend(kdbx_id_set.iter().cloned());
+
+        let mut items = all_ids
+            .into_iter()
+            .map(|id| {
+                let referenced_entry = referenced.get(&id);
+                let parsed = split_document_secret_entry_key(&id);
+                let document_id = referenced_entry
+                    .map(|(meta, _)| meta.id.clone())
+                    .or_else(|| parsed.as_ref().map(|(doc_id, _)| doc_id.clone()));
+                let fallback_meta = document_id
+                    .as_deref()
+                    .and_then(|doc_id| self.store.get_memo_metadata(doc_id).ok().flatten());
+                let meta = referenced_entry
+                    .map(|(meta, _)| meta.clone())
+                    .or(fallback_meta);
+                let key = referenced_entry
+                    .map(|(_, key)| key.clone())
+                    .or_else(|| parsed.as_ref().map(|(_, key)| key.clone()))
+                    .unwrap_or_else(|| id.clone());
+                let in_kdbx = kdbx_id_set.contains(&id);
+                let source = if in_kdbx { "kdbx" } else { "missing" }.to_string();
+
+                SecretListItem {
+                    id,
+                    key,
+                    document_id,
+                    document_title: meta.as_ref().map(|meta| meta.title.clone()),
+                    file_name: meta.as_ref().map(|meta| meta.file_name.clone()),
+                    updated_at: meta.as_ref().map(|meta| meta.updated_at),
+                    referenced: referenced_entry.is_some(),
+                    has_value: in_kdbx,
+                    source,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        items.sort_by(|left, right| {
+            right
+                .updated_at
+                .unwrap_or_default()
+                .cmp(&left.updated_at.unwrap_or_default())
+                .then_with(|| left.document_title.cmp(&right.document_title))
+                .then_with(|| left.key.cmp(&right.key))
+        });
+
+        Ok(items)
+    }
+
+    pub async fn reveal_secret(&self, id: &str) -> Result<SecretRevealResponse, String> {
+        let _key = self.get_key().await?;
+        let id = id.trim();
+        if id.is_empty() {
+            return Err("Secret id cannot be empty".to_string());
+        }
+        if is_system_secret_id(id) {
+            return Err("Secret not found".to_string());
+        }
+
+        {
+            let guard = self.secret_vault.read().await;
+            if let Some(vault) = guard.as_ref() {
+                if let Some(value) = vault.get_secret(id)? {
+                    return Ok(SecretRevealResponse {
+                        id: id.to_string(),
+                        value,
+                    });
+                }
+            }
+        }
+
+        Err("Secret not found".to_string())
+    }
+
     /// Delete a document and its associated secrets and embeddings
     pub async fn delete_document(&self, id: &str) -> Result<(), String> {
         let meta = self.store.get_memo_metadata(id)?;
         if let Some(m) = meta {
+            let secret_keys = self
+                .store
+                .read_document_file(&m.file_name)
+                .ok()
+                .map(|markdown| extract_secret_placeholders(&markdown))
+                .unwrap_or_default();
+            self.delete_document_secrets_from_kdbx(id, &secret_keys)
+                .await?;
+
             // Delete file
             self.store.delete_document_file(&m.file_name)?;
         }
-
-        // Delete secrets from database
-        let conn = self.store.connect().map_err(|e| e.to_string())?;
-        conn.execute(
-            "DELETE FROM memo_secrets WHERE id LIKE ?",
-            params![format!("{}:%", id)],
-        )
-        .map_err(|e| e.to_string())?;
 
         // Delete metadata & embedding
         self.store.delete_memo_metadata(id)?;
@@ -436,9 +840,10 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
 
     pub async fn search_and_answer(&self, query: &str) -> Result<SearchAnswerResponse, String> {
         let client = self.get_ollama_client();
+        let redacted_query = redactor::redact_secrets(query);
 
         // 1. Get query embedding
-        let query_vec = client.get_embedding(query).await?;
+        let query_vec = client.get_embedding(&redacted_query.text).await?;
 
         // 2. Compute similarity with all docs
         let all_embeddings = self.store.get_all_embeddings()?;
@@ -513,7 +918,7 @@ Do not hallucinate. If the documents do not contain the answer, reply that you c
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: query.to_string(),
+                content: redacted_query.text,
             },
         ];
 
@@ -537,11 +942,7 @@ Do not hallucinate. If the documents do not contain the answer, reply that you c
         let temp_zip_path = temp_dir.join(&backup_filename);
 
         // 1. Create ZIP
-        backup::create_backup_zip(
-            self.store.get_vault_path(),
-            self.store.get_db_path(),
-            &temp_zip_path,
-        )?;
+        backup::create_backup_zip(self.store.get_data_dir(), &temp_zip_path)?;
 
         let mut status = "本地打包成功。".to_string();
 
@@ -575,13 +976,132 @@ Do not hallucinate. If the documents do not contain the answer, reply that you c
         Ok(status)
     }
 
-    pub fn restore(&self, zip_path: &Path) -> Result<(), String> {
-        backup::restore_from_zip(
-            zip_path,
-            self.store.get_vault_path(),
-            self.store.get_db_path(),
-        )?;
+    pub async fn restore(&self, zip_path: &Path) -> Result<(), String> {
+        backup::restore_from_zip(zip_path, self.store.get_data_dir())?;
+        self.lock().await;
         Ok(())
+    }
+}
+
+fn document_secret_entry_key(doc_id: &str, secret_key: &str) -> String {
+    format!("{}:{}", doc_id, secret_key.trim())
+}
+
+fn split_document_secret_entry_key(id: &str) -> Option<(String, String)> {
+    let (doc_id, secret_key) = id.split_once(':')?;
+    if doc_id.trim().is_empty() || secret_key.trim().is_empty() {
+        return None;
+    }
+    Some((doc_id.to_string(), secret_key.to_string()))
+}
+
+fn is_system_secret_id(id: &str) -> bool {
+    id.starts_with("__rusttool_config:")
+}
+
+fn extract_secret_placeholders(markdown: &str) -> Vec<String> {
+    let marker = "{{secret:";
+    let mut keys = Vec::new();
+    let mut offset = 0;
+
+    while let Some(start_rel) = markdown[offset..].find(marker) {
+        let key_start = offset + start_rel + marker.len();
+        let Some(end_rel) = markdown[key_start..].find("}}") else {
+            break;
+        };
+        let key = markdown[key_start..key_start + end_rel].trim();
+        if !key.is_empty() && !keys.iter().any(|existing| existing == key) {
+            keys.push(key.to_string());
+        }
+        offset = key_start + end_rel + 2;
+    }
+
+    keys
+}
+
+fn resolve_redacted_draft_secrets(
+    mut draft: DraftResponse,
+    redacted_input: &redactor::RedactedInput,
+) -> DraftResponse {
+    if redacted_input.secrets.is_empty() {
+        return draft;
+    }
+
+    let pending_values: HashMap<&str, &str> = redacted_input
+        .secrets
+        .iter()
+        .map(|secret| (secret.key.as_str(), secret.value.as_str()))
+        .collect();
+
+    let mut resolved_secrets = HashMap::new();
+    let mut placeholder_replacements = Vec::new();
+    let llm_secret_map = std::mem::take(&mut draft.secrets);
+
+    for (candidate_key, pending_reference) in llm_secret_map {
+        let Some(pending_key) = extract_pending_secret_key(&pending_reference) else {
+            continue;
+        };
+        let Some(plain_value) = pending_values.get(pending_key.as_str()) else {
+            continue;
+        };
+
+        let final_key = normalize_secret_key(&candidate_key, &pending_key);
+        resolved_secrets.insert(final_key.clone(), (*plain_value).to_string());
+        placeholder_replacements.push((pending_key, final_key));
+    }
+
+    for secret in &redacted_input.secrets {
+        if !resolved_secrets.contains_key(&secret.key)
+            && draft.markdown.contains(&secret.placeholder)
+        {
+            resolved_secrets.insert(secret.key.clone(), secret.value.clone());
+            placeholder_replacements.push((secret.key.clone(), secret.key.clone()));
+        }
+    }
+
+    for (pending_key, final_key) in &placeholder_replacements {
+        let pending_placeholder = format!("{{{{secret:{pending_key}}}}}");
+        let final_placeholder = format!("{{{{secret:{final_key}}}}}");
+        draft.markdown = draft
+            .markdown
+            .replace(&pending_placeholder, &final_placeholder);
+    }
+
+    for (key, value) in &resolved_secrets {
+        if !value.trim().is_empty() && draft.markdown.contains(value) {
+            let placeholder = format!("{{{{secret:{key}}}}}");
+            draft.markdown = draft.markdown.replace(value, &placeholder);
+        }
+    }
+
+    draft.secrets = resolved_secrets;
+    draft
+}
+
+fn extract_pending_secret_key(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.starts_with("pending_") {
+        return Some(trimmed.to_string());
+    }
+
+    let marker = "{{secret:";
+    let start = trimmed.find(marker)? + marker.len();
+    let end = trimmed[start..].find("}}")? + start;
+    Some(trimmed[start..end].trim().to_string())
+}
+
+fn normalize_secret_key(candidate: &str, fallback: &str) -> String {
+    let mut normalized = String::new();
+    for ch in candidate.trim().chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+            normalized.push(ch);
+        }
+    }
+
+    if normalized.is_empty() {
+        fallback.to_string()
+    } else {
+        normalized
     }
 }
 
@@ -602,6 +1122,35 @@ pub struct DocumentDetail {
     pub markdown: String,
     pub secrets: HashMap<String, String>,
     pub unlocked: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretListItem {
+    pub id: String,
+    pub key: String,
+    pub document_id: Option<String>,
+    pub document_title: Option<String>,
+    pub file_name: Option<String>,
+    pub updated_at: Option<i64>,
+    pub referenced: bool,
+    pub has_value: bool,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRevealResponse {
+    pub id: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeMasterPasswordResponse {
+    pub ok: bool,
+    pub message: String,
+    pub backup_path: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -625,4 +1174,306 @@ pub struct WebDavConfig {
     pub url: String,
     pub username: String,
     pub password: Option<String>, // We make password optional just in case, but usually required
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn make_test_dir(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("rusttool_memo_{}_{}", name, stamp));
+        fs::create_dir_all(&dir).expect("test temp dir");
+        dir
+    }
+
+    #[test]
+    fn resolves_pending_secret_references_without_leaking_to_markdown() {
+        let redacted_input = redactor::redact_secrets("服务器密码 abc123。");
+        let draft = DraftResponse {
+            title: "服务器".to_string(),
+            file_name: "server.md".to_string(),
+            markdown: "SSH 密码：{{secret:pending_1}}".to_string(),
+            secrets: HashMap::from([("sshPassword".to_string(), "pending_1".to_string())]),
+            summary: "服务器登录信息".to_string(),
+        };
+
+        let resolved = resolve_redacted_draft_secrets(draft, &redacted_input);
+
+        assert_eq!(resolved.markdown, "SSH 密码：{{secret:sshPassword}}");
+        assert_eq!(
+            resolved.secrets.get("sshPassword"),
+            Some(&"abc123".to_string())
+        );
+        assert!(!resolved.markdown.contains("abc123"));
+    }
+
+    #[test]
+    fn keeps_pending_key_when_model_omits_secret_map() {
+        let redacted_input = redactor::redact_secrets("数据库密码 db888。");
+        let draft = DraftResponse {
+            title: "数据库".to_string(),
+            file_name: "database.md".to_string(),
+            markdown: "数据库密码：{{secret:pending_1}}".to_string(),
+            secrets: HashMap::new(),
+            summary: "数据库登录信息".to_string(),
+        };
+
+        let resolved = resolve_redacted_draft_secrets(draft, &redacted_input);
+
+        assert_eq!(resolved.markdown, "数据库密码：{{secret:pending_1}}");
+        assert_eq!(
+            resolved.secrets.get("pending_1"),
+            Some(&"db888".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn saves_document_secrets_to_kdbx() {
+        let temp_dir = make_test_dir("kdbx_save");
+        let manager = MemoManager::new(&temp_dir).expect("manager");
+        assert!(manager
+            .unlock("test-master-password")
+            .await
+            .expect("unlock"));
+
+        let meta = manager
+            .save_document(
+                None,
+                "servers/prod.md",
+                "Prod Server",
+                "SSH password: {{secret:sshPassword}}",
+                HashMap::from([("sshPassword".to_string(), "abc123".to_string())]),
+                "Prod credentials",
+            )
+            .await
+            .expect("save document");
+
+        let detail = manager.get_document(&meta.id).await.expect("get document");
+        assert_eq!(
+            detail.secrets.get("sshPassword"),
+            Some(&"abc123".to_string())
+        );
+
+        let secret_vault_path = temp_dir.join("secrets.kdbx");
+        assert!(secret_vault_path.exists());
+
+        let vault =
+            KdbxSecretVault::open(&secret_vault_path, "test-master-password").expect("open kdbx");
+        assert_eq!(
+            vault
+                .get_secret(&document_secret_entry_key(&meta.id, "sshPassword"))
+                .expect("read kdbx secret"),
+            Some("abc123".to_string())
+        );
+
+        manager.lock().await;
+        let locked_detail = manager
+            .get_document(&meta.id)
+            .await
+            .expect("get locked document");
+        assert!(locked_detail.secrets.is_empty());
+        assert!(!locked_detail.unlocked);
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[tokio::test]
+    async fn lists_and_reveals_document_secrets_without_returning_plaintext_in_list() {
+        let temp_dir = make_test_dir("secret_inventory");
+        let manager = MemoManager::new(&temp_dir).expect("manager");
+        assert!(manager
+            .unlock("test-master-password")
+            .await
+            .expect("unlock"));
+
+        let meta = manager
+            .save_document(
+                None,
+                "servers/prod.md",
+                "Prod Server",
+                "SSH password: {{secret:sshPassword}}",
+                HashMap::from([("sshPassword".to_string(), "abc123".to_string())]),
+                "Prod credentials",
+            )
+            .await
+            .expect("save document");
+
+        let secrets = manager.list_secrets().await.expect("list secrets");
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0].key, "sshPassword");
+        assert_eq!(secrets[0].document_id.as_deref(), Some(meta.id.as_str()));
+        assert_eq!(secrets[0].document_title.as_deref(), Some("Prod Server"));
+        assert!(secrets[0].referenced);
+        assert!(secrets[0].has_value);
+        assert_eq!(secrets[0].source, "kdbx");
+
+        let revealed = manager
+            .reveal_secret(&secrets[0].id)
+            .await
+            .expect("reveal secret");
+        assert_eq!(revealed.value, "abc123");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[tokio::test]
+    async fn stores_llm_api_key_in_kdbx_without_listing_it_as_document_secret() {
+        let temp_dir = make_test_dir("llm_api_key_kdbx");
+        let manager = MemoManager::new(&temp_dir).expect("manager");
+        assert!(manager
+            .unlock("test-master-password")
+            .await
+            .expect("unlock"));
+
+        manager
+            .update_llm_config(
+                "https://api.openai.com/v1",
+                Some("sk-test-secret"),
+                "gpt-5.5",
+                "text-embedding-3-small",
+                "xhigh",
+                true,
+                false,
+            )
+            .await
+            .expect("save settings");
+
+        assert_eq!(
+            manager
+                .store
+                .get_config(LEGACY_LLM_API_KEY_CONFIG)
+                .expect("legacy config"),
+            None
+        );
+        assert_eq!(
+            manager
+                .store
+                .get_config(LLM_API_KEY_PRESENT_CONFIG)
+                .expect("api key marker")
+                .as_deref(),
+            Some("true")
+        );
+
+        let vault = KdbxSecretVault::open(&temp_dir.join("secrets.kdbx"), "test-master-password")
+            .expect("open kdbx");
+        assert_eq!(
+            vault
+                .get_secret(LLM_API_KEY_SECRET_ID)
+                .expect("read kdbx api key"),
+            Some("sk-test-secret".to_string())
+        );
+        assert!(manager
+            .list_secrets()
+            .await
+            .expect("list secrets")
+            .is_empty());
+
+        manager.lock().await;
+        assert!(manager.has_llm_api_key().expect("has marker"));
+        assert!(manager.get_llm_config().1.is_empty());
+        assert!(manager
+            .unlock("test-master-password")
+            .await
+            .expect("unlock again"));
+        assert_eq!(manager.get_llm_config().1, "sk-test-secret");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[tokio::test]
+    async fn migrates_plaintext_llm_api_key_config_to_kdbx_on_unlock() {
+        let temp_dir = make_test_dir("llm_api_key_config_migration");
+        let manager = MemoManager::new(&temp_dir).expect("manager");
+        manager
+            .store
+            .set_config(LEGACY_LLM_API_KEY_CONFIG, "legacy-secret")
+            .expect("set legacy api key");
+
+        assert!(manager.has_llm_api_key().expect("has legacy key"));
+        assert!(manager
+            .unlock("test-master-password")
+            .await
+            .expect("unlock"));
+
+        assert_eq!(manager.get_llm_config().1, "legacy-secret");
+        assert_eq!(
+            manager
+                .store
+                .get_config(LEGACY_LLM_API_KEY_CONFIG)
+                .expect("legacy config removed"),
+            None
+        );
+
+        let vault = KdbxSecretVault::open(&temp_dir.join("secrets.kdbx"), "test-master-password")
+            .expect("open kdbx");
+        assert_eq!(
+            vault
+                .get_secret(LLM_API_KEY_SECRET_ID)
+                .expect("read migrated key"),
+            Some("legacy-secret".to_string())
+        );
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[tokio::test]
+    async fn changes_master_password_and_preserves_kdbx_secrets() {
+        let temp_dir = make_test_dir("change_master_password");
+        let manager = MemoManager::new(&temp_dir).expect("manager");
+        assert!(manager.unlock("old-master-password").await.expect("unlock"));
+
+        let meta = manager
+            .save_document(
+                None,
+                "servers/prod.md",
+                "Prod Server",
+                "SSH password: {{secret:sshPassword}}",
+                HashMap::from([("sshPassword".to_string(), "abc123".to_string())]),
+                "Prod credentials",
+            )
+            .await
+            .expect("save kdbx document");
+
+        let response = manager
+            .change_master_password("old-master-password", "new-master-password")
+            .await
+            .expect("change password");
+
+        assert!(response.ok);
+        assert!(Path::new(&response.backup_path).exists());
+        assert!(manager.is_locked().await);
+        assert!(!manager
+            .unlock("old-master-password")
+            .await
+            .expect("old password should not unlock"));
+        assert!(manager
+            .unlock("new-master-password")
+            .await
+            .expect("new password unlocks"));
+
+        let detail = manager
+            .get_document(&meta.id)
+            .await
+            .expect("read kdbx document");
+        assert_eq!(
+            detail.secrets.get("sshPassword"),
+            Some(&"abc123".to_string())
+        );
+
+        assert!(
+            KdbxSecretVault::open(&temp_dir.join("secrets.kdbx"), "old-master-password").is_err()
+        );
+        assert!(
+            KdbxSecretVault::open(&temp_dir.join("secrets.kdbx"), "new-master-password").is_ok()
+        );
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
 }

@@ -28,7 +28,9 @@ import {
   AlertCircle,
   Info,
 } from '@lucide/vue'
+import SecurePasswordInput from '../components/SecurePasswordInput.vue'
 import ToolShell from '../components/ToolShell.vue'
+import { memoRequest } from '../services/memoApi'
 
 interface DraftResponse {
   title: string
@@ -49,6 +51,8 @@ interface SearchAnswerResponse {
   answer: string
   sources: SearchSourceDoc[]
 }
+
+type SettingsTab = 'ai' | 'data' | 'backup' | 'security'
 
 // --- Dialog state and helper functions ---
 interface DialogState {
@@ -113,9 +117,6 @@ function handleDialogCancel() {
   dialogState.value.show = false
 }
 
-// --- API host resolution ---
-const apiBase = ''
-
 // --- Core state ---
 const unlocked = ref(false)
 const masterPassword = ref('')
@@ -132,7 +133,15 @@ const reasoningEffort = ref('xhigh')
 const disableResponseStorage = ref(true)
 const allowAiSecrets = ref(false)
 const customDataDir = ref('')
+const defaultDataDir = ref('')
+const activeDataDir = ref('')
+const dataDirConfigPath = ref('')
+const usingCustomDataDir = ref(false)
+const migrationTargetDir = ref('')
+const migrationLoading = ref(false)
+const migrationMessage = ref('')
 const showSettings = ref(false)
+const settingsTab = ref<SettingsTab>('ai')
 const testingConnection = ref(false)
 const connectionMessage = ref('')
 const connectionOk = ref<boolean | null>(null)
@@ -145,6 +154,7 @@ const webdavPass = ref('')
 const backupMessage = ref('')
 const backupLoading = ref(false)
 const restorePath = ref('')
+const restoreConfirmText = ref('')
 const restoreLoading = ref(false)
 
 // Documents list
@@ -173,7 +183,7 @@ const chatInput = ref('')
 const chatMessages = ref<any[]>([
   {
     role: 'assistant',
-    content: '你好！我是您的离线安全 AI 备忘大管家。\n您可以随时在这里打下杂乱的文字，让我帮您整理并加密归档到本地；或者随时向我提问，我会快速从本地文档中为您检索。',
+    content: '你好！我是您的 AI 安全文档助手。\n您可以随时在这里打下杂乱的文字，我会先在本地脱敏，再帮您整理成 Markdown 文档；也可以向我提问，我会从本地文档中检索。',
   },
 ])
 const chatLoading = ref(false)
@@ -497,7 +507,7 @@ async function readApiError(res: Response, fallback = '请求失败') {
 async function fetchStatus() {
   try {
     statusLoading.value = true
-    const res = await fetch(`${apiBase}/api/memo/status`)
+    const res = await memoRequest('/status')
     if (res.ok) {
       const data = await res.json()
       unlocked.value = data.unlocked
@@ -511,6 +521,7 @@ async function fetchStatus() {
       allowAiSecrets.value = data.allowAiSecrets
       customDataDir.value = data.customDataDir || ''
     }
+    await fetchDataDirStatus()
   } catch (e) {
     console.error('Failed to fetch memo status:', e)
   } finally {
@@ -518,10 +529,29 @@ async function fetchStatus() {
   }
 }
 
+async function fetchDataDirStatus() {
+  try {
+    const res = await memoRequest('/data-dir')
+    if (res.ok) {
+      const data = await res.json()
+      defaultDataDir.value = data.defaultDataDir || ''
+      activeDataDir.value = data.activeDataDir || ''
+      customDataDir.value = data.customDataDir || ''
+      dataDirConfigPath.value = data.configPath || ''
+      usingCustomDataDir.value = data.usingCustomDataDir || false
+      if (!migrationTargetDir.value.trim()) {
+        migrationTargetDir.value = data.customDataDir || ''
+      }
+    }
+  } catch (e) {
+    console.error('Failed to fetch data directory status:', e)
+  }
+}
+
 async function handleUnlock() {
   if (!masterPassword.value) return
   try {
-    const res = await fetch(`${apiBase}/api/memo/unlock`, {
+    const res = await memoRequest('/unlock', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: masterPassword.value }),
@@ -541,13 +571,13 @@ async function handleUnlock() {
       await customAlert('解锁失败: ' + errMsg, '解锁失败', 'error')
     }
   } catch (e) {
-    await customAlert('请求失败，请确认后端服务器正在运行。', '连接错误', 'error')
+    await customAlert('请求失败，请确认本地服务可用。', '连接错误', 'error')
   }
 }
 
 async function handleLock() {
   try {
-    const res = await fetch(`${apiBase}/api/memo/lock`, { method: 'POST' })
+    const res = await memoRequest('/lock', { method: 'POST' })
     if (res.ok) {
       unlocked.value = false
       documents.value = []
@@ -563,7 +593,7 @@ async function loadDocuments() {
   if (!unlocked.value) return
   try {
     listLoading.value = true
-    const res = await fetch(`${apiBase}/api/memo/list`)
+    const res = await memoRequest('/list')
     if (res.ok) {
       documents.value = await res.json()
     }
@@ -576,16 +606,15 @@ async function loadDocuments() {
 
 async function saveSettings() {
   const confirmed = await customConfirm(
-    '确定要保存当前的 AI 服务与存储路径配置吗？\n\n' +
-    '提示：若修改了存储路径，您需要手动将原目录下的文件复制到新路径下并重启本软件生效。',
-    '保存配置确认',
+    '确定要保存当前设置吗？',
+    '保存设置确认',
     'confirm'
   )
   if (!confirmed) {
     return
   }
   try {
-    const res = await fetch(`${apiBase}/api/memo/settings`, {
+    const res = await memoRequest('/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -596,12 +625,11 @@ async function saveSettings() {
         reasoningEffort: reasoningEffort.value,
         disableResponseStorage: disableResponseStorage.value,
         allowAiSecrets: allowAiSecrets.value,
-        customDataDir: customDataDir.value || null,
       }),
     })
     if (res.ok) {
       await fetchStatus()
-      await customAlert('配置已成功保存！若修改了存储路径，请手动将原目录下的文件复制到新路径下并重启本软件生效。', '配置保存成功', 'success')
+      await customAlert('设置已保存。', '配置保存成功', 'success')
       showSettings.value = false
     } else {
       const text = await readApiError(res, '保存配置失败')
@@ -612,12 +640,83 @@ async function saveSettings() {
   }
 }
 
+function optionalTrimmed(value: string) {
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function getWebDavConfigState() {
+  const url = webdavUrl.value.trim()
+  const user = webdavUser.value.trim()
+  const pass = webdavPass.value.trim()
+  const filledCount = [url, user, pass].filter(Boolean).length
+
+  return {
+    url,
+    user,
+    pass,
+    filledCount,
+    complete: filledCount === 3,
+    empty: filledCount === 0,
+  }
+}
+
+async function migrateDataDir() {
+  const target = migrationTargetDir.value.trim()
+  if (!target) {
+    await customAlert('请输入新的资料库目录绝对路径。', '提示', 'warning')
+    return
+  }
+  const confirmed = await customConfirm(
+    '迁移会先自动备份当前资料库，然后复制文档、数据库和 KDBX 密码库到新目录。\n\n' +
+    '迁移成功后当前保密库会锁定，旧目录会保留。请重启应用后使用新目录。',
+    '迁移资料库确认',
+    'warning'
+  )
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    migrationLoading.value = true
+    migrationMessage.value = '正在迁移资料库...'
+    const res = await memoRequest('/data-dir/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetDir: target }),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      migrationMessage.value = data.message || '资料库迁移成功。'
+      unlocked.value = false
+      documents.value = []
+      selectedDocId.value = null
+      await fetchDataDirStatus()
+      await customAlert(
+        `${migrationMessage.value}\n\n备份目录：${data.backupPath || '已创建'}\n新目录：${data.targetDir || target}`,
+        '迁移成功',
+        'success'
+      )
+      showSettings.value = false
+    } else {
+      migrationMessage.value = '迁移失败: ' + await readApiError(res, '迁移失败')
+      await customAlert(migrationMessage.value, '迁移失败', 'error')
+    }
+  } catch (e) {
+    migrationMessage.value = '迁移出错: ' + e
+    await customAlert(migrationMessage.value, '迁移失败', 'error')
+  } finally {
+    migrationLoading.value = false
+  }
+}
+
 async function testConnection() {
   try {
     testingConnection.value = true
     connectionMessage.value = '正在测试模型服务...'
     connectionOk.value = null
-    const res = await fetch(`${apiBase}/api/memo/test-connection`, {
+    const res = await memoRequest('/test-connection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -670,9 +769,21 @@ async function handleAllowSecretsChange(e: Event) {
 }
 
 async function triggerBackup() {
+  const webdavState = getWebDavConfigState()
+  if (!webdavState.empty && !webdavState.complete) {
+    await customAlert(
+      'WebDAV 云备份需要同时填写 URL、账号和密码。\n\n当前只填写了一部分，系统不会静默跳过云端备份，请补全后再执行。',
+      'WebDAV 配置不完整',
+      'warning'
+    )
+    return
+  }
+
   const confirmed = await customConfirm(
     '确定要立即执行安全备份吗？\n\n' +
-    '系统将打包本地所有的加密数据库及文档，并同步上传至配置的本地及云端 WebDAV 备份路径。',
+    (webdavState.complete
+      ? '系统将打包本地所有的文档、数据库和 KDBX 密码库，并同步到本地目录及 WebDAV。'
+      : '系统将打包本地所有的文档、数据库和 KDBX 密码库；当前未配置 WebDAV，因此不会上传云端。'),
     '安全备份确认',
     'confirm'
   )
@@ -682,14 +793,14 @@ async function triggerBackup() {
   try {
     backupLoading.value = true
     backupMessage.value = '备份运行中...'
-    const res = await fetch(`${apiBase}/api/memo/backup`, {
+    const res = await memoRequest('/backup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        localBackupDir: localBackupDir.value || null,
-        webdavUrl: webdavUrl.value || null,
-        webdavUser: webdavUser.value || null,
-        webdavPass: webdavPass.value || null,
+        localBackupDir: optionalTrimmed(localBackupDir.value),
+        webdavUrl: webdavState.complete ? webdavState.url : null,
+        webdavUser: webdavState.complete ? webdavState.user : null,
+        webdavPass: webdavState.complete ? webdavState.pass : null,
       }),
     })
     if (res.ok) {
@@ -706,20 +817,28 @@ async function triggerBackup() {
 }
 
 async function triggerRestore() {
-  if (!restorePath.value) {
+  if (!restorePath.value.trim()) {
     await customAlert('请输入备份 ZIP 压缩包路径！', '提示', 'warning')
     return
   }
-  const confirmed = await customConfirm('还原将覆盖当前的本地文档和数据库。是否确定继续？', '数据还原确认', 'warning')
+  if (restoreConfirmText.value.trim() !== 'RESTORE') {
+    await customAlert('请输入 RESTORE 后才能执行还原。', '安全确认未完成', 'warning')
+    return
+  }
+  const confirmed = await customConfirm(
+    '还原将覆盖当前的本地文档、数据库和 KDBX 密码库。\n\n系统会先尝试保留当前数据副本，但这仍然是高风险操作。是否确定继续？',
+    '数据还原确认',
+    'warning'
+  )
   if (!confirmed) {
     return
   }
   try {
     restoreLoading.value = true
-    const res = await fetch(`${apiBase}/api/memo/restore`, {
+    const res = await memoRequest('/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zipPath: restorePath.value }),
+      body: JSON.stringify({ zipPath: restorePath.value.trim() }),
     })
     if (res.ok) {
       await customAlert('还原成功！页面将重新加载。', '还原成功', 'success')
@@ -739,7 +858,7 @@ async function triggerRestore() {
 
 async function selectDocument(id: string) {
   try {
-    const res = await fetch(`${apiBase}/api/memo/doc/${id}`)
+    const res = await memoRequest(`/doc/${encodeURIComponent(id)}`)
     if (res.ok) {
       const detail = await res.json()
       selectedDocId.value = id
@@ -846,7 +965,7 @@ async function generateAiKey(sec: any, idx: number) {
   }
   try {
     sec.aiLoading = true
-    const res = await fetch(`${apiBase}/api/memo/translate-key`, {
+    const res = await memoRequest('/translate-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: sec.key }),
@@ -888,7 +1007,7 @@ async function saveDocumentChanges() {
 
   try {
     const isNew = selectedDocId.value === 'new'
-    const res = await fetch(`${apiBase}/api/memo/save`, {
+    const res = await memoRequest('/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -922,7 +1041,7 @@ async function deleteDocument(id: string, title: string) {
     return
   }
   try {
-    const res = await fetch(`${apiBase}/api/memo/delete`, {
+    const res = await memoRequest('/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
@@ -1002,7 +1121,7 @@ async function sendChatMessage() {
   chatLoading.value = true
   try {
     if (wantsCurrentDocEdit) {
-      const res = await fetch(`${apiBase}/api/memo/draft`, {
+      const res = await memoRequest('/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1024,7 +1143,7 @@ async function sendChatMessage() {
         })
       }
     } else if (isWriteCommand) {
-      const res = await fetch(`${apiBase}/api/memo/draft`, {
+      const res = await memoRequest('/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rawInput: query }),
@@ -1044,7 +1163,7 @@ async function sendChatMessage() {
         })
       }
     } else if (wantsLocalSearch) {
-      const res = await fetch(`${apiBase}/api/memo/query`, {
+      const res = await memoRequest('/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
@@ -1064,7 +1183,7 @@ async function sendChatMessage() {
         })
       }
     } else {
-      const res = await fetch(`${apiBase}/api/memo/chat`, {
+      const res = await memoRequest('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
@@ -1114,7 +1233,7 @@ async function runEditorAi(action: 'organize' | 'summary' | 'custom') {
 
   try {
     editorAiLoading.value = true
-    const res = await fetch(`${apiBase}/api/memo/draft`, {
+    const res = await memoRequest('/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1143,6 +1262,14 @@ watch(webdavUrl, (newVal) => {
   }
 })
 
+watch(showSettings, (visible) => {
+  if (visible) {
+    settingsTab.value = 'ai'
+    restoreConfirmText.value = ''
+    void fetchDataDirStatus()
+  }
+})
+
 onMounted(() => {
   void fetchStatus()
 })
@@ -1150,11 +1277,11 @@ onMounted(() => {
 
 <template>
   <ToolShell
-    title="AI 备忘大管家"
-    description="100% 离线运行的个人机密知识库。支持 AI 辅助书写、安全字段加密以及语义化 RAG 快速查阅。"
+    title="AI 安全文档"
+    description="本地 Markdown 文档库。支持 AI 辅助整理、本地脱敏、安全字段加密以及文档检索问答。"
     :breadcrumbs="[
       { label: '工具箱', to: '/toolbox' },
-      { label: 'AI 备忘大管家' },
+      { label: 'AI 安全文档' },
     ]"
     fluid
   >
@@ -1176,12 +1303,14 @@ onMounted(() => {
         </p>
 
         <form @submit.prevent="handleUnlock" class="lock-form">
-          <input
+          <SecurePasswordInput
             v-model="masterPassword"
-            type="password"
-            class="lock-input"
+            input-class="lock-input"
+            autocomplete="current-password"
             placeholder="请输入主密码"
             autofocus
+            show-title="显示主密码"
+            hide-title="隐藏主密码"
           />
           <button type="submit" class="lock-submit-btn">
             <Unlock class="h-4 w-4 mr-2" />
@@ -1577,31 +1706,71 @@ onMounted(() => {
     <div v-if="showSettings" class="modal-overlay" @click.self="showSettings = false">
       <div class="modal-card shadow-2xl">
         <div class="modal-header">
-          <h3 class="modal-title font-bold text-gray-100">AI 服务配置与安全备份</h3>
+          <h3 class="modal-title font-bold text-gray-100">AI 服务、资料库与备份</h3>
           <button @click="showSettings = false" class="text-gray-600 hover:text-gray-400 transition">
             <X class="h-5 w-5" />
           </button>
         </div>
 
-        <div class="modal-body divide-y divide-gray-800/60">
-          <!-- AI Config -->
-          <div class="py-4 first:pt-0">
+        <div class="settings-tabs" role="tablist" aria-label="设置分类">
+          <button
+            type="button"
+            class="settings-tab"
+            :class="{ 'settings-tab--active': settingsTab === 'ai' }"
+            @click="settingsTab = 'ai'"
+          >
+            <Sparkles class="h-4 w-4" />
+            AI 服务
+          </button>
+          <button
+            type="button"
+            class="settings-tab"
+            :class="{ 'settings-tab--active': settingsTab === 'data' }"
+            @click="settingsTab = 'data'"
+          >
+            <FolderOpen class="h-4 w-4" />
+            资料库
+          </button>
+          <button
+            type="button"
+            class="settings-tab"
+            :class="{ 'settings-tab--active': settingsTab === 'backup' }"
+            @click="settingsTab = 'backup'"
+          >
+            <Database class="h-4 w-4" />
+            备份恢复
+          </button>
+          <button
+            type="button"
+            class="settings-tab"
+            :class="{ 'settings-tab--active': settingsTab === 'security' }"
+            @click="settingsTab = 'security'"
+          >
+            <Lock class="h-4 w-4" />
+            安全
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <section v-if="settingsTab === 'ai'" class="settings-panel">
             <h4 class="section-title">LLM 服务配置 (OpenAI 兼容)</h4>
-            <div class="grid grid-cols-2 gap-4 mt-3">
-              <div class="col-span-2">
+            <div class="ai-settings-grid mt-3">
+              <div class="ai-settings-field--full">
                 <label class="m-label">API 基础路径 (默认 OpenAI: https://api.openai.com/v1)</label>
                 <input v-model="ollamaUrl" type="text" class="m-input" />
               </div>
-              <div class="col-span-2">
+              <div class="ai-settings-field--full">
                 <label class="m-label">API Key</label>
-                <input
+                <SecurePasswordInput
                   v-model="apiKey"
-                  type="password"
-                  class="m-input"
+                  input-class="m-input"
+                  autocomplete="off"
                   :placeholder="hasApiKey ? '已保存 API Key，留空则保留不变' : '输入您的 API Key'"
+                  show-title="显示 API Key"
+                  hide-title="隐藏 API Key"
                 />
-                <p v-if="hasApiKey" class="mt-1 text-[10px] text-gray-500">
-                  已保存 API Key。出于安全考虑，当前页面不会回显明文。
+                <p class="mt-1 text-[10px] text-gray-500">
+                  API Key 会写入本地 KDBX 密码库；保存后页面不回显明文。
                 </p>
               </div>
               <div>
@@ -1616,16 +1785,16 @@ onMounted(() => {
                 <label class="m-label">推理强度 (reasoning_effort)</label>
                 <input v-model="reasoningEffort" type="text" class="m-input" />
               </div>
-              <label class="flex items-center gap-2 self-end text-xs text-gray-300 select-none cursor-pointer">
+              <label class="ai-setting-checkbox">
                 <input v-model="disableResponseStorage" type="checkbox" class="h-4 w-4 rounded border-gray-800 bg-gray-950 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-gray-905" />
                 禁用响应存储 (store: false)
               </label>
-              <div class="col-span-2 flex items-center gap-3">
+              <div class="connection-test-row">
                 <button
                   @click="testConnection"
                   :disabled="testingConnection || !ollamaUrl.trim() || !chatModel.trim()"
                   type="button"
-                  class="d-cancel-btn text-xs flex items-center gap-1.5"
+                  class="d-cancel-btn connection-test-btn"
                 >
                   <RefreshCw v-if="testingConnection" class="h-3.5 w-3.5 animate-spin" />
                   <CheckCircle2 v-else class="h-3.5 w-3.5" />
@@ -1633,57 +1802,90 @@ onMounted(() => {
                 </button>
                 <span
                   v-if="connectionMessage"
-                  class="text-[10px] leading-relaxed"
+                  class="connection-status"
                   :class="connectionOk ? 'text-emerald-400' : connectionOk === false ? 'text-rose-400' : 'text-gray-500'"
                 >
                   {{ connectionMessage }}
                 </span>
               </div>
-              <div class="col-span-2 flex items-center gap-2 mt-2">
-                <input id="allowAiSecrets" :checked="allowAiSecrets" @change="handleAllowSecretsChange" type="checkbox" class="h-4 w-4 rounded border-gray-800 bg-gray-950 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-gray-905" />
-                <label for="allowAiSecrets" class="text-xs text-gray-300 select-none cursor-pointer">
-                  允许 AI 检索并读取解密后的密码 (使用云端大模型时建议关闭)
-                </label>
-              </div>
             </div>
-            <!-- Storage Location Config -->
-            <div class="mt-4 pt-3.5 border-t border-gray-800/80">
-              <h4 class="section-title text-emerald-400">数据存储路径配置</h4>
-              <p class="text-[10px] text-gray-500 mb-2">
-                自定义本地文档和加密数据库的实际物理存储目录。
-              </p>
-              <div>
-                <label class="m-label">本地数据存储目录路径</label>
-                <input v-model="customDataDir" type="text" class="m-input font-mono" placeholder="默认位置: C:\Users\用户名\AppData\Roaming\rust-tool" />
-              </div>
-            </div>
-
-            <div class="mt-4 flex items-center gap-2">
+            <div class="settings-actions">
               <button @click="saveSettings" class="d-save-btn text-xs">
-                保存设置与配置
+                保存 AI 服务配置
               </button>
               <span class="text-[10px] text-gray-600">
                 保存后会重新读取后端状态确认 API Key 是否已保存。
               </span>
             </div>
-          </div>
+          </section>
 
-          <!-- Backup Config -->
-          <div class="py-4">
+          <section v-else-if="settingsTab === 'data'" class="settings-panel">
+            <h4 class="section-title flex items-center gap-1 text-emerald-400">
+              <FolderOpen class="h-4 w-4" />
+              资料库目录
+            </h4>
+            <div class="mt-3 space-y-3">
+              <div class="settings-subpanel space-y-2">
+                <div>
+                  <div class="m-label">当前目录</div>
+                  <div class="path-value">{{ activeDataDir || '读取中...' }}</div>
+                </div>
+                <div>
+                  <div class="m-label">默认目录</div>
+                  <div class="path-value">{{ defaultDataDir || '读取中...' }}</div>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-[10px] text-gray-500">
+                    {{ usingCustomDataDir ? '当前使用自定义目录' : '当前使用系统默认目录' }}
+                  </span>
+                  <span class="text-[10px] text-gray-600 font-mono truncate">
+                    {{ dataDirConfigPath }}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label class="m-label">迁移到新目录</label>
+                <input
+                  v-model="migrationTargetDir"
+                  type="text"
+                  class="m-input font-mono"
+                  placeholder="例如 /Users/ben/RustToolData"
+                />
+              </div>
+
+              <div class="flex items-center justify-between gap-3">
+                <button
+                  @click="migrateDataDir"
+                  :disabled="migrationLoading || !migrationTargetDir.trim()"
+                  class="d-save-btn text-xs"
+                >
+                  <RefreshCw v-if="migrationLoading" class="animate-spin h-3.5 w-3.5 mr-1" />
+                  <FolderOpen v-else class="h-3.5 w-3.5 mr-1" />
+                  迁移资料库
+                </button>
+                <span v-if="migrationMessage" class="text-[10px] text-emerald-400 font-mono truncate">
+                  {{ migrationMessage }}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <section v-else-if="settingsTab === 'backup'" class="settings-panel">
             <h4 class="section-title flex items-center gap-1 text-emerald-400">
               <Database class="h-4 w-4" />
               异地备份与容灾
             </h4>
             <p class="text-xs text-gray-500 mb-3">
-              支持一键将本地所有的文档、加密密码和数据库压缩备份。
+              支持一键将本地文档、配置、向量缓存和 KDBX 密码库压缩备份。
             </p>
 
             <div class="space-y-3">
               <div>
-                <label class="m-label">本地备份目标目录（例如 D:\RustToolBackups）</label>
+                <label class="m-label">本地备份目标目录（例如 /Users/ben/RustToolBackups）</label>
                 <input v-model="localBackupDir" type="text" class="m-input" placeholder="留空则仅在临时目录打包" />
               </div>
-              
+
               <div class="grid grid-cols-3 gap-3">
                 <div class="col-span-3">
                   <label class="m-label">WebDAV 备份 URL（例如 https://dav.jianguoyun.com/dav/Backup）</label>
@@ -1695,9 +1897,18 @@ onMounted(() => {
                 </div>
                 <div class="col-span-2">
                   <label class="m-label">WebDAV 密码</label>
-                  <input v-model="webdavPass" type="password" class="m-input" />
+                  <SecurePasswordInput
+                    v-model="webdavPass"
+                    input-class="m-input"
+                    autocomplete="off"
+                    show-title="显示 WebDAV 密码"
+                    hide-title="隐藏 WebDAV 密码"
+                  />
                 </div>
               </div>
+              <p class="text-[10px] leading-relaxed text-gray-600">
+                WebDAV URL、账号和密码必须同时填写；留空表示只做本地临时打包或本地目录备份。
+              </p>
             </div>
 
             <div class="flex items-center justify-between gap-4 mt-4">
@@ -1711,28 +1922,85 @@ onMounted(() => {
               </button>
               <span v-if="backupMessage" class="text-xs text-emerald-400 font-mono">{{ backupMessage }}</span>
             </div>
-          </div>
 
-          <!-- Restore Config -->
-          <div class="py-4 last:pb-0">
-            <h4 class="section-title flex items-center gap-1 text-orange-400">
-              数据恢复 (Restore)
-            </h4>
-            <div class="mt-3">
-              <label class="m-label">备份 ZIP 压缩包的绝对路径</label>
-              <div class="flex gap-2">
-                <input v-model="restorePath" type="text" class="m-input flex-1" placeholder="D:\RustToolBackups\rust_tool_memo_backup_xxx.zip" />
-                <button
-                  @click="triggerRestore"
-                  :disabled="restoreLoading"
-                  class="px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded text-xs font-semibold text-white transition flex items-center"
-                >
-                  <RefreshCw v-if="restoreLoading" class="animate-spin h-3.5 w-3.5 mr-1" />
-                  还原
-                </button>
+            <div class="restore-panel">
+              <h4 class="section-title flex items-center gap-1 text-orange-400">
+                <AlertTriangle class="h-4 w-4" />
+                数据恢复 (Restore)
+              </h4>
+              <div class="mt-3 space-y-3">
+                <div>
+                  <label class="m-label">备份 ZIP 压缩包的绝对路径</label>
+                  <input
+                    v-model="restorePath"
+                    type="text"
+                    class="m-input font-mono"
+                    placeholder="/Users/ben/RustToolBackups/rust_tool_memo_backup_xxx.zip"
+                  />
+                </div>
+                <div>
+                  <label class="m-label">安全确认</label>
+                  <input
+                    v-model="restoreConfirmText"
+                    type="text"
+                    class="m-input font-mono"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="输入 RESTORE 以启用还原"
+                  />
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-[10px] leading-relaxed text-orange-200/70">
+                    还原会覆盖当前文档、数据库和 KDBX 密码库。
+                  </p>
+                  <button
+                    @click="triggerRestore"
+                    :disabled="restoreLoading || !restorePath.trim() || restoreConfirmText.trim() !== 'RESTORE'"
+                    class="restore-btn"
+                  >
+                    <RefreshCw v-if="restoreLoading" class="animate-spin h-3.5 w-3.5 mr-1" />
+                    还原
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          </section>
+
+          <section v-else class="settings-panel">
+            <h4 class="section-title flex items-center gap-1 text-amber-300">
+              <AlertTriangle class="h-4 w-4" />
+              高风险 AI 权限
+            </h4>
+            <div class="risk-panel mt-3">
+              <div class="flex items-start gap-3">
+                <AlertTriangle class="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-bold text-amber-100">允许 AI 读取解密后的密码</div>
+                  <p class="mt-1 text-xs leading-relaxed text-amber-100/70">
+                    默认关闭。开启后，AI 检索问答可能把解密后的 secret 明文放入上下文；使用云端模型时不建议开启。
+                  </p>
+                  <label class="risk-toggle mt-4">
+                    <input
+                      id="allowAiSecrets"
+                      :checked="allowAiSecrets"
+                      @change="handleAllowSecretsChange"
+                      type="checkbox"
+                      class="h-4 w-4 rounded border-amber-500/40 bg-gray-950 text-amber-400 focus:ring-amber-400 focus:ring-offset-gray-950"
+                    />
+                    <span>我理解风险，允许 AI 检索并读取解密后的密码</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="mt-4 flex items-center gap-2">
+              <button @click="saveSettings" class="d-save-btn text-xs">
+                保存安全设置
+              </button>
+              <span class="text-[10px] text-gray-600">
+                建议保持关闭，除非后续接入可信本地模型。
+              </span>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -1962,10 +2230,10 @@ onMounted(() => {
   @apply w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition font-mono resize-y;
 }
 .d-cancel-btn {
-  @apply px-4 py-2 border border-gray-800 hover:bg-gray-800 text-gray-400 rounded-xl text-xs font-semibold transition-colors;
+  @apply inline-flex shrink-0 items-center justify-center whitespace-nowrap px-4 py-2 border border-gray-800 hover:bg-gray-800 text-gray-400 rounded-xl text-xs font-semibold transition-colors;
 }
 .d-save-btn {
-  @apply px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-xl text-xs font-semibold transition shadow-md shadow-emerald-950/20 flex items-center;
+  @apply inline-flex shrink-0 items-center justify-center whitespace-nowrap px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-xl text-xs font-semibold transition shadow-md shadow-emerald-950/20;
 }
 
 .no-doc-placeholder {
@@ -2088,7 +2356,7 @@ onMounted(() => {
   @apply fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4;
 }
 .modal-card {
-  @apply w-full max-w-xl bg-gray-900/90 border border-white/5 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] backdrop-blur-2xl;
+  @apply w-full max-w-3xl bg-gray-900/90 border border-white/5 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] backdrop-blur-2xl;
 }
 .modal-header {
   @apply px-5 py-3.5 border-b border-gray-800/80 flex justify-between items-center bg-gray-950/40;
@@ -2096,17 +2364,74 @@ onMounted(() => {
 .modal-title {
   @apply text-xs font-bold text-gray-200 uppercase tracking-wide;
 }
+.settings-tabs {
+  @apply flex gap-1 overflow-x-auto border-b border-gray-800/80 bg-gray-950/30 px-4 py-2;
+  scrollbar-width: none;
+}
+.settings-tabs::-webkit-scrollbar {
+  display: none;
+}
+.settings-tab {
+  @apply flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold text-gray-500 transition-colors hover:bg-gray-800/60 hover:text-gray-200;
+}
+.settings-tab--active {
+  @apply bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30;
+}
 .modal-body {
   @apply p-5 overflow-y-auto flex-1 min-h-0;
 }
+.settings-panel {
+  @apply min-h-[420px];
+}
+.settings-subpanel {
+  @apply rounded-xl border border-gray-800 bg-gray-950/50 p-3;
+}
 .section-title {
   @apply text-xs font-bold text-gray-300 uppercase tracking-wider mb-1;
+}
+.ai-settings-grid {
+  @apply grid grid-cols-1 gap-4 md:grid-cols-2;
+}
+.ai-settings-field--full,
+.connection-test-row {
+  @apply md:col-span-2;
+}
+.ai-setting-checkbox {
+  @apply flex min-w-0 items-center gap-2 self-end text-xs text-gray-300 select-none cursor-pointer;
+}
+.connection-test-row {
+  @apply grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start;
+}
+.connection-test-btn {
+  @apply inline-flex w-fit shrink-0 items-center justify-center gap-1.5 whitespace-nowrap text-xs;
+}
+.connection-status {
+  @apply min-w-0 rounded-xl border border-gray-800/80 bg-gray-950/50 px-3 py-2 text-[10px] leading-relaxed;
+  overflow-wrap: anywhere;
+}
+.settings-actions {
+  @apply mt-4 flex flex-wrap items-center gap-2;
 }
 .m-label {
   @apply block text-[10px] font-semibold text-gray-500 mb-1.5;
 }
 .m-input {
   @apply w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-300 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors;
+}
+.path-value {
+  @apply break-all rounded-lg border border-gray-800/80 bg-gray-950 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed text-gray-300;
+}
+.risk-panel {
+  @apply rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 shadow-lg shadow-amber-950/10;
+}
+.risk-toggle {
+  @apply flex items-center gap-2 rounded-lg border border-amber-500/20 bg-gray-950/40 px-3 py-2 text-xs font-semibold text-amber-100/90 select-none cursor-pointer;
+}
+.restore-panel {
+  @apply mt-5 rounded-xl border border-orange-500/25 bg-orange-500/10 p-4;
+}
+.restore-btn {
+  @apply flex items-center rounded-lg bg-orange-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-40;
 }
 
 /* Custom Thin Premium Scrollbars */
