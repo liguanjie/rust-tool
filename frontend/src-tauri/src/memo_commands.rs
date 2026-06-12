@@ -1,6 +1,11 @@
 use rust_tool_core::memo::{
-    ChangeMasterPasswordResponse, ChatMessage, DocumentDetail, DraftResponse, MemoManager,
-    MemoMetadata, SearchAnswerResponse, SecretListItem, SecretRevealResponse, WebDavConfig,
+    AuditEvent, AuditFixPreview, AuditScanResponse, ChangeMasterPasswordResponse, ChatMessage,
+    ChecklistItem, ChecklistStatus, DocumentDetail, DocumentRiskDiff, DraftResponse,
+    GovernanceSummary, MemoManager, MemoMetadata, RedactMarkdownResponse, SafeShareExport,
+    SafeShareRequest, SaveDocumentResponse, SearchAnswerResponse, SecretListItem,
+    SecretRevealResponse, SecurityAsset, SecurityAssetDetail, SecurityAssetGraph, SecurityCase,
+    SecurityCaseStatus, SecurityReport, SecurityReportRequest, StandardEntry,
+    StandardsChecklistResponse, WebDavConfig,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -225,6 +230,298 @@ pub(crate) async fn memo_get_document(
     state.manager.get_document(&id).await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AuditScanRequest {
+    doc_id: String,
+    markdown: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_audit_scan(
+    state: State<'_, MemoDesktopState>,
+    payload: AuditScanRequest,
+) -> Result<AuditScanResponse, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .audit_document(&payload.doc_id, payload.markdown.as_deref())
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AuditFindingStatusRequest {
+    finding_id: String,
+    status: String,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_audit_update_finding_status(
+    state: State<'_, MemoDesktopState>,
+    payload: AuditFindingStatusRequest,
+) -> Result<HashMap<String, bool>, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .update_audit_finding_status(&payload.finding_id, &payload.status)
+        .await?;
+    Ok(ok_response())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AuditFixPreviewRequest {
+    doc_id: String,
+    finding_id: String,
+    markdown: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_audit_fix_preview(
+    state: State<'_, MemoDesktopState>,
+    payload: AuditFixPreviewRequest,
+) -> Result<AuditFixPreview, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .audit_fix_preview(
+            &payload.doc_id,
+            &payload.finding_id,
+            payload.markdown.as_deref(),
+        )
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AuditRedactRequest {
+    markdown: String,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_audit_redact(
+    state: State<'_, MemoDesktopState>,
+    payload: AuditRedactRequest,
+) -> Result<RedactMarkdownResponse, String> {
+    require_unlocked(&state).await?;
+    state.manager.redact_markdown(&payload.markdown).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DocumentRiskDiffRequest {
+    doc_id: String,
+    markdown: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_document_risk_diff(
+    state: State<'_, MemoDesktopState>,
+    payload: DocumentRiskDiffRequest,
+) -> Result<DocumentRiskDiff, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .document_risk_diff(&payload.doc_id, payload.markdown.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_governance_summary(
+    state: State<'_, MemoDesktopState>,
+) -> Result<GovernanceSummary, String> {
+    require_unlocked(&state).await?;
+    state.manager.governance_summary().await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_governance_cases(
+    state: State<'_, MemoDesktopState>,
+) -> Result<Vec<SecurityCase>, String> {
+    require_unlocked(&state).await?;
+    state.manager.governance_cases().await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_governance_events(
+    state: State<'_, MemoDesktopState>,
+) -> Result<Vec<AuditEvent>, String> {
+    require_unlocked(&state).await?;
+    state.manager.governance_events().await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GovernanceCaseStatusRequest {
+    case_id: String,
+    status: String,
+    owner: Option<String>,
+    due_at: Option<String>,
+    rationale: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_governance_update_case_status(
+    state: State<'_, MemoDesktopState>,
+    payload: GovernanceCaseStatusRequest,
+) -> Result<SecurityCase, String> {
+    require_unlocked(&state).await?;
+    let status = SecurityCaseStatus::from_action(&payload.status)
+        .ok_or_else(|| "Invalid security case status".to_string())?;
+    state
+        .manager
+        .update_security_case_status(
+            &payload.case_id,
+            status,
+            payload.owner,
+            payload.due_at,
+            payload.rationale,
+        )
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GovernanceCaseAcceptRequest {
+    case_id: String,
+    rationale: String,
+    accepted_until: String,
+    impact_scope: String,
+    compensating_controls: String,
+    reviewer: String,
+    owner: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_governance_accept_case(
+    state: State<'_, MemoDesktopState>,
+    payload: GovernanceCaseAcceptRequest,
+) -> Result<SecurityCase, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .accept_security_case(
+            &payload.case_id,
+            payload.rationale,
+            payload.accepted_until,
+            payload.impact_scope,
+            payload.compensating_controls,
+            payload.reviewer,
+            payload.owner,
+        )
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_assets_list(
+    state: State<'_, MemoDesktopState>,
+) -> Result<Vec<SecurityAsset>, String> {
+    require_unlocked(&state).await?;
+    state.manager.security_assets().await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AssetDetailRequest {
+    asset_id: Option<String>,
+    query: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_assets_detail(
+    state: State<'_, MemoDesktopState>,
+    payload: AssetDetailRequest,
+) -> Result<SecurityAssetDetail, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .security_asset_detail(payload.asset_id.as_deref(), payload.query.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_assets_graph(
+    state: State<'_, MemoDesktopState>,
+    payload: AssetDetailRequest,
+) -> Result<SecurityAssetGraph, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .security_asset_graph(payload.asset_id.as_deref(), payload.query.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_generate_security_report(
+    state: State<'_, MemoDesktopState>,
+    payload: SecurityReportRequest,
+) -> Result<SecurityReport, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .generate_security_report_with_request(payload)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_safe_share_export(
+    state: State<'_, MemoDesktopState>,
+    payload: SafeShareRequest,
+) -> Result<SafeShareExport, String> {
+    require_unlocked(&state).await?;
+    state.manager.safe_share_document(payload).await
+}
+
+#[tauri::command]
+pub(crate) async fn memo_standards_list(
+    state: State<'_, MemoDesktopState>,
+) -> Result<Vec<StandardEntry>, String> {
+    require_unlocked(&state).await?;
+    state.manager.standards_list().await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StandardsChecklistRequest {
+    doc_id: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_standards_checklist(
+    state: State<'_, MemoDesktopState>,
+    payload: StandardsChecklistRequest,
+) -> Result<StandardsChecklistResponse, String> {
+    require_unlocked(&state).await?;
+    state
+        .manager
+        .standards_checklist(payload.doc_id.as_deref())
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChecklistStatusRequest {
+    doc_id: Option<String>,
+    item_id: String,
+    status: String,
+    note: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn memo_standards_update_checklist_status(
+    state: State<'_, MemoDesktopState>,
+    payload: ChecklistStatusRequest,
+) -> Result<ChecklistItem, String> {
+    require_unlocked(&state).await?;
+    let status = ChecklistStatus::from_action(&payload.status)
+        .ok_or_else(|| "Invalid checklist status".to_string())?;
+    state
+        .manager
+        .update_checklist_item_status(payload.doc_id, &payload.item_id, status, payload.note)
+        .await
+}
+
 #[tauri::command]
 pub(crate) async fn memo_list_secrets(
     state: State<'_, MemoDesktopState>,
@@ -282,11 +579,11 @@ pub(crate) struct SaveDocRequest {
 pub(crate) async fn memo_save_document(
     state: State<'_, MemoDesktopState>,
     payload: SaveDocRequest,
-) -> Result<MemoMetadata, String> {
+) -> Result<SaveDocumentResponse, String> {
     require_unlocked(&state).await?;
     state
         .manager
-        .save_document(
+        .save_document_with_risk_diff(
             payload.id,
             &payload.file_name,
             &payload.title,
@@ -735,6 +1032,13 @@ fn copy_core_data_files(active_dir: &Path, target_dir: &Path) -> Result<(), Stri
         &active_dir.join("embeddings"),
         &target_dir.join("embeddings"),
     )?;
+    copy_dir_if_exists(&active_dir.join("indexes"), &target_dir.join("indexes"))?;
+    copy_dir_if_exists(
+        &active_dir.join("governance"),
+        &target_dir.join("governance"),
+    )?;
+    copy_dir_if_exists(&active_dir.join("reports"), &target_dir.join("reports"))?;
+    copy_dir_if_exists(&active_dir.join("standards"), &target_dir.join("standards"))?;
     Ok(())
 }
 

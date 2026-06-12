@@ -5,7 +5,10 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::governance::{AuditEvent, SecurityCase};
+use super::history::DocumentRiskSnapshot;
 use super::markdown_store;
+use super::standards::{self, ChecklistStatusRecord};
 
 const MEMO_CONFIG_KEY: &str = "memoConfig";
 
@@ -37,6 +40,10 @@ pub struct MemoStore {
     config_path: PathBuf,
     vault_path: PathBuf,
     embeddings_path: PathBuf,
+    indexes_path: PathBuf,
+    governance_path: PathBuf,
+    reports_path: PathBuf,
+    standards_path: PathBuf,
 }
 
 impl MemoStore {
@@ -45,6 +52,10 @@ impl MemoStore {
         let config_path = data_dir.join("config.json");
         let vault_path = data_dir.join("documents");
         let embeddings_path = data_dir.join("embeddings");
+        let indexes_path = data_dir.join("indexes");
+        let governance_path = data_dir.join("governance");
+        let reports_path = data_dir.join("reports");
+        let standards_path = data_dir.join("standards");
 
         fs::create_dir_all(&data_dir)
             .map_err(|e| format!("Failed to create data directory: {:?}", e))?;
@@ -56,6 +67,10 @@ impl MemoStore {
             config_path,
             vault_path,
             embeddings_path,
+            indexes_path,
+            governance_path,
+            reports_path,
+            standards_path,
         })
     }
 
@@ -156,6 +171,22 @@ impl MemoStore {
 
     pub fn get_embeddings_path(&self) -> &Path {
         &self.embeddings_path
+    }
+
+    pub fn get_indexes_path(&self) -> &Path {
+        &self.indexes_path
+    }
+
+    pub fn get_governance_path(&self) -> &Path {
+        &self.governance_path
+    }
+
+    pub fn get_reports_path(&self) -> &Path {
+        &self.reports_path
+    }
+
+    pub fn get_standards_path(&self) -> &Path {
+        &self.standards_path
     }
 
     pub fn get_secret_vault_path(&self) -> PathBuf {
@@ -324,6 +355,229 @@ impl MemoStore {
         self.embeddings_path
             .join(format!("{}.json", hex_encode(id.as_bytes())))
     }
+
+    pub fn read_finding_statuses(&self) -> Result<HashMap<String, String>, String> {
+        let path = self.finding_statuses_path();
+        if !path.exists() {
+            return Ok(HashMap::new());
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read finding statuses: {:?}", e))?;
+        if content.trim().is_empty() {
+            return Ok(HashMap::new());
+        }
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse finding statuses: {:?}", e))
+    }
+
+    pub fn set_finding_status(&self, finding_id: &str, status: &str) -> Result<(), String> {
+        let finding_id = finding_id.trim();
+        if finding_id.is_empty() {
+            return Err("Finding id cannot be empty".to_string());
+        }
+
+        let mut statuses = self.read_finding_statuses()?;
+        if status == "open" {
+            statuses.remove(finding_id);
+        } else {
+            statuses.insert(finding_id.to_string(), status.to_string());
+        }
+
+        fs::create_dir_all(&self.indexes_path)
+            .map_err(|e| format!("Failed to create indexes directory: {:?}", e))?;
+        let json = serde_json::to_string_pretty(&statuses)
+            .map_err(|e| format!("Failed to serialize finding statuses: {:?}", e))?;
+        fs::write(self.finding_statuses_path(), json)
+            .map_err(|e| format!("Failed to write finding statuses: {:?}", e))
+    }
+
+    fn finding_statuses_path(&self) -> PathBuf {
+        self.indexes_path.join("finding-statuses.json")
+    }
+
+    pub fn read_document_risk_snapshot(
+        &self,
+        doc_id: &str,
+    ) -> Result<Option<DocumentRiskSnapshot>, String> {
+        let path = self.document_risk_snapshot_path(doc_id)?;
+        if !path.exists() {
+            return Ok(None);
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read document risk snapshot: {:?}", e))?;
+        if content.trim().is_empty() {
+            return Ok(None);
+        }
+        serde_json::from_str(&content)
+            .map(Some)
+            .map_err(|e| format!("Failed to parse document risk snapshot: {:?}", e))
+    }
+
+    pub fn write_document_risk_snapshot(
+        &self,
+        snapshot: &DocumentRiskSnapshot,
+    ) -> Result<(), String> {
+        if snapshot.doc_id.trim().is_empty() {
+            return Err("Document id cannot be empty".to_string());
+        }
+        fs::create_dir_all(self.document_history_dir())
+            .map_err(|e| format!("Failed to create document history directory: {:?}", e))?;
+        let json = serde_json::to_string_pretty(snapshot)
+            .map_err(|e| format!("Failed to serialize document risk snapshot: {:?}", e))?;
+        fs::write(self.document_risk_snapshot_path(&snapshot.doc_id)?, json)
+            .map_err(|e| format!("Failed to write document risk snapshot: {:?}", e))
+    }
+
+    pub fn delete_document_risk_snapshot(&self, doc_id: &str) -> Result<(), String> {
+        let path = self.document_risk_snapshot_path(doc_id)?;
+        if path.exists() {
+            fs::remove_file(path)
+                .map_err(|e| format!("Failed to delete document risk snapshot: {:?}", e))?;
+        }
+        Ok(())
+    }
+
+    pub fn read_security_cases(&self) -> Result<Vec<SecurityCase>, String> {
+        let path = self.security_cases_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read security cases: {:?}", e))?;
+        if content.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse security cases: {:?}", e))
+    }
+
+    pub fn write_security_cases(&self, cases: &[SecurityCase]) -> Result<(), String> {
+        fs::create_dir_all(&self.governance_path)
+            .map_err(|e| format!("Failed to create governance directory: {:?}", e))?;
+        let json = serde_json::to_string_pretty(cases)
+            .map_err(|e| format!("Failed to serialize security cases: {:?}", e))?;
+        fs::write(self.security_cases_path(), json)
+            .map_err(|e| format!("Failed to write security cases: {:?}", e))
+    }
+
+    pub fn append_audit_events(&self, events: &[AuditEvent]) -> Result<(), String> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        fs::create_dir_all(&self.governance_path)
+            .map_err(|e| format!("Failed to create governance directory: {:?}", e))?;
+        let mut content = String::new();
+        for event in events {
+            let json = serde_json::to_string(event)
+                .map_err(|e| format!("Failed to serialize audit event: {:?}", e))?;
+            content.push_str(&json);
+            content.push('\n');
+        }
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.audit_events_path())
+            .map_err(|e| format!("Failed to open audit events: {:?}", e))?;
+        file.write_all(content.as_bytes())
+            .map_err(|e| format!("Failed to append audit events: {:?}", e))
+    }
+
+    pub fn read_audit_events(&self) -> Result<Vec<AuditEvent>, String> {
+        let path = self.audit_events_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read audit events: {:?}", e))?;
+        let mut events = Vec::new();
+        for (index, line) in content.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let event = serde_json::from_str::<AuditEvent>(line).map_err(|e| {
+                format!("Failed to parse audit event at line {}: {:?}", index + 1, e)
+            })?;
+            events.push(event);
+        }
+        Ok(events)
+    }
+
+    pub fn write_security_report(
+        &self,
+        file_name: &str,
+        markdown: &str,
+    ) -> Result<PathBuf, String> {
+        if file_name.trim().is_empty() || file_name.contains('/') || file_name.contains('\\') {
+            return Err("Invalid report file name".to_string());
+        }
+        fs::create_dir_all(&self.reports_path)
+            .map_err(|e| format!("Failed to create reports directory: {:?}", e))?;
+        let path = self.reports_path.join(file_name);
+        fs::write(&path, markdown).map_err(|e| format!("Failed to write report: {:?}", e))?;
+        Ok(path)
+    }
+
+    pub fn read_checklist_statuses(
+        &self,
+    ) -> Result<HashMap<String, ChecklistStatusRecord>, String> {
+        let path = self.checklist_statuses_path();
+        if !path.exists() {
+            return Ok(HashMap::new());
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read checklist statuses: {:?}", e))?;
+        if content.trim().is_empty() {
+            return Ok(HashMap::new());
+        }
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse checklist statuses: {:?}", e))
+    }
+
+    pub fn set_checklist_status(
+        &self,
+        doc_id: Option<&str>,
+        item_id: &str,
+        record: ChecklistStatusRecord,
+    ) -> Result<(), String> {
+        if item_id.trim().is_empty() {
+            return Err("Checklist item id cannot be empty".to_string());
+        }
+        fs::create_dir_all(&self.standards_path)
+            .map_err(|e| format!("Failed to create standards directory: {:?}", e))?;
+        let mut statuses = self.read_checklist_statuses()?;
+        statuses.insert(standards::checklist_status_key(doc_id, item_id), record);
+        let json = serde_json::to_string_pretty(&statuses)
+            .map_err(|e| format!("Failed to serialize checklist statuses: {:?}", e))?;
+        fs::write(self.checklist_statuses_path(), json)
+            .map_err(|e| format!("Failed to write checklist statuses: {:?}", e))
+    }
+
+    fn security_cases_path(&self) -> PathBuf {
+        self.governance_path.join("cases.json")
+    }
+
+    fn audit_events_path(&self) -> PathBuf {
+        self.governance_path.join("events.jsonl")
+    }
+
+    fn checklist_statuses_path(&self) -> PathBuf {
+        self.standards_path.join("checklist-statuses.json")
+    }
+
+    fn document_history_dir(&self) -> PathBuf {
+        self.indexes_path.join("doc-history")
+    }
+
+    fn document_risk_snapshot_path(&self, doc_id: &str) -> Result<PathBuf, String> {
+        let doc_id = doc_id.trim();
+        if doc_id.is_empty() || doc_id.contains('/') || doc_id.contains('\\') {
+            return Err("Invalid document id".to_string());
+        }
+        Ok(self
+            .document_history_dir()
+            .join(format!("{}.json", hex_encode(doc_id.as_bytes()))))
+    }
 }
 
 fn ensure_memo_config_object(
@@ -489,6 +743,97 @@ mod tests {
         let content = fs::read_to_string(temp_dir.join("config.json")).expect("read config file");
         assert!(content.contains("customDataDir"));
         assert!(content.contains("memoConfig"));
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn persists_security_cases_and_audit_events() {
+        use super::super::audit::FindingSeverity;
+        use super::super::governance::{
+            audit_event, SecurityCaseEvent, SecurityCaseStatus, SecurityCaseType,
+        };
+        use super::super::standards::{ChecklistStatus, ChecklistStatusRecord};
+
+        let temp_dir = make_test_dir("governance_state");
+        let store = MemoStore::new(&temp_dir).expect("store");
+        let case = SecurityCase {
+            id: "case-1".to_string(),
+            case_type: SecurityCaseType::Risk,
+            title: "硬编码密钥泄露".to_string(),
+            severity: FindingSeverity::Critical,
+            status: SecurityCaseStatus::Open,
+            source_doc_id: "doc-1".to_string(),
+            source_finding_id: Some("finding-1".to_string()),
+            linked_assets: Vec::new(),
+            owner: Some("sec".to_string()),
+            due_at: Some("2026-06-30".to_string()),
+            accepted_until: None,
+            rationale: None,
+            impact_scope: None,
+            compensating_controls: None,
+            reviewer: None,
+            created_at: 100,
+            updated_at: 100,
+            events: vec![SecurityCaseEvent {
+                event_type: "findingDetected".to_string(),
+                summary: "发现风险".to_string(),
+                created_at: 100,
+            }],
+        };
+
+        store
+            .write_security_cases(std::slice::from_ref(&case))
+            .expect("write cases");
+        let cases = store.read_security_cases().expect("read cases");
+        assert_eq!(cases.len(), 1);
+        assert_eq!(cases[0].id, "case-1");
+        assert_eq!(cases[0].owner.as_deref(), Some("sec"));
+
+        let event = audit_event(
+            "caseStatusChanged",
+            "user",
+            "case-1",
+            "风险进入修复中",
+            101,
+            serde_json::json!({ "status": "fixing" }),
+        );
+        store
+            .append_audit_events(std::slice::from_ref(&event))
+            .expect("append event");
+        let events = store.read_audit_events().expect("read events");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "caseStatusChanged");
+        assert_eq!(events[0].target_id, "case-1");
+
+        let report_path = store
+            .write_security_report("security-report-test.md", "# 安全治理审计报告")
+            .expect("write report");
+        assert_eq!(
+            report_path,
+            store.get_reports_path().join("security-report-test.md")
+        );
+        assert!(store.write_security_report("../leak.md", "nope").is_err());
+
+        store
+            .set_checklist_status(
+                Some("doc-1"),
+                "secret-management",
+                ChecklistStatusRecord {
+                    item_id: "secret-management".to_string(),
+                    status: ChecklistStatus::Done,
+                    note: Some("已完成轮换".to_string()),
+                    updated_at: 102,
+                },
+            )
+            .expect("write checklist status");
+        let statuses = store.read_checklist_statuses().expect("read checklist");
+        let record = statuses
+            .get("doc-1:secret-management")
+            .expect("checklist record");
+        assert_eq!(record.status, ChecklistStatus::Done);
+        assert_eq!(record.note.as_deref(), Some("已完成轮换"));
+        assert_eq!(store.get_standards_path(), temp_dir.join("standards"));
 
         let _ = fs::remove_dir_all(temp_dir);
     }

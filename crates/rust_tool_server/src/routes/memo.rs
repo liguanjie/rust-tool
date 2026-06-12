@@ -1,12 +1,17 @@
 use crate::app::AppState;
 use axum::{
-    extract::{Path as AxumPath, State},
+    extract::{Path as AxumPath, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
 use rust_tool_core::memo::{
-    ChatMessage, DocumentDetail, DraftResponse, MemoMetadata, SearchAnswerResponse, WebDavConfig,
+    AuditEvent, AuditFixPreview, AuditScanResponse, ChatMessage, ChecklistItem, ChecklistStatus,
+    DocumentDetail, DocumentRiskDiff, DraftResponse, GovernanceSummary, MemoMetadata,
+    RedactMarkdownResponse, SafeShareExport, SafeShareRequest, SaveDocumentResponse,
+    SearchAnswerResponse, SecurityAsset, SecurityAssetDetail, SecurityAssetGraph, SecurityCase,
+    SecurityCaseStatus, SecurityReport, SecurityReportRequest, StandardEntry,
+    StandardsChecklistResponse, WebDavConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -48,6 +53,14 @@ impl MemoApiError {
                 StatusCode::NOT_FOUND
             } else if message.contains("Current master password is incorrect") {
                 StatusCode::UNAUTHORIZED
+            } else if message.contains("Finding not found") {
+                StatusCode::NOT_FOUND
+            } else if message.contains("Security case not found") {
+                StatusCode::NOT_FOUND
+            } else if message.contains("Checklist item not found") {
+                StatusCode::NOT_FOUND
+            } else if message.contains("Security asset not found") {
+                StatusCode::NOT_FOUND
             } else if message.contains("Invalid file path")
                 || message.contains("already exists")
                 || message.contains("RustTool memo data")
@@ -59,6 +72,18 @@ impl MemoApiError {
                 || message.contains("master password cannot be empty")
                 || message.contains("Master password is not initialized")
                 || message.contains("New master password must be different")
+                || message.contains("Invalid finding status")
+                || message.contains("Finding id cannot be empty")
+                || message.contains("Invalid security case status")
+                || message.contains("Risk acceptance rationale cannot be empty")
+                || message.contains("Risk acceptance expiry cannot be empty")
+                || message.contains("Risk acceptance expiry must use")
+                || message.contains("Risk acceptance impact scope cannot be empty")
+                || message.contains("Risk acceptance compensating controls cannot be empty")
+                || message.contains("Risk acceptance reviewer cannot be empty")
+                || message.contains("Document id is required for document report")
+                || message.contains("Invalid checklist status")
+                || message.contains("Checklist item id cannot be empty")
             {
                 StatusCode::BAD_REQUEST
             } else {
@@ -349,6 +374,13 @@ fn copy_core_data_files(active_dir: &Path, target_dir: &Path) -> Result<(), Stri
         &active_dir.join("embeddings"),
         &target_dir.join("embeddings"),
     )?;
+    copy_dir_if_exists(&active_dir.join("indexes"), &target_dir.join("indexes"))?;
+    copy_dir_if_exists(
+        &active_dir.join("governance"),
+        &target_dir.join("governance"),
+    )?;
+    copy_dir_if_exists(&active_dir.join("reports"), &target_dir.join("reports"))?;
+    copy_dir_if_exists(&active_dir.join("standards"), &target_dir.join("standards"))?;
     Ok(())
 }
 
@@ -508,6 +540,292 @@ pub async fn get_document(
     Ok(Json(detail))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditScanRequest {
+    pub doc_id: String,
+    pub markdown: Option<String>,
+}
+
+pub async fn audit_scan(
+    State(state): State<AppState>,
+    Json(payload): Json<AuditScanRequest>,
+) -> MemoResult<AuditScanResponse> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .audit_document(&payload.doc_id, payload.markdown.as_deref())
+        .await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditFindingStatusRequest {
+    pub finding_id: String,
+    pub status: String,
+}
+
+pub async fn audit_update_finding_status(
+    State(state): State<AppState>,
+    Json(payload): Json<AuditFindingStatusRequest>,
+) -> MemoResult<HashMap<String, bool>> {
+    require_unlocked(&state).await?;
+    state
+        .memo_manager
+        .update_audit_finding_status(&payload.finding_id, &payload.status)
+        .await?;
+    let mut res = HashMap::new();
+    res.insert("ok".to_string(), true);
+    Ok(Json(res))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditFixPreviewRequest {
+    pub doc_id: String,
+    pub finding_id: String,
+    pub markdown: Option<String>,
+}
+
+pub async fn audit_fix_preview(
+    State(state): State<AppState>,
+    Json(payload): Json<AuditFixPreviewRequest>,
+) -> MemoResult<AuditFixPreview> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .audit_fix_preview(
+            &payload.doc_id,
+            &payload.finding_id,
+            payload.markdown.as_deref(),
+        )
+        .await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditRedactRequest {
+    pub markdown: String,
+}
+
+pub async fn audit_redact(
+    State(state): State<AppState>,
+    Json(payload): Json<AuditRedactRequest>,
+) -> MemoResult<RedactMarkdownResponse> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .redact_markdown(&payload.markdown)
+        .await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentRiskDiffRequest {
+    pub doc_id: String,
+    pub markdown: Option<String>,
+}
+
+pub async fn document_risk_diff(
+    State(state): State<AppState>,
+    Json(payload): Json<DocumentRiskDiffRequest>,
+) -> MemoResult<DocumentRiskDiff> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .document_risk_diff(&payload.doc_id, payload.markdown.as_deref())
+        .await?;
+    Ok(Json(response))
+}
+
+pub async fn governance_summary(State(state): State<AppState>) -> MemoResult<GovernanceSummary> {
+    require_unlocked(&state).await?;
+    let response = state.memo_manager.governance_summary().await?;
+    Ok(Json(response))
+}
+
+pub async fn governance_cases(State(state): State<AppState>) -> MemoResult<Vec<SecurityCase>> {
+    require_unlocked(&state).await?;
+    let response = state.memo_manager.governance_cases().await?;
+    Ok(Json(response))
+}
+
+pub async fn governance_events(State(state): State<AppState>) -> MemoResult<Vec<AuditEvent>> {
+    require_unlocked(&state).await?;
+    let response = state.memo_manager.governance_events().await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GovernanceCaseStatusRequest {
+    pub case_id: String,
+    pub status: String,
+    pub owner: Option<String>,
+    pub due_at: Option<String>,
+    pub rationale: Option<String>,
+}
+
+pub async fn governance_update_case_status(
+    State(state): State<AppState>,
+    Json(payload): Json<GovernanceCaseStatusRequest>,
+) -> MemoResult<SecurityCase> {
+    require_unlocked(&state).await?;
+    let status = SecurityCaseStatus::from_action(&payload.status)
+        .ok_or_else(|| MemoApiError::from_message("Invalid security case status".to_string()))?;
+    let response = state
+        .memo_manager
+        .update_security_case_status(
+            &payload.case_id,
+            status,
+            payload.owner,
+            payload.due_at,
+            payload.rationale,
+        )
+        .await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GovernanceCaseAcceptRequest {
+    pub case_id: String,
+    pub rationale: String,
+    pub accepted_until: String,
+    pub impact_scope: String,
+    pub compensating_controls: String,
+    pub reviewer: String,
+    pub owner: Option<String>,
+}
+
+pub async fn governance_accept_case(
+    State(state): State<AppState>,
+    Json(payload): Json<GovernanceCaseAcceptRequest>,
+) -> MemoResult<SecurityCase> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .accept_security_case(
+            &payload.case_id,
+            payload.rationale,
+            payload.accepted_until,
+            payload.impact_scope,
+            payload.compensating_controls,
+            payload.reviewer,
+            payload.owner,
+        )
+        .await?;
+    Ok(Json(response))
+}
+
+pub async fn security_assets(State(state): State<AppState>) -> MemoResult<Vec<SecurityAsset>> {
+    require_unlocked(&state).await?;
+    let response = state.memo_manager.security_assets().await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetDetailQuery {
+    pub asset_id: Option<String>,
+    pub query: Option<String>,
+}
+
+pub async fn security_asset_detail(
+    State(state): State<AppState>,
+    Query(query): Query<AssetDetailQuery>,
+) -> MemoResult<SecurityAssetDetail> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .security_asset_detail(query.asset_id.as_deref(), query.query.as_deref())
+        .await?;
+    Ok(Json(response))
+}
+
+pub async fn security_asset_graph(
+    State(state): State<AppState>,
+    Query(query): Query<AssetDetailQuery>,
+) -> MemoResult<SecurityAssetGraph> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .security_asset_graph(query.asset_id.as_deref(), query.query.as_deref())
+        .await?;
+    Ok(Json(response))
+}
+
+pub async fn generate_report(
+    State(state): State<AppState>,
+    Json(payload): Json<SecurityReportRequest>,
+) -> MemoResult<SecurityReport> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .generate_security_report_with_request(payload)
+        .await?;
+    Ok(Json(response))
+}
+
+pub async fn safe_share_export(
+    State(state): State<AppState>,
+    Json(payload): Json<SafeShareRequest>,
+) -> MemoResult<SafeShareExport> {
+    require_unlocked(&state).await?;
+    let response = state.memo_manager.safe_share_document(payload).await?;
+    Ok(Json(response))
+}
+
+pub async fn standards_list(State(state): State<AppState>) -> MemoResult<Vec<StandardEntry>> {
+    require_unlocked(&state).await?;
+    let response = state.memo_manager.standards_list().await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StandardsChecklistQuery {
+    pub doc_id: Option<String>,
+}
+
+pub async fn standards_checklist(
+    State(state): State<AppState>,
+    Query(query): Query<StandardsChecklistQuery>,
+) -> MemoResult<StandardsChecklistResponse> {
+    require_unlocked(&state).await?;
+    let response = state
+        .memo_manager
+        .standards_checklist(query.doc_id.as_deref())
+        .await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChecklistStatusRequest {
+    pub doc_id: Option<String>,
+    pub item_id: String,
+    pub status: String,
+    pub note: Option<String>,
+}
+
+pub async fn standards_update_checklist_status(
+    State(state): State<AppState>,
+    Json(payload): Json<ChecklistStatusRequest>,
+) -> MemoResult<ChecklistItem> {
+    require_unlocked(&state).await?;
+    let status = ChecklistStatus::from_action(&payload.status)
+        .ok_or_else(|| MemoApiError::from_message("Invalid checklist status".to_string()))?;
+    let response = state
+        .memo_manager
+        .update_checklist_item_status(payload.doc_id, &payload.item_id, status, payload.note)
+        .await?;
+    Ok(Json(response))
+}
+
 pub async fn list_secrets(
     State(state): State<AppState>,
 ) -> MemoResult<Vec<rust_tool_core::memo::SecretListItem>> {
@@ -564,11 +882,11 @@ pub struct SaveDocRequest {
 pub async fn save_document(
     State(state): State<AppState>,
     Json(payload): Json<SaveDocRequest>,
-) -> MemoResult<MemoMetadata> {
+) -> MemoResult<SaveDocumentResponse> {
     require_unlocked(&state).await?;
-    let meta = state
+    let response = state
         .memo_manager
-        .save_document(
+        .save_document_with_risk_diff(
             payload.id,
             &payload.file_name,
             &payload.title,
@@ -577,7 +895,7 @@ pub async fn save_document(
             &payload.summary,
         )
         .await?;
-    Ok(Json(meta))
+    Ok(Json(response))
 }
 
 #[derive(Deserialize)]

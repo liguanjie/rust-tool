@@ -1,8 +1,14 @@
+pub mod assets;
+pub mod audit;
 pub mod backup;
 pub mod crypto;
+pub mod governance;
+pub mod history;
 pub mod markdown_store;
 pub mod redactor;
+pub mod reports;
 pub mod secret_vault;
+pub mod standards;
 pub mod store;
 pub mod vector;
 
@@ -16,6 +22,23 @@ use uuid::Uuid;
 
 use self::secret_vault::{KdbxSecretVault, SecretMetadata, SecretVault};
 
+pub use assets::{
+    SecurityAsset, SecurityAssetDetail, SecurityAssetGraph, SecurityAssetType, SecurityGraphEdge,
+    SecurityGraphEdgeType, SecurityGraphNode, SecurityGraphNodeType,
+};
+pub use audit::{
+    AuditFixPreview, AuditScanResponse, AuditSummary, FindingKind, FindingSeverity, FindingStatus,
+    SecurityFinding,
+};
+pub use governance::{AuditEvent, GovernanceSummary, SecurityCase, SecurityCaseStatus};
+pub use history::{
+    DocumentRiskDiff, DocumentRiskDiffItem, DocumentRiskDiffSummary, DocumentRiskSnapshot,
+};
+pub use redactor::DetectedSecret;
+pub use reports::{
+    SafeShareExport, SafeShareRequest, SecurityReport, SecurityReportRequest, SecurityReportScope,
+};
+pub use standards::{ChecklistItem, ChecklistStatus, StandardEntry, StandardsChecklistResponse};
 pub use store::{current_timestamp, MemoMetadata, MemoStore};
 pub use vector::{cosine_similarity, ChatMessage, LlmClient};
 
@@ -41,6 +64,22 @@ pub struct MemoManager {
     // Keep the KDBX vault open only while the app is unlocked.
     secret_vault: Arc<RwLock<Option<KdbxSecretVault>>>,
     secret_vault_path: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveDocumentResponse {
+    #[serde(flatten)]
+    pub metadata: MemoMetadata,
+    pub risk_diff: DocumentRiskDiff,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedactMarkdownResponse {
+    pub markdown: String,
+    pub secrets: Vec<DetectedSecret>,
+    pub redacted_secret_count: usize,
 }
 
 impl MemoManager {
@@ -616,6 +655,21 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
         secrets: HashMap<String, String>,
         summary: &str,
     ) -> Result<MemoMetadata, String> {
+        Ok(self
+            .save_document_with_risk_diff(id, file_name, title, markdown, secrets, summary)
+            .await?
+            .metadata)
+    }
+
+    pub async fn save_document_with_risk_diff(
+        &self,
+        id: Option<String>,
+        file_name: &str,
+        title: &str,
+        markdown: &str,
+        secrets: HashMap<String, String>,
+        summary: &str,
+    ) -> Result<SaveDocumentResponse, String> {
         let _key = self.get_key().await?;
         let previous_meta = match id {
             Some(existing_id) => Some(
@@ -634,6 +688,7 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             .and_then(|meta| self.store.read_document_file(&meta.file_name).ok())
             .map(|previous_markdown| extract_secret_placeholders(&previous_markdown))
             .unwrap_or_default();
+        let previous_snapshot = self.store.read_document_risk_snapshot(&doc_id)?;
 
         if let Some(owner_id) = self.store.file_name_owner(file_name)? {
             if owner_id != doc_id {
@@ -664,6 +719,13 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
         // 3. Metadata is embedded in the Markdown frontmatter.
         self.store.upsert_memo_metadata(&meta)?;
 
+        let risk_diff = self.persist_document_risk_snapshot(
+            &doc_id,
+            markdown,
+            meta.updated_at,
+            previous_snapshot,
+        )?;
+
         // 4. Generate & Save Vector Embedding asynchronously
         let client = self.get_ollama_client();
 
@@ -684,7 +746,10 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             }
         });
 
-        Ok(meta)
+        Ok(SaveDocumentResponse {
+            metadata: meta,
+            risk_diff,
+        })
     }
 
     /// Read document contents. If unlocked, decrypt placeholders.
@@ -709,6 +774,787 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
             secrets: decrypted_secrets,
             unlocked: key_opt.is_some(),
         })
+    }
+
+    pub async fn audit_document(
+        &self,
+        doc_id: &str,
+        markdown_override: Option<&str>,
+    ) -> Result<AuditScanResponse, String> {
+        let _key = self.get_key().await?;
+        let doc_id = if doc_id.trim().is_empty() {
+            "__draft__"
+        } else {
+            doc_id.trim()
+        };
+        let markdown = match markdown_override {
+            Some(markdown) => markdown.to_string(),
+            None => {
+                let meta = self
+                    .store
+                    .get_memo_metadata(doc_id)?
+                    .ok_or_else(|| "Document not found".to_string())?;
+                self.store.read_document_file(&meta.file_name)?
+            }
+        };
+        let statuses = self.store.read_finding_statuses()?;
+        Ok(audit::scan_markdown(
+            doc_id,
+            &markdown,
+            &statuses,
+            current_timestamp(),
+        ))
+    }
+
+    pub async fn document_risk_diff(
+        &self,
+        doc_id: &str,
+        markdown_override: Option<&str>,
+    ) -> Result<DocumentRiskDiff, String> {
+        let _key = self.get_key().await?;
+        let doc_id = doc_id.trim();
+        if doc_id.is_empty() || doc_id == "new" {
+            return Err("Document id is required for risk diff".to_string());
+        }
+        let markdown = match markdown_override {
+            Some(markdown) => markdown.to_string(),
+            None => {
+                let meta = self
+                    .store
+                    .get_memo_metadata(doc_id)?
+                    .ok_or_else(|| "Document not found".to_string())?;
+                self.store.read_document_file(&meta.file_name)?
+            }
+        };
+        let statuses = self.store.read_finding_statuses()?;
+        let now = current_timestamp();
+        let scan = audit::scan_markdown(doc_id, &markdown, &statuses, now);
+        let current = history::build_snapshot(doc_id, now, &markdown, scan.findings);
+        let previous = self.store.read_document_risk_snapshot(doc_id)?;
+        Ok(history::diff_snapshots(doc_id, previous.as_ref(), &current))
+    }
+
+    pub async fn update_audit_finding_status(
+        &self,
+        finding_id: &str,
+        status: &str,
+    ) -> Result<(), String> {
+        let _key = self.get_key().await?;
+        let normalized = match status {
+            "open" | "fixed" | "ignored" | "reviewing" => status,
+            _ => return Err("Invalid finding status".to_string()),
+        };
+        self.store.set_finding_status(finding_id, normalized)?;
+
+        let case_status = match normalized {
+            "fixed" => SecurityCaseStatus::Fixed,
+            "ignored" => SecurityCaseStatus::Closed,
+            "reviewing" => SecurityCaseStatus::Reviewing,
+            _ => SecurityCaseStatus::Open,
+        };
+        let mut cases = self.sync_governance_cases()?;
+        if let Some(case) = cases
+            .iter_mut()
+            .find(|case| case.source_finding_id.as_deref() == Some(finding_id))
+        {
+            let event = governance::transition_case(
+                case,
+                case_status,
+                None,
+                None,
+                Some(format!("同步 finding 状态：{normalized}")),
+                "user",
+                current_timestamp(),
+            );
+            self.store.write_security_cases(&cases)?;
+            self.store.append_audit_events(&[event])?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn audit_fix_preview(
+        &self,
+        doc_id: &str,
+        finding_id: &str,
+        markdown_override: Option<&str>,
+    ) -> Result<AuditFixPreview, String> {
+        let _key = self.get_key().await?;
+        let markdown = match markdown_override {
+            Some(markdown) => markdown.to_string(),
+            None => {
+                let meta = self
+                    .store
+                    .get_memo_metadata(doc_id)?
+                    .ok_or_else(|| "Document not found".to_string())?;
+                self.store.read_document_file(&meta.file_name)?
+            }
+        };
+        audit::preview_fix(doc_id, &markdown, finding_id)
+            .ok_or_else(|| "Finding not found or cannot be fixed automatically".to_string())
+    }
+
+    pub async fn redact_markdown(&self, markdown: &str) -> Result<RedactMarkdownResponse, String> {
+        let _key = self.get_key().await?;
+        let redacted = redactor::redact_secrets(markdown);
+        Ok(RedactMarkdownResponse {
+            markdown: redacted.text,
+            redacted_secret_count: redacted.secrets.len(),
+            secrets: redacted.secrets,
+        })
+    }
+
+    pub async fn governance_summary(&self) -> Result<GovernanceSummary, String> {
+        let _key = self.get_key().await?;
+        let (findings, assets) = self.collect_security_state()?;
+        let cases = self.sync_governance_cases_from_findings(&findings)?;
+        let events = self.store.read_audit_events()?;
+        Ok(governance::build_governance_summary(
+            findings,
+            assets,
+            &cases,
+            &events,
+            current_timestamp(),
+        ))
+    }
+
+    pub async fn governance_cases(&self) -> Result<Vec<SecurityCase>, String> {
+        let _key = self.get_key().await?;
+        self.sync_governance_cases()
+    }
+
+    pub async fn governance_events(&self) -> Result<Vec<AuditEvent>, String> {
+        let _key = self.get_key().await?;
+        self.store.read_audit_events()
+    }
+
+    pub async fn update_security_case_status(
+        &self,
+        case_id: &str,
+        status: SecurityCaseStatus,
+        owner: Option<String>,
+        due_at: Option<String>,
+        rationale: Option<String>,
+    ) -> Result<SecurityCase, String> {
+        let _key = self.get_key().await?;
+        let mut cases = self.sync_governance_cases()?;
+        let now = current_timestamp();
+        let case = cases
+            .iter_mut()
+            .find(|case| case.id == case_id)
+            .ok_or_else(|| "Security case not found".to_string())?;
+        let event =
+            governance::transition_case(case, status, owner, due_at, rationale, "user", now);
+        let response = case.clone();
+        self.store.write_security_cases(&cases)?;
+        self.store.append_audit_events(&[event])?;
+        Ok(response)
+    }
+
+    pub async fn accept_security_case(
+        &self,
+        case_id: &str,
+        rationale: String,
+        accepted_until: String,
+        impact_scope: String,
+        compensating_controls: String,
+        reviewer: String,
+        owner: Option<String>,
+    ) -> Result<SecurityCase, String> {
+        let _key = self.get_key().await?;
+        if rationale.trim().is_empty() {
+            return Err("Risk acceptance rationale cannot be empty".to_string());
+        }
+        if accepted_until.trim().is_empty() {
+            return Err("Risk acceptance expiry cannot be empty".to_string());
+        }
+        if governance::parse_date_days(&accepted_until).is_none() {
+            return Err("Risk acceptance expiry must use YYYY-MM-DD".to_string());
+        }
+        if impact_scope.trim().is_empty() {
+            return Err("Risk acceptance impact scope cannot be empty".to_string());
+        }
+        if compensating_controls.trim().is_empty() {
+            return Err("Risk acceptance compensating controls cannot be empty".to_string());
+        }
+        if reviewer.trim().is_empty() {
+            return Err("Risk acceptance reviewer cannot be empty".to_string());
+        }
+
+        let mut cases = self.sync_governance_cases()?;
+        let now = current_timestamp();
+        let case = cases
+            .iter_mut()
+            .find(|case| case.id == case_id)
+            .ok_or_else(|| "Security case not found".to_string())?;
+        let event = governance::accept_case(
+            case,
+            rationale.trim().to_string(),
+            accepted_until.trim().to_string(),
+            impact_scope.trim().to_string(),
+            compensating_controls.trim().to_string(),
+            reviewer.trim().to_string(),
+            owner,
+            "user",
+            now,
+        );
+        let response = case.clone();
+        self.store.write_security_cases(&cases)?;
+        self.store.append_audit_events(&[event])?;
+        Ok(response)
+    }
+
+    pub async fn security_assets(&self) -> Result<Vec<SecurityAsset>, String> {
+        let _key = self.get_key().await?;
+        let (_, assets) = self.collect_security_state()?;
+        Ok(assets)
+    }
+
+    pub async fn security_asset_detail(
+        &self,
+        asset_id: Option<&str>,
+        query: Option<&str>,
+    ) -> Result<SecurityAssetDetail, String> {
+        let _key = self.get_key().await?;
+        let (findings, assets) = self.collect_security_state()?;
+        let asset = assets::find_asset(&assets, asset_id, query)
+            .cloned()
+            .ok_or_else(|| "Security asset not found".to_string())?;
+        let cases = self.sync_governance_cases_from_findings(&findings)?;
+        let documents = self.store.get_all_memos()?;
+        Ok(assets::build_asset_detail(
+            asset, &documents, &findings, &cases,
+        ))
+    }
+
+    pub async fn security_asset_graph(
+        &self,
+        asset_id: Option<&str>,
+        query: Option<&str>,
+    ) -> Result<SecurityAssetGraph, String> {
+        let _key = self.get_key().await?;
+        let (findings, assets) = self.collect_security_state()?;
+        let focus_asset_id = if asset_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+            || query
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+        {
+            Some(
+                assets::find_asset(&assets, asset_id, query)
+                    .ok_or_else(|| "Security asset not found".to_string())?
+                    .id
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        let cases = self.sync_governance_cases_from_findings(&findings)?;
+        let documents = self.store.get_all_memos()?;
+        Ok(assets::build_asset_graph(
+            &assets,
+            &documents,
+            &findings,
+            &cases,
+            focus_asset_id.as_deref(),
+        ))
+    }
+
+    pub async fn generate_security_report(&self) -> Result<SecurityReport, String> {
+        self.generate_security_report_with_request(SecurityReportRequest::default())
+            .await
+    }
+
+    pub async fn generate_security_report_with_request(
+        &self,
+        request: SecurityReportRequest,
+    ) -> Result<SecurityReport, String> {
+        let _key = self.get_key().await?;
+        let (all_findings, all_assets) = self.collect_security_state()?;
+        let all_cases = self.sync_governance_cases_from_findings(&all_findings)?;
+        let events = self.store.read_audit_events()?;
+        let checklist_statuses = self.store.read_checklist_statuses()?;
+        let documents = self.store.get_all_memos()?;
+        let scope = request.scope.clone().unwrap_or(SecurityReportScope::All);
+        let now = current_timestamp();
+        let requested_since_days = request.since_days.filter(|days| *days > 0);
+        let since_cutoff =
+            requested_since_days.map(|days| now.saturating_sub(i64::from(days) * 86_400));
+
+        let (
+            report_title,
+            mut scope_summary,
+            mut scope_slug,
+            mut findings,
+            mut assets,
+            mut cases,
+            mut doc_ids,
+        ) = match scope.clone() {
+            SecurityReportScope::All => (
+                "安全治理审计报告".to_string(),
+                "全部本地安全档案".to_string(),
+                "all".to_string(),
+                all_findings.clone(),
+                all_assets.clone(),
+                all_cases.clone(),
+                documents
+                    .iter()
+                    .map(|document| document.id.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            SecurityReportScope::Document => {
+                let doc_id = request
+                    .doc_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "Document id is required for document report".to_string())?;
+                let document = self
+                    .store
+                    .get_memo_metadata(doc_id)?
+                    .ok_or_else(|| "Document not found".to_string())?;
+                let (findings, assets) = self.collect_security_state_for_doc(doc_id)?;
+                let cases = all_cases
+                    .iter()
+                    .filter(|case| case.source_doc_id == doc_id)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (
+                    format!("{} · 安全审计报告", document.title),
+                    format!("单篇文档：{} ({})", document.title, document.file_name),
+                    format!("doc-{}", safe_report_slug(&document.id)),
+                    findings,
+                    assets,
+                    cases,
+                    vec![document.id],
+                )
+            }
+            SecurityReportScope::Asset => {
+                let asset = assets::find_asset(
+                    &all_assets,
+                    request.asset_id.as_deref(),
+                    request.query.as_deref(),
+                )
+                .cloned()
+                .ok_or_else(|| "Security asset not found".to_string())?;
+                let detail =
+                    assets::build_asset_detail(asset, &documents, &all_findings, &all_cases);
+                let doc_ids = detail
+                    .documents
+                    .iter()
+                    .map(|document| document.id.clone())
+                    .collect::<Vec<_>>();
+                (
+                    format!("{} · 资产安全报告", detail.asset.name),
+                    format!("安全资产：{}", detail.asset.name),
+                    format!("asset-{}", safe_report_slug(&detail.asset.id)),
+                    detail.findings,
+                    vec![detail.asset],
+                    detail.cases,
+                    doc_ids,
+                )
+            }
+            SecurityReportScope::Tags => {
+                let requested_tags = normalize_report_tags(request.tags.as_deref());
+                if requested_tags.is_empty() {
+                    return Err("At least one tag is required for tag report".to_string());
+                }
+                let matching_doc_ids = documents
+                    .iter()
+                    .filter(|document| {
+                        let document_tags =
+                            collect_report_tags(document, &all_assets, &all_findings);
+                        report_tags_match(&document_tags, &requested_tags)
+                    })
+                    .map(|document| document.id.clone())
+                    .collect::<HashSet<_>>();
+                let findings = all_findings
+                    .iter()
+                    .filter(|finding| matching_doc_ids.contains(&finding.doc_id))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let assets = all_assets
+                    .iter()
+                    .filter(|asset| {
+                        asset
+                            .source_doc_ids
+                            .iter()
+                            .any(|doc_id| matching_doc_ids.contains(doc_id))
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let cases = all_cases
+                    .iter()
+                    .filter(|case| matching_doc_ids.contains(&case.source_doc_id))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let doc_ids = documents
+                    .iter()
+                    .filter(|document| matching_doc_ids.contains(&document.id))
+                    .map(|document| document.id.clone())
+                    .collect::<Vec<_>>();
+                let tag_summary = requested_tags.join("、");
+                (
+                    "标签范围安全报告".to_string(),
+                    format!("标签：{tag_summary}"),
+                    format!("tags-{}", safe_report_slug(&requested_tags.join("-"))),
+                    findings,
+                    assets,
+                    cases,
+                    doc_ids,
+                )
+            }
+        };
+        if let (Some(days), Some(cutoff)) = (requested_since_days, since_cutoff) {
+            let recent_doc_ids = documents
+                .iter()
+                .filter(|document| document.updated_at >= cutoff)
+                .map(|document| document.id.as_str())
+                .collect::<HashSet<_>>();
+            findings.retain(|finding| recent_doc_ids.contains(finding.doc_id.as_str()));
+            assets.retain(|asset| {
+                asset.last_seen_at >= cutoff
+                    || asset
+                        .source_doc_ids
+                        .iter()
+                        .any(|doc_id| recent_doc_ids.contains(doc_id.as_str()))
+            });
+            cases.retain(|case| {
+                case.updated_at >= cutoff || recent_doc_ids.contains(case.source_doc_id.as_str())
+            });
+            doc_ids.retain(|doc_id| recent_doc_ids.contains(doc_id.as_str()));
+            scope_summary = format!("{scope_summary} · 最近 {days} 天");
+            scope_slug = format!("{scope_slug}-recent-{days}");
+        }
+
+        let case_ids = cases
+            .iter()
+            .map(|case| case.id.as_str())
+            .collect::<HashSet<_>>();
+        let doc_id_set = doc_ids.iter().map(String::as_str).collect::<HashSet<_>>();
+        let mut filtered_events = if matches!(scope, SecurityReportScope::All) {
+            events.clone()
+        } else {
+            events
+                .iter()
+                .filter(|event| {
+                    case_ids.contains(event.target_id.as_str())
+                        || doc_id_set.contains(event.target_id.as_str())
+                        || event
+                            .metadata
+                            .get("docId")
+                            .and_then(serde_json::Value::as_str)
+                            .is_some_and(|doc_id| doc_id_set.contains(doc_id))
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if let Some(cutoff) = since_cutoff {
+            filtered_events.retain(|event| event.created_at >= cutoff);
+        }
+        let mut risk_diffs = Vec::new();
+        for doc_id in &doc_ids {
+            if let Ok(diff) = self.document_risk_diff(doc_id, None).await {
+                risk_diffs.push(diff);
+            }
+        }
+        let checklist_doc_id = if matches!(scope, SecurityReportScope::Document) {
+            doc_ids.first().map(String::as_str)
+        } else {
+            None
+        };
+        let checklist = standards::build_checklist(
+            checklist_doc_id,
+            &findings,
+            &assets,
+            &checklist_statuses,
+            now,
+        );
+        let markdown = reports::render_security_report(
+            &report_title,
+            &scope_summary,
+            &findings,
+            &assets,
+            &cases,
+            &filtered_events,
+            &checklist.items,
+            &checklist.standards,
+            &risk_diffs,
+            now,
+        );
+        let id = format!("report-{now}");
+        let file_name = format!("security-report-{scope_slug}-{now}.md");
+        let path = self.store.write_security_report(&file_name, &markdown)?;
+        let summary = format!("包含 {} 个风险、{} 个治理项。", findings.len(), cases.len());
+        let report_case_ids = cases.iter().map(|case| case.id.clone()).collect::<Vec<_>>();
+        let report_asset_ids = assets
+            .iter()
+            .map(|asset| asset.id.clone())
+            .collect::<Vec<_>>();
+        let event = governance::audit_event(
+            "reportGenerated",
+            "user",
+            &id,
+            &format!("生成安全审计报告：{file_name}"),
+            now,
+            serde_json::json!({
+                "fileName": file_name.clone(),
+                "scope": scope_summary,
+                "tags": request.tags.clone(),
+                "sinceDays": request.since_days,
+                "sinceCutoff": since_cutoff,
+                "docIds": doc_ids.clone(),
+                "caseIds": report_case_ids,
+                "assetIds": report_asset_ids,
+                "findingCount": findings.len(),
+                "caseCount": cases.len(),
+            }),
+        );
+        self.store.append_audit_events(&[event])?;
+
+        Ok(SecurityReport {
+            id,
+            file_name,
+            path: path.to_string_lossy().to_string(),
+            markdown,
+            summary,
+            created_at: now,
+        })
+    }
+
+    pub async fn safe_share_document(
+        &self,
+        request: SafeShareRequest,
+    ) -> Result<SafeShareExport, String> {
+        let _key = self.get_key().await?;
+        let doc_id = request.doc_id.trim();
+        if doc_id.is_empty() || doc_id == "new" {
+            return Err("Document id is required for safe share".to_string());
+        }
+        let document = self
+            .store
+            .get_memo_metadata(doc_id)?
+            .ok_or_else(|| "Document not found".to_string())?;
+        let source_markdown = match request.markdown {
+            Some(markdown) => markdown,
+            None => self.store.read_document_file(&document.file_name)?,
+        };
+        let redacted = redactor::redact_secrets(&source_markdown);
+        let statuses = self.store.read_finding_statuses()?;
+        let now = current_timestamp();
+        let scan = audit::scan_markdown(&document.id, &redacted.text, &statuses, now);
+        let include_audit = request.include_audit.unwrap_or(true);
+        let markdown = reports::render_safe_share_markdown(
+            &document.title,
+            &document.file_name,
+            &redacted.text,
+            redacted.secrets.len(),
+            &scan.findings,
+            include_audit,
+            now,
+        );
+        let id = format!("safe-share-{now}");
+        let file_name = format!("safe-share-{}-{now}.md", safe_report_slug(&document.id));
+        let path = self.store.write_security_report(&file_name, &markdown)?;
+        let summary = format!(
+            "安全分享已脱敏 {} 处，附带 {} 个审计发现。",
+            redacted.secrets.len(),
+            scan.findings.len()
+        );
+        let event = governance::audit_event(
+            "safeShareExported",
+            "user",
+            &document.id,
+            &format!("生成安全分享文件：{file_name}"),
+            now,
+            serde_json::json!({
+                "docId": document.id,
+                "fileName": file_name.clone(),
+                "includeAudit": include_audit,
+                "redactedSecretCount": redacted.secrets.len(),
+                "findingCount": scan.findings.len(),
+            }),
+        );
+        self.store.append_audit_events(&[event])?;
+
+        Ok(SafeShareExport {
+            id,
+            file_name,
+            path: path.to_string_lossy().to_string(),
+            markdown,
+            summary,
+            redacted_secret_count: redacted.secrets.len(),
+            finding_count: scan.findings.len(),
+            created_at: now,
+        })
+    }
+
+    pub async fn standards_list(&self) -> Result<Vec<StandardEntry>, String> {
+        let _key = self.get_key().await?;
+        Ok(standards::builtin_standards())
+    }
+
+    pub async fn standards_checklist(
+        &self,
+        doc_id: Option<&str>,
+    ) -> Result<StandardsChecklistResponse, String> {
+        let _key = self.get_key().await?;
+        let (findings, assets) = match doc_id.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(doc_id) => self.collect_security_state_for_doc(doc_id)?,
+            None => self.collect_security_state()?,
+        };
+        let statuses = self.store.read_checklist_statuses()?;
+        Ok(standards::build_checklist(
+            doc_id,
+            &findings,
+            &assets,
+            &statuses,
+            current_timestamp(),
+        ))
+    }
+
+    pub async fn update_checklist_item_status(
+        &self,
+        doc_id: Option<String>,
+        item_id: &str,
+        status: ChecklistStatus,
+        note: Option<String>,
+    ) -> Result<ChecklistItem, String> {
+        let _key = self.get_key().await?;
+        let item_id = item_id.trim();
+        if item_id.is_empty() {
+            return Err("Checklist item id cannot be empty".to_string());
+        }
+        let doc_id = doc_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let checklist = self.standards_checklist(doc_id.as_deref()).await?;
+        if !checklist.items.iter().any(|item| item.id == item_id) {
+            return Err("Checklist item not found".to_string());
+        }
+        let now = current_timestamp();
+        self.store.set_checklist_status(
+            doc_id.as_deref(),
+            item_id,
+            standards::ChecklistStatusRecord {
+                item_id: item_id.to_string(),
+                status,
+                note: note
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty()),
+                updated_at: now,
+            },
+        )?;
+        let checklist = self.standards_checklist(doc_id.as_deref()).await?;
+        checklist
+            .items
+            .into_iter()
+            .find(|item| item.id == item_id)
+            .ok_or_else(|| "Checklist item not found".to_string())
+    }
+
+    fn collect_security_state(&self) -> Result<(Vec<SecurityFinding>, Vec<SecurityAsset>), String> {
+        let statuses = self.store.read_finding_statuses()?;
+        let mut all_findings = Vec::new();
+        let mut asset_sets = Vec::new();
+        let now = current_timestamp();
+
+        for meta in self.store.get_all_memos()? {
+            let markdown = self.store.read_document_file(&meta.file_name)?;
+            let scan = audit::scan_markdown(&meta.id, &markdown, &statuses, now);
+            all_findings.extend(scan.findings);
+            asset_sets.push(assets::extract_assets(
+                &meta.id,
+                &meta.title,
+                &markdown,
+                meta.updated_at,
+            ));
+        }
+
+        Ok((all_findings, assets::merge_assets(asset_sets)))
+    }
+
+    fn collect_security_state_for_doc(
+        &self,
+        doc_id: &str,
+    ) -> Result<(Vec<SecurityFinding>, Vec<SecurityAsset>), String> {
+        let meta = self
+            .store
+            .get_memo_metadata(doc_id)?
+            .ok_or_else(|| "Document not found".to_string())?;
+        let markdown = self.store.read_document_file(&meta.file_name)?;
+        let statuses = self.store.read_finding_statuses()?;
+        let scan = audit::scan_markdown(&meta.id, &markdown, &statuses, current_timestamp());
+        let assets = assets::extract_assets(&meta.id, &meta.title, &markdown, meta.updated_at);
+        Ok((scan.findings, assets))
+    }
+
+    fn sync_governance_cases(&self) -> Result<Vec<SecurityCase>, String> {
+        let (findings, _) = self.collect_security_state()?;
+        self.sync_governance_cases_from_findings(&findings)
+    }
+
+    fn sync_governance_cases_from_findings(
+        &self,
+        findings: &[SecurityFinding],
+    ) -> Result<Vec<SecurityCase>, String> {
+        let existing_cases = self.store.read_security_cases()?;
+        let (cases, events) =
+            governance::sync_cases_with_findings(existing_cases, findings, current_timestamp());
+        self.store.write_security_cases(&cases)?;
+        self.store.append_audit_events(&events)?;
+        Ok(cases)
+    }
+
+    fn persist_document_risk_snapshot(
+        &self,
+        doc_id: &str,
+        markdown: &str,
+        saved_at: i64,
+        previous_snapshot: Option<DocumentRiskSnapshot>,
+    ) -> Result<DocumentRiskDiff, String> {
+        let statuses = self.store.read_finding_statuses()?;
+        let scan = audit::scan_markdown(doc_id, markdown, &statuses, saved_at);
+        let current = history::build_snapshot(doc_id, saved_at, markdown, scan.findings);
+        let diff = history::diff_snapshots(doc_id, previous_snapshot.as_ref(), &current);
+        self.store.write_document_risk_snapshot(&current)?;
+
+        let changed_count = diff.summary.added
+            + diff.summary.resolved
+            + diff.summary.severity_changed
+            + diff.summary.moved;
+        if previous_snapshot.is_some() && changed_count > 0 {
+            let event = governance::audit_event(
+                "riskDiff",
+                "user",
+                doc_id,
+                &format!(
+                    "文档风险变化：新增 {}，修复 {}，移动 {}，等级变化 {}。",
+                    diff.summary.added,
+                    diff.summary.resolved,
+                    diff.summary.moved,
+                    diff.summary.severity_changed
+                ),
+                saved_at,
+                serde_json::json!({
+                    "docId": doc_id,
+                    "added": diff.summary.added,
+                    "resolved": diff.summary.resolved,
+                    "moved": diff.summary.moved,
+                    "severityChanged": diff.summary.severity_changed,
+                    "previousHash": diff.previous_hash,
+                    "currentHash": diff.current_hash,
+                }),
+            );
+            self.store.append_audit_events(&[event])?;
+        }
+
+        Ok(diff)
     }
 
     pub async fn list_secrets(&self) -> Result<Vec<SecretListItem>, String> {
@@ -832,6 +1678,7 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
 
         // Delete metadata & embedding
         self.store.delete_memo_metadata(id)?;
+        self.store.delete_document_risk_snapshot(id)?;
 
         Ok(())
     }
@@ -997,6 +1844,195 @@ fn split_document_secret_entry_key(id: &str) -> Option<(String, String)> {
 
 fn is_system_secret_id(id: &str) -> bool {
     id.starts_with("__rusttool_config:")
+}
+
+fn normalize_report_tags(tags: Option<&[String]>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    let mut seen = HashSet::new();
+    for tag in tags.unwrap_or_default() {
+        for part in
+            tag.split(|ch: char| ch.is_whitespace() || matches!(ch, ',' | '，' | '、' | ';' | '；'))
+        {
+            let clean = normalize_report_tag(part);
+            if !clean.is_empty() && seen.insert(clean.clone()) {
+                normalized.push(clean);
+            }
+        }
+    }
+    normalized
+}
+
+fn normalize_report_tag(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .chars()
+        .filter(|ch| ch.is_alphanumeric() || matches!(ch, '-' | '_' | '/' | '.'))
+        .collect()
+}
+
+fn collect_report_tags(
+    document: &MemoMetadata,
+    assets: &[SecurityAsset],
+    findings: &[SecurityFinding],
+) -> HashSet<String> {
+    let mut tags = HashSet::new();
+    insert_report_tag(&mut tags, &document.title);
+    insert_report_tag(&mut tags, &document.summary);
+    insert_report_tag(&mut tags, &document.file_name);
+
+    for asset in assets
+        .iter()
+        .filter(|asset| asset.source_doc_ids.contains(&document.id))
+    {
+        insert_report_tag(&mut tags, &asset.name);
+        for alias in &asset.aliases {
+            insert_report_tag(&mut tags, alias);
+        }
+        for tag in &asset.tags {
+            insert_report_tag(&mut tags, tag);
+        }
+        insert_asset_type_report_tags(&mut tags, &asset.asset_type);
+    }
+
+    for finding in findings
+        .iter()
+        .filter(|finding| finding.doc_id.as_str() == document.id.as_str())
+    {
+        insert_report_tag(&mut tags, &finding.title);
+        insert_severity_report_tags(&mut tags, &finding.severity);
+        insert_finding_kind_report_tags(&mut tags, &finding.kind);
+    }
+
+    tags
+}
+
+fn report_tags_match(candidates: &HashSet<String>, requested: &[String]) -> bool {
+    requested.iter().any(|tag| {
+        candidates
+            .iter()
+            .any(|candidate| candidate == tag || candidate.contains(tag))
+    })
+}
+
+fn insert_report_tag(tags: &mut HashSet<String>, value: &str) {
+    let clean = normalize_report_tag(value);
+    if !clean.is_empty() {
+        tags.insert(clean);
+    }
+}
+
+fn insert_asset_type_report_tags(tags: &mut HashSet<String>, asset_type: &SecurityAssetType) {
+    match asset_type {
+        SecurityAssetType::Service => {
+            tags.insert("service".to_string());
+            tags.insert("服务".to_string());
+        }
+        SecurityAssetType::ApiEndpoint => {
+            tags.insert("api".to_string());
+            tags.insert("endpoint".to_string());
+            tags.insert("接口".to_string());
+        }
+        SecurityAssetType::Url => {
+            tags.insert("url".to_string());
+            tags.insert("http".to_string());
+            tags.insert("链接".to_string());
+        }
+        SecurityAssetType::Secret => {
+            tags.insert("secret".to_string());
+            tags.insert("密钥".to_string());
+        }
+        SecurityAssetType::Database => {
+            tags.insert("database".to_string());
+            tags.insert("db".to_string());
+            tags.insert("数据库".to_string());
+        }
+        SecurityAssetType::Dependency => {
+            tags.insert("dependency".to_string());
+            tags.insert("package".to_string());
+            tags.insert("依赖".to_string());
+        }
+        SecurityAssetType::Environment => {
+            tags.insert("environment".to_string());
+            tags.insert("env".to_string());
+            tags.insert("环境".to_string());
+        }
+        SecurityAssetType::DataType => {
+            tags.insert("data".to_string());
+            tags.insert("datatype".to_string());
+            tags.insert("数据类型".to_string());
+        }
+    }
+}
+
+fn insert_severity_report_tags(tags: &mut HashSet<String>, severity: &FindingSeverity) {
+    match severity {
+        FindingSeverity::Critical => {
+            tags.insert("critical".to_string());
+            tags.insert("高危".to_string());
+        }
+        FindingSeverity::Warning => {
+            tags.insert("warning".to_string());
+            tags.insert("警告".to_string());
+        }
+        FindingSeverity::Info => {
+            tags.insert("info".to_string());
+            tags.insert("提示".to_string());
+        }
+    }
+}
+
+fn insert_finding_kind_report_tags(tags: &mut HashSet<String>, kind: &FindingKind) {
+    match kind {
+        FindingKind::HardcodedSecret => {
+            tags.insert("secret".to_string());
+            tags.insert("hardcoded-secret".to_string());
+            tags.insert("密钥".to_string());
+        }
+        FindingKind::WeakJwt => {
+            tags.insert("jwt".to_string());
+            tags.insert("token".to_string());
+            tags.insert("令牌".to_string());
+        }
+        FindingKind::InsecureLink => {
+            tags.insert("http".to_string());
+            tags.insert("url".to_string());
+            tags.insert("链接".to_string());
+        }
+        FindingKind::SensitiveOperation => {
+            tags.insert("ops".to_string());
+            tags.insert("operation".to_string());
+            tags.insert("运维".to_string());
+        }
+        FindingKind::GovernanceGap => {
+            tags.insert("governance".to_string());
+            tags.insert("治理".to_string());
+        }
+    }
+}
+
+fn safe_report_slug(value: &str) -> String {
+    let normalized = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let slug = normalized
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.is_empty() {
+        "scope".to_string()
+    } else {
+        slug
+    }
 }
 
 fn extract_secret_placeholders(markdown: &str) -> Vec<String> {
@@ -1280,6 +2316,50 @@ mod tests {
             .expect("get locked document");
         assert!(locked_detail.secrets.is_empty());
         assert!(!locked_detail.unlocked);
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[tokio::test]
+    async fn save_document_reports_risk_diff_against_previous_snapshot() {
+        let temp_dir = make_test_dir("risk_diff_save");
+        let manager = MemoManager::new(&temp_dir).expect("manager");
+        assert!(manager
+            .unlock("test-master-password")
+            .await
+            .expect("unlock"));
+
+        let first = manager
+            .save_document_with_risk_diff(
+                None,
+                "audit.md",
+                "Audit",
+                "api_key = \"sk-test-1234567890abcdef\"",
+                HashMap::new(),
+                "Audit sample",
+            )
+            .await
+            .expect("first save");
+        assert_eq!(first.risk_diff.summary.current_total, 1);
+        assert!(first.risk_diff.previous_saved_at.is_none());
+
+        let second = manager
+            .save_document_with_risk_diff(
+                Some(first.metadata.id.clone()),
+                "audit.md",
+                "Audit",
+                "api_key = {{secret:apiKey}}",
+                HashMap::from([("apiKey".to_string(), "sk-test-1234567890abcdef".to_string())]),
+                "Audit sample",
+            )
+            .await
+            .expect("second save");
+
+        assert_eq!(second.risk_diff.summary.resolved, 1);
+        assert_eq!(second.risk_diff.summary.current_total, 0);
+        assert!(!serde_json::to_string(&second.risk_diff)
+            .expect("serialize diff")
+            .contains("sk-test-1234567890abcdef"));
 
         let _ = fs::remove_dir_all(temp_dir);
     }

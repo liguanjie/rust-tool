@@ -30,6 +30,7 @@ pub fn redact_secrets(input: &str) -> RedactedInput {
     collect_pem_blocks(input, &mut candidates);
     collect_bearer_tokens(input, &mut candidates);
     collect_labelled_values(input, &mut candidates);
+    collect_connection_url_credentials(input, &mut candidates);
     collect_prefixed_tokens(input, &mut candidates);
     collect_jwt_tokens(input, &mut candidates);
 
@@ -187,6 +188,48 @@ fn collect_prefixed_tokens(input: &str, candidates: &mut Vec<Candidate>) {
                 }
             }
             cursor = start + prefix.len();
+        }
+    }
+}
+
+fn collect_connection_url_credentials(input: &str, candidates: &mut Vec<Candidate>) {
+    let schemes = [
+        "postgresql://",
+        "postgres://",
+        "mysql://",
+        "mongodb://",
+        "redis://",
+        "jdbc:postgresql://",
+        "jdbc:mysql://",
+    ];
+    let lower = input.to_lowercase();
+    for scheme in schemes {
+        let mut cursor = 0;
+        while let Some(relative_start) = lower[cursor..].find(scheme) {
+            let scheme_start = cursor + relative_start;
+            let credentials_start = scheme_start + scheme.len();
+            let segment_end = input[credentials_start..]
+                .char_indices()
+                .find_map(|(offset, ch)| {
+                    is_value_terminator(ch).then_some(credentials_start + offset)
+                })
+                .unwrap_or(input.len());
+            let segment = &input[credentials_start..segment_end];
+            let Some(at_offset) = segment.find('@') else {
+                cursor = credentials_start.saturating_add(1);
+                continue;
+            };
+            let credentials_end = credentials_start + at_offset;
+            let value = input[credentials_start..credentials_end].to_string();
+            if value.contains(':') && is_probably_secret_value(&value) {
+                candidates.push(Candidate {
+                    start: credentials_start,
+                    end: credentials_end,
+                    value,
+                    label: "connectionUrlCredentials".to_string(),
+                });
+            }
+            cursor = credentials_end.saturating_add(1);
         }
     }
 }
@@ -369,6 +412,23 @@ mod tests {
 
         assert_eq!(redacted.text, "Authorization: Bearer {{secret:pending_1}}");
         assert_eq!(redacted.secrets[0].value, "abc.def.ghi123456789");
+    }
+
+    #[test]
+    fn redacts_connection_url_credentials() {
+        let redacted = redact_secrets(
+            "连接 postgresql://user:secret@db.internal:5432/payments 以及 redis://:pass@cache:6379",
+        );
+
+        assert!(!redacted.text.contains("user:secret"));
+        assert!(!redacted.text.contains(":pass@"));
+        assert!(redacted
+            .text
+            .contains("postgresql://{{secret:pending_1}}@db.internal:5432/payments"));
+        assert!(redacted
+            .text
+            .contains("redis://{{secret:pending_2}}@cache:6379"));
+        assert_eq!(redacted.secrets.len(), 2);
     }
 
     #[test]

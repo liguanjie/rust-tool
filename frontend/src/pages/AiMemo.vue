@@ -52,6 +52,279 @@ interface SearchAnswerResponse {
   sources: SearchSourceDoc[]
 }
 
+type FindingSeverity = 'critical' | 'warning' | 'info'
+type FindingStatus = 'open' | 'fixed' | 'ignored' | 'reviewing'
+type FindingKind = 'hardcodedSecret' | 'weakJwt' | 'insecureLink' | 'sensitiveOperation' | 'governanceGap'
+type SecurityCaseType = 'risk' | 'exception' | 'review'
+type SecurityAssetType = 'url' | 'apiEndpoint' | 'secret' | 'service' | 'database' | 'dependency' | 'environment' | 'dataType'
+type SecurityGraphNodeType = 'document' | 'asset' | 'finding' | 'secret' | 'case'
+type SecurityGraphEdgeType = 'documentAsset' | 'assetFinding' | 'assetSecret' | 'findingCase' | 'assetCase'
+type SecurityReportScope = 'all' | 'document' | 'asset' | 'tags'
+type MemoView = 'archive' | 'workspace'
+type SecurityCaseStatus =
+  | 'open'
+  | 'acknowledged'
+  | 'accepted'
+  | 'fixing'
+  | 'fixed'
+  | 'reviewing'
+  | 'closed'
+  | 'reopened'
+type RightPanelTab = 'assistant' | 'audit' | 'preview'
+
+interface SecurityFinding {
+  id: string
+  docId: string
+  lineStart: number
+  lineEnd: number
+  severity: FindingSeverity
+  kind: FindingKind
+  title: string
+  detail: string
+  evidence: string
+  recommendation: string
+  status: FindingStatus
+}
+
+interface AuditSummary {
+  total: number
+  critical: number
+  warning: number
+  info: number
+  open: number
+  ignored: number
+  fixed: number
+  reviewing: number
+  lastScannedAt: number
+}
+
+interface DocumentRiskListSummary {
+  total: number
+  critical: number
+  warning: number
+  info: number
+  reviewing: number
+}
+
+interface AuditFixPreview {
+  patchMarkdown: string
+  explanation: string
+}
+
+interface DetectedSecret {
+  key: string
+  placeholder: string
+  value: string
+  label: string
+}
+
+interface RedactMarkdownResponse {
+  markdown: string
+  secrets: DetectedSecret[]
+  redactedSecretCount: number
+}
+
+interface GovernanceSummary {
+  riskSummary: {
+    total: number
+    open: number
+    critical: number
+    warning: number
+    info: number
+    reviewing: number
+    ignored: number
+    accepted: number
+    expiringSoon: number
+    expiredAcceptances: number
+  }
+  assetSummary: {
+    total: number
+    services: number
+    apiEndpoints: number
+    urls: number
+    secrets: number
+    databases?: number
+    dependencies?: number
+    environments?: number
+    dataTypes?: number
+  }
+  recentFindings: SecurityFinding[]
+  recentAssets: Array<{ id: string; name: string; assetType: string }>
+  recentActivities: Array<{ id: string; title: string; summary: string; createdAt: number }>
+}
+
+interface SecurityCaseEvent {
+  eventType: string
+  summary: string
+  createdAt: number
+}
+
+interface SecurityCase {
+  id: string
+  caseType: SecurityCaseType
+  title: string
+  severity: FindingSeverity
+  status: SecurityCaseStatus
+  sourceDocId: string
+  sourceFindingId?: string | null
+  linkedAssets: string[]
+  owner?: string | null
+  dueAt?: string | null
+  acceptedUntil?: string | null
+  rationale?: string | null
+  impactScope?: string | null
+  compensatingControls?: string | null
+  reviewer?: string | null
+  createdAt: number
+  updatedAt: number
+  events: SecurityCaseEvent[]
+}
+
+interface SecurityAsset {
+  id: string
+  assetType: SecurityAssetType
+  name: string
+  aliases: string[]
+  tags: string[]
+  sourceDocIds: string[]
+  linkedSecretKeys: string[]
+  linkedCaseIds: string[]
+  lastSeenAt: number
+}
+
+interface SecurityAssetDetail {
+  asset: SecurityAsset
+  documents: Array<{ id: string; title: string; fileName: string; summary: string; updatedAt: number }>
+  findings: SecurityFinding[]
+  cases: SecurityCase[]
+}
+
+interface SecurityGraphNode {
+  id: string
+  nodeType: SecurityGraphNodeType
+  label: string
+  severity?: FindingSeverity | null
+  status?: string | null
+}
+
+interface SecurityGraphEdge {
+  id: string
+  edgeType: SecurityGraphEdgeType
+  from: string
+  to: string
+  label: string
+}
+
+interface SecurityAssetGraph {
+  nodes: SecurityGraphNode[]
+  edges: SecurityGraphEdge[]
+}
+
+interface DocumentRiskDiffSummary {
+  added: number
+  resolved: number
+  severityChanged: number
+  moved: number
+  unchanged: number
+  previousTotal: number
+  currentTotal: number
+}
+
+interface DocumentRiskDiffItem {
+  fingerprint: string
+  title: string
+  severity: FindingSeverity
+  previousSeverity?: FindingSeverity | null
+  kind: FindingKind
+  lineStart: number
+  lineEnd: number
+  previousLineStart?: number | null
+  previousLineEnd?: number | null
+  evidence: string
+  status: FindingStatus
+}
+
+interface DocumentRiskDiff {
+  docId: string
+  previousSavedAt?: number | null
+  currentSavedAt: number
+  previousHash?: string | null
+  currentHash: string
+  added: DocumentRiskDiffItem[]
+  resolved: DocumentRiskDiffItem[]
+  changed: DocumentRiskDiffItem[]
+  summary: DocumentRiskDiffSummary
+}
+
+interface AuditEvent {
+  id: string
+  eventType: string
+  actor: string
+  targetId: string
+  summary: string
+  createdAt: number
+  metadata: Record<string, unknown>
+}
+
+interface SecurityReport {
+  id: string
+  fileName: string
+  path: string
+  markdown: string
+  summary: string
+  createdAt: number
+}
+
+interface SafeShareExport {
+  id: string
+  fileName: string
+  path: string
+  markdown: string
+  summary: string
+  redactedSecretCount: number
+  findingCount: number
+  createdAt: number
+}
+
+type ChecklistStatus = 'open' | 'done' | 'waived'
+
+interface StandardEntry {
+  id: string
+  category: string
+  title: string
+  description: string
+  controls: string[]
+}
+
+interface ChecklistItem {
+  id: string
+  title: string
+  description: string
+  standardIds: string[]
+  recommended: boolean
+  status: ChecklistStatus
+  note?: string | null
+  evidence: string[]
+  updatedAt?: number | null
+}
+
+interface StandardsChecklistResponse {
+  docId?: string | null
+  items: ChecklistItem[]
+  standards: StandardEntry[]
+  updatedAt: number
+}
+
+interface CaseActionDraft {
+  owner: string
+  dueAt: string
+  rationale: string
+  acceptedUntil: string
+  impactScope: string
+  compensatingControls: string
+  reviewer: string
+}
+
 type SettingsTab = 'ai' | 'data' | 'backup' | 'security'
 
 // --- Dialog state and helper functions ---
@@ -163,9 +436,10 @@ const searchFilter = ref('')
 const listLoading = ref(false)
 
 // Selection & editing
-const showEditorSecrets = ref(true)
+const showEditorSecrets = ref(false)
 const showDocSidebar = ref(true)
 const selectedDocId = ref<string | null>(null)
+const activeMemoView = ref<MemoView>('archive')
 const editingDoc = ref<any>({
   id: '',
   title: '',
@@ -177,6 +451,35 @@ const editingDoc = ref<any>({
 const editorSecretsList = ref<Array<{ key: string; value: string; masked: boolean; aiLoading?: boolean }>>([])
 const editorAiInstruction = ref('')
 const editorAiLoading = ref(false)
+const documentRedactLoading = ref(false)
+
+// Audit and governance state
+const rightPanelTab = ref<RightPanelTab>('audit')
+const auditFindings = ref<SecurityFinding[]>([])
+const auditSummary = ref<AuditSummary | null>(null)
+const auditLoading = ref(false)
+const batchFixLoading = ref(false)
+const selectedFindingId = ref<string | null>(null)
+const governanceSummary = ref<GovernanceSummary | null>(null)
+const governanceCases = ref<SecurityCase[]>([])
+const governanceEvents = ref<AuditEvent[]>([])
+const securityAssets = ref<SecurityAsset[]>([])
+const selectedAssetDetail = ref<SecurityAssetDetail | null>(null)
+const securityAssetGraph = ref<SecurityAssetGraph | null>(null)
+const documentRiskDiff = ref<DocumentRiskDiff | null>(null)
+const governanceLoading = ref(false)
+const assetLoading = ref(false)
+const graphLoading = ref(false)
+const diffLoading = ref(false)
+const caseActionDrafts = ref<Record<string, CaseActionDraft>>({})
+const caseActionLoading = ref<Record<string, boolean>>({})
+const reportLoading = ref(false)
+const safeShareLoading = ref(false)
+const reportTagsInput = ref('secret jwt')
+const standardsChecklist = ref<StandardsChecklistResponse | null>(null)
+const checklistLoading = ref(false)
+const checklistActionLoading = ref<Record<string, boolean>>({})
+const selectedTextRange = ref<{ start: number; end: number; text: string } | null>(null)
 
 // Chat state
 const chatInput = ref('')
@@ -233,6 +536,115 @@ const filteredDocs = computed(() => {
       doc.summary.toLowerCase().includes(query) ||
       doc.fileName.toLowerCase().includes(query)
   )
+})
+
+const activeFindings = computed(() =>
+  auditFindings.value.filter((finding) => finding.status !== 'ignored' && finding.status !== 'fixed')
+)
+
+const batchFixCandidates = computed(() =>
+  activeFindings.value.filter((finding) => finding.status === 'open' || finding.status === 'reviewing')
+)
+
+const selectedFinding = computed(() =>
+  auditFindings.value.find((finding) => finding.id === selectedFindingId.value) || null
+)
+
+const editorLineNumbers = computed(() => {
+  const lineCount = Math.max(1, (editingDoc.value.markdown || '').split('\n').length)
+  return Array.from({ length: lineCount }, (_, index) => index + 1)
+})
+
+const riskLineMap = computed(() => {
+  const map = new Map<number, SecurityFinding[]>()
+  for (const finding of activeFindings.value) {
+    for (let line = finding.lineStart; line <= finding.lineEnd; line += 1) {
+      const current = map.get(line) || []
+      current.push(finding)
+      map.set(line, current)
+    }
+  }
+  return map
+})
+
+const governanceRiskSummary = computed(() => governanceSummary.value?.riskSummary)
+const governanceAssetSummary = computed(() => governanceSummary.value?.assetSummary)
+const dashboardOpenCases = computed(() =>
+  governanceCases.value
+    .filter((item) => ['open', 'acknowledged', 'fixing', 'reviewing', 'reopened'].includes(item.status))
+    .slice(0, 5)
+)
+const dashboardReviewCases = computed(() =>
+  governanceCases.value.filter((item) => item.status === 'reviewing').slice(0, 4)
+)
+const dashboardRecentDocs = computed(() =>
+  [...documents.value]
+    .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0))
+    .slice(0, 4)
+)
+const dashboardRecentFindings = computed(() => governanceSummary.value?.recentFindings?.slice(0, 5) || [])
+const dashboardRecentAssets = computed(() => governanceSummary.value?.recentAssets?.slice(0, 8) || [])
+const dashboardRecentActivities = computed(() => governanceSummary.value?.recentActivities?.slice(0, 6) || [])
+const visibleGovernanceCases = computed(() => governanceCases.value.slice(0, 6))
+const visibleGovernanceEvents = computed(() => governanceEvents.value.slice(-4).reverse())
+const visibleSecurityAssets = computed(() => securityAssets.value.slice(0, 8))
+const visibleGraphNodes = computed(() => securityAssetGraph.value?.nodes.slice(0, 12) || [])
+const visibleGraphEdges = computed(() => securityAssetGraph.value?.edges.slice(0, 12) || [])
+const hasRiskDiffChanges = computed(() => {
+  const summary = documentRiskDiff.value?.summary
+  if (!summary) return false
+  return summary.added + summary.resolved + summary.severityChanged + summary.moved > 0
+})
+const visibleRiskDiffItems = computed(() => {
+  const diff = documentRiskDiff.value
+  if (!diff) return []
+  return [
+    ...diff.added.map((item) => ({ ...item, changeType: 'added' as const })),
+    ...diff.resolved.map((item) => ({ ...item, changeType: 'resolved' as const })),
+    ...diff.changed.map((item) => ({ ...item, changeType: 'changed' as const })),
+  ].slice(0, 4)
+})
+const visibleChecklistItems = computed(() => standardsChecklist.value?.items.slice(0, 5) || [])
+const standardsById = computed(() => {
+  const map = new Map<string, StandardEntry>()
+  for (const standard of standardsChecklist.value?.standards || []) {
+    map.set(standard.id, standard)
+  }
+  return map
+})
+const documentRiskSummaryMap = computed(() => {
+  const map = new Map<string, DocumentRiskListSummary>()
+  for (const doc of documents.value) {
+    if (doc.id) map.set(doc.id, emptyDocumentRiskSummary())
+  }
+
+  for (const caseItem of governanceCases.value) {
+    if (!caseItem.sourceDocId || ['closed', 'fixed'].includes(caseItem.status)) continue
+    const summary = map.get(caseItem.sourceDocId) || emptyDocumentRiskSummary()
+    summary.total += 1
+    if (caseItem.severity === 'critical') summary.critical += 1
+    else if (caseItem.severity === 'warning') summary.warning += 1
+    else summary.info += 1
+    if (caseItem.status === 'reviewing') summary.reviewing += 1
+    map.set(caseItem.sourceDocId, summary)
+  }
+
+  const selectedId = selectedDocId.value && selectedDocId.value !== 'new'
+    ? (editingDoc.value.id || selectedDocId.value)
+    : null
+  if (selectedId && auditFindings.value.length > 0) {
+    const summary = emptyDocumentRiskSummary()
+    for (const finding of activeFindings.value) {
+      summary.total += 1
+      if (finding.severity === 'critical') summary.critical += 1
+      else if (finding.severity === 'warning') summary.warning += 1
+      else summary.info += 1
+      if (finding.status === 'reviewing') summary.reviewing += 1
+    }
+    map.set(selectedId, summary)
+  }
+
+  return map
 })
 
 interface TreeNode {
@@ -520,6 +932,10 @@ async function fetchStatus() {
       disableResponseStorage.value = data.disableResponseStorage ?? true
       allowAiSecrets.value = data.allowAiSecrets
       customDataDir.value = data.customDataDir || ''
+      if (data.unlocked) {
+        activeMemoView.value = 'archive'
+        void loadDocuments()
+      }
     }
     await fetchDataDirStatus()
   } catch (e) {
@@ -560,6 +976,7 @@ async function handleUnlock() {
       const data = await res.json()
       if (data.unlocked) {
         unlocked.value = true
+        activeMemoView.value = 'archive'
         masterPassword.value = ''
         await loadDocuments()
         addSystemChatMessage('保密库已成功解锁，您可以开始使用了！')
@@ -582,6 +999,7 @@ async function handleLock() {
       unlocked.value = false
       documents.value = []
       selectedDocId.value = null
+      activeMemoView.value = 'archive'
       addSystemChatMessage('保密库已锁定，内存密钥已销毁。')
     }
   } catch (e) {
@@ -596,11 +1014,407 @@ async function loadDocuments() {
     const res = await memoRequest('/list')
     if (res.ok) {
       documents.value = await res.json()
+      void loadGovernanceSummary()
     }
   } catch (e) {
     console.error('Failed to load documents:', e)
   } finally {
     listLoading.value = false
+  }
+}
+
+async function loadGovernanceSummary() {
+  if (!unlocked.value) return
+  try {
+    governanceLoading.value = true
+    const [summaryRes, casesRes, eventsRes] = await Promise.all([
+      memoRequest('/governance/summary'),
+      memoRequest('/governance/cases'),
+      memoRequest('/governance/events'),
+    ])
+    if (summaryRes.ok) {
+      governanceSummary.value = await summaryRes.json()
+    }
+    if (casesRes.ok) {
+      const cases = await casesRes.json()
+      syncCaseActionDrafts(cases || [])
+      governanceCases.value = cases || []
+    }
+    if (eventsRes.ok) {
+      governanceEvents.value = await eventsRes.json()
+    }
+    void loadSecurityAssets()
+  } catch (e) {
+    console.error('Failed to load governance summary:', e)
+  } finally {
+    governanceLoading.value = false
+  }
+  void loadStandardsChecklist()
+}
+
+async function loadSecurityAssets() {
+  if (!unlocked.value) return
+  try {
+    assetLoading.value = true
+    const res = await memoRequest('/assets/list')
+    if (res.ok) {
+      securityAssets.value = await res.json()
+      if (
+        selectedAssetDetail.value &&
+        !securityAssets.value.some((asset) => asset.id === selectedAssetDetail.value?.asset.id)
+      ) {
+        selectedAssetDetail.value = null
+      }
+      void loadSecurityAssetGraph(selectedAssetDetail.value?.asset || null)
+    }
+  } catch (e) {
+    console.error('Failed to load security assets:', e)
+  } finally {
+    assetLoading.value = false
+  }
+}
+
+async function loadSecurityAssetGraph(asset: SecurityAsset | null = null) {
+  if (!unlocked.value) return
+  const query = asset ? `?assetId=${encodeURIComponent(asset.id)}` : ''
+  try {
+    graphLoading.value = true
+    const res = await memoRequest(`/assets/graph${query}`)
+    if (res.ok) {
+      securityAssetGraph.value = await res.json()
+    }
+  } catch (e) {
+    console.error('Failed to load security asset graph:', e)
+  } finally {
+    graphLoading.value = false
+  }
+}
+
+async function loadStandardsChecklist() {
+  if (!unlocked.value) return
+  const docId =
+    selectedDocId.value && selectedDocId.value !== 'new'
+      ? selectedDocId.value
+      : editingDoc.value.id || ''
+  const query = docId ? `?docId=${encodeURIComponent(docId)}` : ''
+  try {
+    checklistLoading.value = true
+    const res = await memoRequest(`/standards/checklist${query}`)
+    if (res.ok) {
+      standardsChecklist.value = await res.json()
+    }
+  } catch (e) {
+    console.error('Failed to load standards checklist:', e)
+  } finally {
+    checklistLoading.value = false
+  }
+}
+
+function syncCaseActionDrafts(cases: SecurityCase[]) {
+  const next: Record<string, CaseActionDraft> = {}
+  for (const item of cases) {
+    const current = caseActionDrafts.value[item.id]
+    next[item.id] = {
+      owner: current?.owner ?? item.owner ?? '',
+      dueAt: current?.dueAt ?? item.dueAt ?? '',
+      rationale: current?.rationale ?? item.rationale ?? '',
+      acceptedUntil: current?.acceptedUntil ?? item.acceptedUntil ?? '',
+      impactScope: current?.impactScope ?? item.impactScope ?? '',
+      compensatingControls: current?.compensatingControls ?? item.compensatingControls ?? '',
+      reviewer: current?.reviewer ?? item.reviewer ?? '',
+    }
+  }
+  caseActionDrafts.value = next
+}
+
+function cleanDraftValue(value: string) {
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function isCaseBusy(caseId: string) {
+  return Boolean(caseActionLoading.value[caseId])
+}
+
+async function updateCaseStatus(caseItem: SecurityCase, status: SecurityCaseStatus) {
+  const draft = caseActionDrafts.value[caseItem.id]
+  try {
+    caseActionLoading.value = { ...caseActionLoading.value, [caseItem.id]: true }
+    const res = await memoRequest('/governance/case/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        caseId: caseItem.id,
+        status,
+        owner: cleanDraftValue(draft?.owner || ''),
+        dueAt: cleanDraftValue(draft?.dueAt || ''),
+        rationale: cleanDraftValue(draft?.rationale || ''),
+      }),
+    })
+    if (res.ok) {
+      await loadGovernanceSummary()
+    } else {
+      await customAlert('更新治理状态失败: ' + await readApiError(res, '更新失败'), '更新失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('更新治理状态出错: ' + e, '更新失败', 'error')
+  } finally {
+    caseActionLoading.value = { ...caseActionLoading.value, [caseItem.id]: false }
+  }
+}
+
+async function acceptCase(caseItem: SecurityCase) {
+  const draft = caseActionDrafts.value[caseItem.id]
+  const rationale = draft?.rationale.trim() || ''
+  const acceptedUntil = draft?.acceptedUntil.trim() || ''
+  const impactScope = draft?.impactScope.trim() || ''
+  const compensatingControls = draft?.compensatingControls.trim() || ''
+  const reviewer = draft?.reviewer.trim() || ''
+  if (!rationale || !acceptedUntil || !impactScope || !compensatingControls || !reviewer) {
+    await customAlert('接受风险需要填写理由、影响范围、补偿控制、有效期和复核人。', '缺少接受依据', 'warning')
+    return
+  }
+
+  try {
+    caseActionLoading.value = { ...caseActionLoading.value, [caseItem.id]: true }
+    const res = await memoRequest('/governance/case/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        caseId: caseItem.id,
+        rationale,
+        acceptedUntil,
+        impactScope,
+        compensatingControls,
+        reviewer,
+        owner: cleanDraftValue(draft?.owner || ''),
+      }),
+    })
+    if (res.ok) {
+      await loadGovernanceSummary()
+    } else {
+      await customAlert('接受风险失败: ' + await readApiError(res, '接受失败'), '接受失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('接受风险出错: ' + e, '接受失败', 'error')
+  } finally {
+    caseActionLoading.value = { ...caseActionLoading.value, [caseItem.id]: false }
+  }
+}
+
+function parseReportTagsInput() {
+  return reportTagsInput.value
+    .split(/[,\s，、;；]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+}
+
+async function generateSecurityReport(scope: SecurityReportScope = 'all', sinceDays?: number) {
+  const payload: Record<string, string | number | string[]> = { scope }
+  if (sinceDays) {
+    payload.sinceDays = sinceDays
+  }
+  if (scope === 'document') {
+    const docId = selectedDocId.value && selectedDocId.value !== 'new' ? selectedDocId.value : editingDoc.value.id
+    if (!docId) {
+      await customAlert('请先选择一篇文档。', '无法生成文档报告', 'warning')
+      return
+    }
+    payload.docId = docId
+  }
+  if (scope === 'asset') {
+    if (!selectedAssetDetail.value) {
+      await customAlert('请先在资产地图中选择一个资产。', '无法生成资产报告', 'warning')
+      return
+    }
+    payload.assetId = selectedAssetDetail.value.asset.id
+  }
+  if (scope === 'tags') {
+    const tags = parseReportTagsInput()
+    if (tags.length === 0) {
+      await customAlert('请先输入至少一个标签。', '无法生成标签报告', 'warning')
+      return
+    }
+    payload.tags = tags
+  }
+  try {
+    reportLoading.value = true
+    const res = await memoRequest('/reports/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) {
+      const report: SecurityReport = await res.json()
+      await loadGovernanceSummary()
+      await customAlert(`已生成脱敏审计报告：${report.fileName}\n${report.path}`, '报告已生成', 'success')
+    } else {
+      await customAlert('生成报告失败: ' + await readApiError(res, '生成失败'), '生成失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('生成报告出错: ' + e, '生成失败', 'error')
+  } finally {
+    reportLoading.value = false
+  }
+}
+
+async function exportSafeShare() {
+  const docId = selectedDocId.value && selectedDocId.value !== 'new' ? selectedDocId.value : editingDoc.value.id
+  if (!docId) {
+    await customAlert('请先选择一篇已保存的文档。', '无法生成安全分享', 'warning')
+    return
+  }
+  try {
+    safeShareLoading.value = true
+    const res = await memoRequest('/share/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        docId,
+        markdown: editingDoc.value.markdown || '',
+        includeAudit: true,
+      }),
+    })
+    if (res.ok) {
+      const share: SafeShareExport = await res.json()
+      await loadGovernanceSummary()
+      await customAlert(
+        `已生成安全分享文件：${share.fileName}\n${share.path}\n已脱敏 ${share.redactedSecretCount} 处，附带 ${share.findingCount} 个审计发现。`,
+        '安全分享已生成',
+        'success'
+      )
+    } else {
+      await customAlert('生成安全分享失败: ' + await readApiError(res, '生成失败'), '生成失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('生成安全分享出错: ' + e, '生成失败', 'error')
+  } finally {
+    safeShareLoading.value = false
+  }
+}
+
+function checklistStatusLabel(status: ChecklistStatus) {
+  const labels: Record<ChecklistStatus, string> = {
+    open: '待办',
+    done: '已完成',
+    waived: '不适用',
+  }
+  return labels[status]
+}
+
+function checklistStandardsLabel(item: ChecklistItem) {
+  return item.standardIds
+    .map((id) => standardsById.value.get(id)?.title || id)
+    .slice(0, 2)
+    .join(' / ')
+}
+
+function isChecklistBusy(itemId: string) {
+  return Boolean(checklistActionLoading.value[itemId])
+}
+
+async function updateChecklistStatus(item: ChecklistItem, status: ChecklistStatus) {
+  const docId =
+    standardsChecklist.value?.docId ||
+    (selectedDocId.value && selectedDocId.value !== 'new' ? selectedDocId.value : null)
+  try {
+    checklistActionLoading.value = { ...checklistActionLoading.value, [item.id]: true }
+    const res = await memoRequest('/standards/checklist/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        docId,
+        itemId: item.id,
+        status,
+        note: item.note || null,
+      }),
+    })
+    if (res.ok) {
+      await loadStandardsChecklist()
+    } else {
+      await customAlert('更新 checklist 失败: ' + await readApiError(res, '更新失败'), '更新失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('更新 checklist 出错: ' + e, '更新失败', 'error')
+  } finally {
+    checklistActionLoading.value = { ...checklistActionLoading.value, [item.id]: false }
+  }
+}
+
+function assetTypeLabel(type: SecurityAssetType | string) {
+  const labels: Record<string, string> = {
+    service: '服务',
+    apiEndpoint: '接口',
+    url: 'URL',
+    secret: 'Secret',
+    database: '数据库',
+    dependency: '依赖',
+    environment: '环境',
+    dataType: '数据类型',
+  }
+  return labels[type] || type
+}
+
+function graphNodeTypeLabel(type: SecurityGraphNodeType) {
+  const labels: Record<SecurityGraphNodeType, string> = {
+    document: '文档',
+    asset: '资产',
+    finding: '风险',
+    secret: 'Secret',
+    case: '治理',
+  }
+  return labels[type] || type
+}
+
+function graphEdgeTypeLabel(type: SecurityGraphEdgeType) {
+  const labels: Record<SecurityGraphEdgeType, string> = {
+    documentAsset: '文档引用资产',
+    assetFinding: '资产关联风险',
+    assetSecret: '资产使用 Secret',
+    findingCase: '风险进入治理',
+    assetCase: '资产进入治理',
+  }
+  return labels[type] || type
+}
+
+async function selectSecurityAsset(asset: SecurityAsset) {
+  try {
+    assetLoading.value = true
+    const res = await memoRequest(`/assets/detail?assetId=${encodeURIComponent(asset.id)}`)
+    if (res.ok) {
+      selectedAssetDetail.value = await res.json()
+      await loadSecurityAssetGraph(asset)
+    } else {
+      await customAlert('加载资产详情失败: ' + await readApiError(res, '加载失败'), '加载失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('加载资产详情出错: ' + e, '加载失败', 'error')
+  } finally {
+    assetLoading.value = false
+  }
+}
+
+async function openSecurityAssetById(assetId: string) {
+  activeMemoView.value = 'workspace'
+  rightPanelTab.value = 'audit'
+  const existing = securityAssets.value.find((asset) => asset.id === assetId)
+  if (existing) {
+    await selectSecurityAsset(existing)
+    return
+  }
+  try {
+    assetLoading.value = true
+    const res = await memoRequest(`/assets/detail?assetId=${encodeURIComponent(assetId)}`)
+    if (res.ok) {
+      selectedAssetDetail.value = await res.json()
+      await loadSecurityAssetGraph(selectedAssetDetail.value?.asset || null)
+    } else {
+      await customAlert('加载资产详情失败: ' + await readApiError(res, '加载失败'), '加载失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('加载资产详情出错: ' + e, '加载失败', 'error')
+  } finally {
+    assetLoading.value = false
   }
 }
 
@@ -858,6 +1672,7 @@ async function triggerRestore() {
 
 async function selectDocument(id: string) {
   try {
+    activeMemoView.value = 'workspace'
     const res = await memoRequest(`/doc/${encodeURIComponent(id)}`)
     if (res.ok) {
       const detail = await res.json()
@@ -877,7 +1692,10 @@ async function selectDocument(id: string) {
         value: v as string,
           masked: true,
           aiLoading: false,
-        }))
+      }))
+      selectedFindingId.value = null
+      documentRiskDiff.value = null
+      await scanCurrentDocument()
     } else {
       await customAlert('加载文档失败: ' + await readApiError(res, '加载文档失败'), '错误', 'error')
     }
@@ -886,7 +1704,30 @@ async function selectDocument(id: string) {
   }
 }
 
+async function openFindingFromArchive(finding: SecurityFinding) {
+  activeMemoView.value = 'workspace'
+  rightPanelTab.value = 'audit'
+  await selectDocument(finding.docId)
+  const current = auditFindings.value.find((item) => item.id === finding.id)
+  if (current) {
+    revealFinding(current)
+  }
+}
+
+async function openCaseFromArchive(caseItem: SecurityCase) {
+  activeMemoView.value = 'workspace'
+  rightPanelTab.value = 'audit'
+  await selectDocument(caseItem.sourceDocId)
+  const finding = caseItem.sourceFindingId
+    ? auditFindings.value.find((item) => item.id === caseItem.sourceFindingId)
+    : null
+  if (finding) {
+    revealFinding(finding)
+  }
+}
+
 function createNewDocumentManual() {
+  activeMemoView.value = 'workspace'
   selectedDocId.value = 'new'
   editingDoc.value = {
     id: '',
@@ -897,9 +1738,535 @@ function createNewDocumentManual() {
     summary: '手动新建的文档',
   }
   editorSecretsList.value = []
+  auditFindings.value = []
+  auditSummary.value = null
+  documentRiskDiff.value = null
+  selectedFindingId.value = null
   nextTick(() => {
     editorTextareaRef.value?.focus()
   })
+  void scanCurrentDocument()
+}
+
+async function scanCurrentDocument(options: { silent?: boolean } = {}) {
+  if (!unlocked.value || !selectedDocId.value) return
+  try {
+    auditLoading.value = true
+    const res = await memoRequest('/audit/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        docId: editingDoc.value.id || selectedDocId.value || 'new',
+        markdown: editingDoc.value.markdown || '',
+      }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      auditFindings.value = data.findings || []
+      auditSummary.value = data.summary || null
+      if (selectedFindingId.value && !auditFindings.value.some((finding) => finding.id === selectedFindingId.value)) {
+        selectedFindingId.value = null
+      }
+      await loadDocumentRiskDiff({ silent: true })
+      void loadGovernanceSummary()
+    } else if (!options.silent) {
+      await customAlert('风险扫描失败: ' + await readApiError(res, '风险扫描失败'), '扫描失败', 'error')
+    }
+  } catch (e) {
+    if (!options.silent) {
+      await customAlert('风险扫描出错: ' + e, '扫描失败', 'error')
+    }
+  } finally {
+    auditLoading.value = false
+  }
+}
+
+async function loadDocumentRiskDiff(options: { silent?: boolean } = {}) {
+  if (!unlocked.value || !selectedDocId.value || selectedDocId.value === 'new') {
+    documentRiskDiff.value = null
+    return
+  }
+  try {
+    diffLoading.value = true
+    const res = await memoRequest('/history/doc-diff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        docId: editingDoc.value.id || selectedDocId.value,
+        markdown: editingDoc.value.markdown || '',
+      }),
+    })
+    if (res.ok) {
+      documentRiskDiff.value = await res.json()
+    } else if (!options.silent) {
+      await customAlert('风险变化读取失败: ' + await readApiError(res, '读取失败'), '读取失败', 'error')
+    }
+  } catch (e) {
+    if (!options.silent) {
+      await customAlert('风险变化读取出错: ' + e, '读取失败', 'error')
+    }
+  } finally {
+    diffLoading.value = false
+  }
+}
+
+async function updateFindingStatus(finding: SecurityFinding, status: FindingStatus) {
+  try {
+    const res = await memoRequest('/audit/finding/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        findingId: finding.id,
+        status,
+      }),
+    })
+    if (res.ok) {
+      await scanCurrentDocument({ silent: true })
+    } else {
+      await customAlert('更新风险状态失败: ' + await readApiError(res, '更新失败'), '更新失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('更新风险状态出错: ' + e, '更新失败', 'error')
+  }
+}
+
+function revealFinding(finding: SecurityFinding) {
+  selectedFindingId.value = finding.id
+  rightPanelTab.value = 'audit'
+  nextTick(() => {
+    const textarea = editorTextareaRef.value
+    if (!textarea) return
+    textarea.focus()
+    const lineHeight = 20
+    textarea.scrollTop = Math.max(0, (finding.lineStart - 2) * lineHeight)
+  })
+}
+
+async function explainFinding(finding: SecurityFinding) {
+  selectedFindingId.value = finding.id
+  rightPanelTab.value = 'audit'
+  await customAlert(
+    `${findingLineLabel(finding)} · ${severityLabel(finding.severity)} · ${finding.title}\n\n` +
+      `风险类型：${kindLabel(finding.kind)}\n` +
+      `当前状态：${statusLabel(finding.status)}\n\n` +
+      `为什么需要关注：\n${finding.detail}\n\n` +
+      `证据摘要：\n${finding.evidence}\n\n` +
+      `建议处理：\n${finding.recommendation}`,
+    '风险解释',
+    finding.severity === 'critical' ? 'warning' : 'info'
+  )
+}
+
+function revealRiskDiffItem(item: DocumentRiskDiffItem & { changeType: 'added' | 'resolved' | 'changed' }) {
+  if (item.changeType === 'resolved') return
+  const finding = auditFindings.value.find(
+    (candidate) =>
+      candidate.kind === item.kind &&
+      candidate.title === item.title &&
+      candidate.evidence === item.evidence &&
+      candidate.lineStart === item.lineStart
+  )
+  if (finding) {
+    revealFinding(finding)
+    return
+  }
+  rightPanelTab.value = 'audit'
+  nextTick(() => {
+    const textarea = editorTextareaRef.value
+    if (!textarea) return
+    textarea.focus()
+    textarea.scrollTop = Math.max(0, (item.lineStart - 2) * 20)
+  })
+}
+
+async function applyFindingFix(finding: SecurityFinding) {
+  try {
+    const data = await fetchFindingFixPreview(finding, editingDoc.value.markdown)
+    const confirmed = await customConfirm(
+      `${data.explanation}\n\n应用后会更新当前编辑区，但不会自动保存。请确认后再点击保存。`,
+      '应用修复预览',
+      'confirm'
+    )
+    if (confirmed) {
+      editingDoc.value.markdown = data.patchMarkdown
+      await updateFindingStatus(finding, 'reviewing')
+      await scanCurrentDocument({ silent: true })
+    }
+  } catch (e) {
+    await customAlert('生成修复预览出错: ' + e, '生成失败', 'error')
+  }
+}
+
+async function fetchFindingFixPreview(finding: SecurityFinding, markdown: string): Promise<AuditFixPreview> {
+  const res = await memoRequest('/audit/fix-preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      docId: editingDoc.value.id || selectedDocId.value || 'new',
+      findingId: finding.id,
+      markdown,
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(await readApiError(res, '生成失败'))
+  }
+  return await res.json()
+}
+
+async function applyBatchFindingFixes() {
+  const candidates = batchFixCandidates.value
+  if (candidates.length === 0) {
+    await customAlert('当前没有可批量处理的风险。', '无需处理', 'info')
+    return
+  }
+
+  try {
+    batchFixLoading.value = true
+    let draftMarkdown = editingDoc.value.markdown
+    const previews: Array<{ finding: SecurityFinding; preview: AuditFixPreview }> = []
+    const skipped: Array<{ finding: SecurityFinding; reason: string }> = []
+
+    for (const finding of candidates) {
+      try {
+        const preview = await fetchFindingFixPreview(finding, draftMarkdown)
+        if (preview.patchMarkdown && preview.patchMarkdown !== draftMarkdown) {
+          previews.push({ finding, preview })
+          draftMarkdown = preview.patchMarkdown
+        } else {
+          skipped.push({ finding, reason: '没有生成新的候选改动' })
+        }
+      } catch (error) {
+        skipped.push({ finding, reason: String(error) })
+      }
+    }
+
+    if (previews.length === 0) {
+      await customAlert('没有生成可应用的批量修复候选。', '批量处理未生成改动', 'warning')
+      return
+    }
+
+    const affectedLines = previews.map(({ finding }) => findingLineLabel(finding)).join('、')
+    const riskTypes = Array.from(new Set(previews.map(({ finding }) => kindLabel(finding.kind)))).join('、')
+    const previewList = previews
+      .map(({ finding, preview }) => `${findingLineLabel(finding)} · ${severityLabel(finding.severity)} · ${finding.title}\n${preview.explanation}`)
+      .join('\n\n')
+    const skippedText = skipped.length
+      ? `\n\n未生成候选：${skipped
+        .map(({ finding, reason }) => `${findingLineLabel(finding)} · ${finding.title}（${reason}）`)
+        .join('；')}`
+      : ''
+    const confirmed = await customConfirm(
+      `将应用 ${previews.length} 个批量修复候选。\n\n受影响行：${affectedLines}\n风险类型：${riskTypes}\n\n${previewList}${skippedText}\n\n应用后只更新当前编辑区，不会自动保存；请复核后再点击保存。`,
+      '批量应用修复预览',
+      'confirm'
+    )
+
+    if (!confirmed) return
+
+    editingDoc.value.markdown = draftMarkdown
+    for (const { finding } of previews) {
+      await updateFindingStatus(finding, 'reviewing')
+    }
+    await scanCurrentDocument({ silent: true })
+  } catch (e) {
+    await customAlert('批量处理风险出错: ' + e, '批量处理失败', 'error')
+  } finally {
+    batchFixLoading.value = false
+  }
+}
+
+function handleEditorSelection() {
+  const textarea = editorTextareaRef.value
+  if (!textarea) return
+  const start = textarea.selectionStart
+  const end = textarea.selectionEnd
+  if (end > start) {
+    selectedTextRange.value = {
+      start,
+      end,
+      text: editingDoc.value.markdown.slice(start, end),
+    }
+  } else {
+    selectedTextRange.value = null
+  }
+}
+
+function replaceSelectedText(nextText: string) {
+  const range = selectedTextRange.value
+  if (!range) return
+  editingDoc.value.markdown =
+    editingDoc.value.markdown.slice(0, range.start) +
+    nextText +
+    editingDoc.value.markdown.slice(range.end)
+  selectedTextRange.value = null
+  nextTick(() => {
+    editorTextareaRef.value?.focus()
+  })
+  void scanCurrentDocument({ silent: true })
+}
+
+async function runSelectionAction(action: 'rewrite' | 'summary' | 'redact' | 'explain') {
+  const range = selectedTextRange.value
+  if (!range || !range.text.trim()) return
+
+  if (action === 'redact') {
+    const key = nextSecretKey()
+    editorSecretsList.value.push({
+      key,
+      value: range.text,
+      masked: true,
+      aiLoading: false,
+    })
+    replaceSelectedText(`{{secret:${key}}}`)
+    await scanCurrentDocument({ silent: true })
+    return
+  }
+
+  const prompt =
+    action === 'rewrite'
+      ? `请在不改变事实的前提下改写以下选中文本，只输出改写后的文本：\n\n${range.text}`
+      : action === 'summary'
+        ? `请总结以下选中文本，输出 3 条以内要点：\n\n${range.text}`
+        : `请解释以下选中文本的安全含义、潜在风险和建议：\n\n${range.text}`
+
+  try {
+    editorAiLoading.value = true
+    const res = await memoRequest('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: prompt }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (action === 'rewrite') {
+        const confirmed = await customConfirm(
+          `是否用 AI 改写结果替换选区？\n\n${data.answer}`,
+          '确认替换选区',
+          'confirm'
+        )
+        if (confirmed) {
+          replaceSelectedText(data.answer.trim())
+          await scanCurrentDocument({ silent: true })
+        }
+      } else {
+        rightPanelTab.value = 'assistant'
+        chatMessages.value.push({
+          role: 'assistant',
+          content: data.answer,
+        })
+      }
+    } else {
+      await customAlert('选区 AI 操作失败: ' + await readApiError(res, '操作失败'), '操作失败', 'error')
+    }
+  } catch (e) {
+    await customAlert('选区 AI 操作出错: ' + e, '操作失败', 'error')
+  } finally {
+    editorAiLoading.value = false
+  }
+}
+
+function nextSecretKey() {
+  let index = editorSecretsList.value.length + 1
+  let key = `selectedSecret${index}`
+  while (editorSecretsList.value.some((secret) => secret.key === key)) {
+    index += 1
+    key = `selectedSecret${index}`
+  }
+  return key
+}
+
+function collectUsedSecretKeys(markdown = editingDoc.value.markdown || '') {
+  const keys = new Set<string>()
+  for (const secret of editorSecretsList.value) {
+    const key = secret.key.trim()
+    if (key) keys.add(key)
+  }
+  const marker = /{{secret:([^}]+)}}/g
+  let match: RegExpExecArray | null
+  while ((match = marker.exec(markdown)) !== null) {
+    if (match[1]?.trim()) keys.add(match[1].trim())
+  }
+  return keys
+}
+
+function normalizeDetectedSecretKey(label: string, fallback: string, usedKeys: Set<string>) {
+  const lower = label.toLowerCase()
+  let base =
+    lower.includes('api') || lower.startsWith('sk-') || lower.startsWith('akia') ? 'apiKey'
+      : lower.startsWith('ghp_') || lower.startsWith('gho_') || lower.startsWith('github_pat_') ? 'githubToken'
+        : lower.startsWith('xoxb-') ? 'slackBotToken'
+          : lower.includes('bearer') ? 'bearerToken'
+            : lower.includes('jwt') ? 'jwtToken'
+              : lower.includes('private') || label.includes('私钥') ? 'privateKey'
+                : lower.includes('connection') ? 'connectionCredentials'
+                  : lower.includes('password') || lower.includes('passwd') || lower.includes('pwd') || label.includes('密码') || label.includes('口令') ? 'password'
+                    : lower.includes('token') || label.includes('令牌') ? 'token'
+                      : lower.includes('secret') || label.includes('密钥') ? 'secret'
+                        : fallback || 'redactedSecret'
+  base = base.replace(/[^A-Za-z0-9_]/g, '') || 'redactedSecret'
+  if (/^[0-9]/.test(base)) {
+    base = `secret${base}`
+  }
+  let key = base
+  let index = 2
+  while (usedKeys.has(key)) {
+    key = `${base}${index}`
+    index += 1
+  }
+  usedKeys.add(key)
+  return key
+}
+
+function prepareDetectedSecretsForEditor(response: RedactMarkdownResponse) {
+  const usedKeys = collectUsedSecretKeys()
+  let markdown = response.markdown
+  const secrets = response.secrets.map((secret) => {
+    const key = normalizeDetectedSecretKey(secret.label, secret.key, usedKeys)
+    markdown = markdown.split(secret.placeholder).join(`{{secret:${key}}}`)
+    return {
+      key,
+      value: secret.value,
+      masked: true,
+      aiLoading: false,
+    }
+  })
+  return { markdown, secrets }
+}
+
+function emptyDocumentRiskSummary(): DocumentRiskListSummary {
+  return {
+    total: 0,
+    critical: 0,
+    warning: 0,
+    info: 0,
+    reviewing: 0,
+  }
+}
+
+function docRiskSummary(docId?: string): DocumentRiskListSummary {
+  if (!docId) return emptyDocumentRiskSummary()
+  return documentRiskSummaryMap.value.get(docId) || emptyDocumentRiskSummary()
+}
+
+function docRiskTone(summary: DocumentRiskListSummary) {
+  if (summary.critical > 0) return 'critical'
+  if (summary.warning > 0) return 'warning'
+  if (summary.info > 0 || summary.reviewing > 0) return 'info'
+  return 'safe'
+}
+
+function docRiskLabel(summary: DocumentRiskListSummary) {
+  if (summary.critical > 0) return '高危'
+  if (summary.warning > 0) return '警告'
+  if (summary.info > 0 || summary.reviewing > 0) return '关注'
+  return '安全'
+}
+
+function docRiskCountLabel(summary: DocumentRiskListSummary) {
+  if (summary.total === 0) return '0'
+  const parts = [`${summary.total}`]
+  if (summary.critical > 0) parts.push(`高危 ${summary.critical}`)
+  else if (summary.warning > 0) parts.push(`警告 ${summary.warning}`)
+  if (summary.reviewing > 0) parts.push(`复核 ${summary.reviewing}`)
+  return parts.join(' · ')
+}
+
+function severityLabel(severity: FindingSeverity) {
+  return severity === 'critical' ? '高危' : severity === 'warning' ? '警告' : '提示'
+}
+
+function statusLabel(status: FindingStatus) {
+  const labels: Record<FindingStatus, string> = {
+    open: '待处理',
+    fixed: '已修复',
+    ignored: '已忽略',
+    reviewing: '待复核',
+  }
+  return labels[status]
+}
+
+function caseStatusLabel(status: SecurityCaseStatus) {
+  const labels: Record<SecurityCaseStatus, string> = {
+    open: '待确认',
+    acknowledged: '已确认',
+    accepted: '已接受',
+    fixing: '修复中',
+    fixed: '已修复',
+    reviewing: '待复核',
+    closed: '已关闭',
+    reopened: '已重开',
+  }
+  return labels[status]
+}
+
+function caseTypeLabel(type: SecurityCaseType) {
+  const labels: Record<SecurityCaseType, string> = {
+    risk: '风险',
+    exception: '例外',
+    review: '复核',
+  }
+  return labels[type]
+}
+
+function kindLabel(kind: FindingKind) {
+  const labels: Record<FindingKind, string> = {
+    hardcodedSecret: '密钥治理',
+    weakJwt: '认证机制',
+    insecureLink: '传输安全',
+    sensitiveOperation: '安全开关',
+    governanceGap: '治理例外',
+  }
+  return labels[kind]
+}
+
+function formatShortTime(timestamp?: number) {
+  if (!timestamp) return '暂无'
+  return new Date(timestamp * 1000).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function findingLineLabel(finding: SecurityFinding) {
+  return finding.lineStart === finding.lineEnd
+    ? `L${finding.lineStart}`
+    : `L${finding.lineStart}-L${finding.lineEnd}`
+}
+
+function riskDiffItemLineLabel(item: DocumentRiskDiffItem) {
+  const current = item.lineStart === item.lineEnd ? `L${item.lineStart}` : `L${item.lineStart}-L${item.lineEnd}`
+  if (!item.previousLineStart || item.previousLineStart === item.lineStart) {
+    return current
+  }
+  return `L${item.previousLineStart} -> ${current.slice(1)}`
+}
+
+function riskDiffTypeLabel(type: 'added' | 'resolved' | 'changed') {
+  const labels = {
+    added: '新增',
+    resolved: '已修复',
+    changed: '变化',
+  }
+  return labels[type]
+}
+
+function riskDiffSummaryText(diff: DocumentRiskDiff | null) {
+  if (!diff) return '暂无风险变化'
+  const summary = diff.summary
+  if (!diff.previousSavedAt) {
+    return `已建立风险基线，当前 ${summary.currentTotal} 个风险。`
+  }
+  return `新增 ${summary.added}，修复 ${summary.resolved}，移动 ${summary.moved}，等级变化 ${summary.severityChanged}。`
+}
+
+function lineRiskClass(line: number) {
+  const findings = riskLineMap.value.get(line) || []
+  if (findings.some((finding) => finding.severity === 'critical')) return 'editor-line-no--critical'
+  if (findings.some((finding) => finding.severity === 'warning')) return 'editor-line-no--warning'
+  if (findings.length > 0) return 'editor-line-no--info'
+  return ''
 }
 
 function applyDraftToEditor(draft: DraftResponse, options: { asNew?: boolean } = {}) {
@@ -947,6 +2314,7 @@ function applyDraftToEditor(draft: DraftResponse, options: { asNew?: boolean } =
   nextTick(() => {
     editorTextareaRef.value?.focus()
   })
+  void scanCurrentDocument({ silent: true })
 }
 
 function addSecretToEditor() {
@@ -1022,10 +2390,12 @@ async function saveDocumentChanges() {
     
     if (res.ok) {
       const meta = await res.json()
-      await customAlert('文档已成功保存！', '保存成功', 'success')
+      const savedRiskDiff = (meta.riskDiff || null) as DocumentRiskDiff | null
+      await customAlert(`文档已成功保存！${riskDiffSummaryText(savedRiskDiff)}`, '保存成功', 'success')
       selectedDocId.value = meta.id
       await loadDocuments()
       await selectDocument(meta.id)
+      documentRiskDiff.value = savedRiskDiff
     } else {
       const txt = await readApiError(res, '保存失败')
       await customAlert('保存失败: ' + txt, '错误', 'error')
@@ -1212,6 +2582,97 @@ async function sendChatMessage() {
   }
 }
 
+async function redactCurrentDocument() {
+  const source = editingDoc.value.markdown || ''
+  if (!source.trim()) {
+    await customAlert('当前文档内容为空，无法脱敏。', '无需脱敏', 'info')
+    return
+  }
+
+  try {
+    documentRedactLoading.value = true
+    const res = await memoRequest('/audit/redact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown: source }),
+    })
+    if (!res.ok) {
+      await customAlert('一键脱敏失败: ' + await readApiError(res, '脱敏失败'), '脱敏失败', 'error')
+      return
+    }
+    const data: RedactMarkdownResponse = await res.json()
+    if (data.redactedSecretCount === 0) {
+      await customAlert('当前文档没有识别到新的明文 secret。', '无需脱敏', 'info')
+      return
+    }
+    const prepared = prepareDetectedSecretsForEditor(data)
+    const secretKeys = prepared.secrets.map((secret) => secret.key).join('、')
+    const confirmed = await customConfirm(
+      `将替换 ${data.redactedSecretCount} 处疑似明文 secret，并把真实值加入当前文档密码箱。\n\n新增密码箱 key：${secretKeys}\n\n应用后只更新当前编辑区和密码箱草稿，不会自动保存；请复核后再点击保存。`,
+      '应用一键脱敏',
+      'confirm'
+    )
+    if (!confirmed) return
+
+    editingDoc.value.markdown = prepared.markdown
+    editorSecretsList.value.push(...prepared.secrets)
+    showEditorSecrets.value = true
+    await scanCurrentDocument({ silent: true })
+  } catch (e) {
+    await customAlert('一键脱敏出错: ' + e, '脱敏失败', 'error')
+  } finally {
+    documentRedactLoading.value = false
+  }
+}
+
+async function extractDocumentTodos() {
+  const source = editingDoc.value.markdown?.trim()
+  if (!source) {
+    await customAlert('当前文档内容为空，无法提取待办。', '无需提取', 'info')
+    return
+  }
+
+  try {
+    editorAiLoading.value = true
+    const res = await memoRequest('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `请从以下安全文档中提取可执行的安全治理待办。只输出 Markdown 任务列表，每条以 "- [ ]" 开头，最多 8 条，包含负责人/复核/截止日占位建议；不要输出 secret 明文。\n\n${source}`,
+      }),
+    })
+    if (!res.ok) {
+      await customAlert('提取待办失败: ' + await readApiError(res, '提取失败'), '提取失败', 'error')
+      return
+    }
+    const data: SearchAnswerResponse = await res.json()
+    const todos = (data.answer || '').trim()
+    if (!todos) {
+      await customAlert('AI 没有提取出可用待办。', '无待办', 'info')
+      return
+    }
+    chatMessages.value.push({
+      role: 'assistant',
+      content: todos,
+      sources: data.sources,
+    })
+    const confirmed = await customConfirm(
+      `${todos}\n\n是否将这些待办追加到当前文档末尾？`,
+      '提取安全待办',
+      'confirm'
+    )
+    if (confirmed) {
+      const heading = '\n\n## 安全治理待办\n\n'
+      editingDoc.value.markdown = `${editingDoc.value.markdown.trimEnd()}${heading}${todos}\n`
+      await scanCurrentDocument({ silent: true })
+    }
+  } catch (e) {
+    await customAlert('提取待办出错: ' + e, '提取失败', 'error')
+  } finally {
+    editorAiLoading.value = false
+  }
+}
+
 async function runEditorAi(action: 'organize' | 'summary' | 'custom') {
   const source = editingDoc.value.markdown?.trim()
   if (!source) {
@@ -1394,9 +2855,20 @@ onMounted(() => {
                     :class="node.type === 'folder' ? 'text-amber-500/90' : 'text-emerald-400/80'"
                   />
                   <div class="min-w-0 flex-1">
-                    <h4 class="text-xs text-gray-200 truncate" :class="node.type === 'folder' ? 'font-bold text-gray-300' : 'font-medium'">
-                      {{ node.name }}
-                    </h4>
+                    <div class="doc-item-heading">
+                      <h4 class="text-xs text-gray-200 truncate" :class="node.type === 'folder' ? 'font-bold text-gray-300' : 'font-medium'">
+                        {{ node.name }}
+                      </h4>
+                      <div v-if="node.type === 'file'" class="doc-risk-meta">
+                        <span
+                          class="doc-risk-pill"
+                          :class="`doc-risk-pill--${docRiskTone(docRiskSummary(node.doc.id))}`"
+                        >
+                          {{ docRiskLabel(docRiskSummary(node.doc.id)) }}
+                        </span>
+                        <span class="doc-risk-count">{{ docRiskCountLabel(docRiskSummary(node.doc.id)) }}</span>
+                      </div>
+                    </div>
                     <p v-if="node.type === 'file'" class="text-[9px] text-gray-500 truncate mt-0.5">
                       {{ node.doc.summary }}
                     </p>
@@ -1428,12 +2900,30 @@ onMounted(() => {
             >
               <ChevronRight class="h-3.5 w-3.5" />
             </button>
+            <div class="workspace-view-tabs" role="tablist" aria-label="AI 安全文档视图">
+              <button
+                type="button"
+                class="workspace-view-tab"
+                :class="{ 'workspace-view-tab--active': activeMemoView === 'archive' }"
+                @click="activeMemoView = 'archive'"
+              >
+                安全档案
+              </button>
+              <button
+                type="button"
+                class="workspace-view-tab"
+                :class="{ 'workspace-view-tab--active': activeMemoView === 'workspace' }"
+                @click="activeMemoView = 'workspace'"
+              >
+                文档工作台
+              </button>
+            </div>
             <div class="min-w-0 flex-1">
               <div class="text-xs font-bold text-gray-200 truncate">
-                {{ selectedDocId ? editingDoc.title : '选择或新建文档后开始协作' }}
+                {{ activeMemoView === 'archive' ? '团队安全治理档案' : (selectedDocId ? editingDoc.title : '选择或新建文档后开始协作') }}
               </div>
               <div class="text-[10px] text-gray-600 font-mono truncate">
-                {{ selectedDocId ? editingDoc.fileName : 'AI 聊天、Markdown 编辑和实时预览会同时显示' }}
+                {{ activeMemoView === 'archive' ? '本地态势 · 风险队列 · 资产地图 · 审计活动' : (selectedDocId ? editingDoc.fileName : 'AI 聊天、Markdown 编辑和实时预览会同时显示') }}
               </div>
             </div>
             <div class="flex items-center gap-2">
@@ -1445,6 +2935,17 @@ onMounted(() => {
               >
                 <Key class="h-3.5 w-3.5" />
                 {{ showEditorSecrets ? '隐藏密码箱' : '密码箱' }}
+              </button>
+              <button
+                v-if="selectedDocId && selectedDocId !== 'new'"
+                @click="exportSafeShare"
+                :disabled="safeShareLoading"
+                type="button"
+                class="toolbar-secondary-btn"
+              >
+                <RefreshCw v-if="safeShareLoading" class="h-3.5 w-3.5 animate-spin" />
+                <FileText v-else class="h-3.5 w-3.5" />
+                安全分享
               </button>
               <button
                 v-if="selectedDocId"
@@ -1461,72 +2962,211 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="collab-workspace">
-            <section class="chat-panel">
-              <div class="panel-heading">
-                <MessageSquare class="h-3.5 w-3.5 text-emerald-400" />
-                <span>AI 协作</span>
-              </div>
-              <div class="messages-area">
-                <div
-                  v-for="(msg, idx) in chatMessages"
-                  :key="idx"
-                  class="message-row"
-                  :class="msg.role === 'user' ? 'message-row--user' : 'message-row--assistant'"
-                >
-                  <div class="message-bubble shadow-xl">
-                    <div class="message-sender">
-                      <component :is="msg.role === 'user' ? Key : Brain" class="h-3 w-3" />
-                      <span>{{ msg.role === 'user' ? '您' : 'AI 大管家' }}</span>
-                    </div>
-                    <div class="message-text">
-                      {{ msg.content }}
-                    </div>
+          <div class="governance-strip">
+            <div class="governance-metric">
+              <span class="metric-label">未关闭风险</span>
+              <strong>{{ governanceRiskSummary?.open ?? 0 }}</strong>
+              <span class="metric-foot">高危 {{ governanceRiskSummary?.critical ?? 0 }}</span>
+            </div>
+            <div class="governance-metric">
+              <span class="metric-label">待复核</span>
+              <strong>{{ governanceRiskSummary?.reviewing ?? 0 }}</strong>
+              <span class="metric-foot">到期 {{ governanceRiskSummary?.expiredAcceptances ?? 0 }} · 14天内 {{ governanceRiskSummary?.expiringSoon ?? 0 }}</span>
+            </div>
+            <div class="governance-metric">
+              <span class="metric-label">安全资产</span>
+              <strong>{{ governanceAssetSummary?.total ?? 0 }}</strong>
+              <span class="metric-foot">接口 {{ governanceAssetSummary?.apiEndpoints ?? 0 }} · 数据库 {{ governanceAssetSummary?.databases ?? 0 }}</span>
+            </div>
+            <div class="governance-metric governance-metric--wide">
+              <span class="metric-label">最近活动</span>
+              <strong>{{ governanceSummary?.recentActivities?.[0]?.title || '暂无审计活动' }}</strong>
+              <span class="metric-foot">{{ governanceSummary?.recentActivities?.[0]?.summary || '打开文档后会生成本地审计记录' }}</span>
+            </div>
+          </div>
 
-                    <div v-if="msg.sources && msg.sources.length > 0" class="mt-3 border-t border-gray-800/80 pt-2">
-                      <p class="text-[10px] text-gray-500 font-bold mb-1.5">参考本地文档：</p>
-                      <div class="flex flex-wrap gap-1.5">
-                        <button
-                          v-for="src in msg.sources"
-                          :key="src.id"
-                          @click="selectDocument(src.id)"
-                          class="source-badge"
-                        >
-                          <FileText class="h-2.5 w-2.5 text-emerald-400" />
-                          <span>{{ src.title }}</span>
-                          <span class="text-[8px] text-emerald-500/60 font-semibold">{{ Math.round(src.score * 100) }}%</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-if="chatLoading" class="chat-loading-bubble">
-                  <RefreshCw class="animate-spin h-3.5 w-3.5 mr-2 text-emerald-400" />
-                  <span>AI 正在处理...</span>
-                </div>
+          <div v-if="activeMemoView === 'archive'" class="security-home">
+            <section class="archive-hero">
+              <div class="archive-hero-main">
+                <span>安全态势</span>
+                <strong>{{ governanceRiskSummary?.open ?? 0 }} 个未关闭风险</strong>
+                <p>高危 {{ governanceRiskSummary?.critical ?? 0 }} · 警告 {{ governanceRiskSummary?.warning ?? 0 }} · 待复核 {{ governanceRiskSummary?.reviewing ?? 0 }}</p>
               </div>
-              <div class="chat-input-bar-wrapper">
-                <div class="chat-input-bar">
-                  <textarea
-                    ref="textareaRef"
-                    v-model="chatInput"
-                    @keydown.enter.prevent="sendChatMessage"
-                    class="c-textarea"
-                    placeholder="边聊边改：例如“把当前文档整理成部署步骤”"
-                    rows="1"
-                  ></textarea>
-                  <button
-                    @click="sendChatMessage"
-                    :disabled="chatLoading || !chatInput.trim()"
-                    class="c-send-btn"
-                  >
-                    <Send class="h-3.5 w-3.5" />
-                  </button>
-                </div>
+              <div class="archive-hero-actions">
+                <button type="button" @click="activeMemoView = 'workspace'; rightPanelTab = 'audit'">
+                  查看治理队列
+                </button>
+                <button type="button" @click="generateSecurityReport('all', 30)" :disabled="reportLoading">
+                  近30天报告
+                </button>
               </div>
             </section>
 
+            <section class="archive-metric-grid">
+              <button type="button" class="archive-metric-card archive-metric-card--danger" @click="activeMemoView = 'workspace'; rightPanelTab = 'audit'">
+                <span>高危风险</span>
+                <strong>{{ governanceRiskSummary?.critical ?? 0 }}</strong>
+                <em>未关闭 {{ governanceRiskSummary?.open ?? 0 }}</em>
+              </button>
+              <button type="button" class="archive-metric-card archive-metric-card--warn" @click="activeMemoView = 'workspace'; rightPanelTab = 'audit'">
+                <span>待复核</span>
+                <strong>{{ governanceRiskSummary?.reviewing ?? 0 }}</strong>
+                <em>例外到期 {{ governanceRiskSummary?.expiredAcceptances ?? 0 }}</em>
+              </button>
+              <button type="button" class="archive-metric-card" @click="activeMemoView = 'workspace'; rightPanelTab = 'audit'">
+                <span>安全资产</span>
+                <strong>{{ governanceAssetSummary?.total ?? 0 }}</strong>
+                <em>数据库 {{ governanceAssetSummary?.databases ?? 0 }} · 依赖 {{ governanceAssetSummary?.dependencies ?? 0 }}</em>
+              </button>
+              <button type="button" class="archive-metric-card" @click="createNewDocumentManual">
+                <span>本地文档</span>
+                <strong>{{ documents.length }}</strong>
+                <em>新增安全档案</em>
+              </button>
+            </section>
+
+            <section class="archive-board">
+              <article class="archive-panel archive-panel--wide">
+                <header>
+                  <div>
+                    <span>风险治理</span>
+                    <strong>{{ dashboardOpenCases.length }} 项待处理</strong>
+                  </div>
+                  <button type="button" @click="activeMemoView = 'workspace'; rightPanelTab = 'audit'">队列</button>
+                </header>
+                <div v-if="dashboardOpenCases.length === 0" class="archive-empty">
+                  当前没有未关闭风险。
+                </div>
+                <button
+                  v-for="caseItem in dashboardOpenCases"
+                  v-else
+                  :key="caseItem.id"
+                  type="button"
+                  class="archive-risk-row"
+                  :class="`archive-risk-row--${caseItem.severity}`"
+                  @click="openCaseFromArchive(caseItem)"
+                >
+                  <span>{{ severityLabel(caseItem.severity) }} · {{ caseStatusLabel(caseItem.status) }}</span>
+                  <strong>{{ caseItem.title }}</strong>
+                  <em>{{ caseItem.owner || '未分配' }} · {{ caseItem.dueAt || '未设截止' }}</em>
+                </button>
+              </article>
+
+              <article class="archive-panel">
+                <header>
+                  <div>
+                    <span>最近新增风险</span>
+                    <strong>{{ dashboardRecentFindings.length }} 条</strong>
+                  </div>
+                </header>
+                <div v-if="dashboardRecentFindings.length === 0" class="archive-empty">
+                  暂无近期风险。
+                </div>
+                <button
+                  v-for="finding in dashboardRecentFindings"
+                  v-else
+                  :key="finding.id"
+                  type="button"
+                  class="archive-finding-row"
+                  @click="openFindingFromArchive(finding)"
+                >
+                  <span>L{{ finding.lineStart }} · {{ severityLabel(finding.severity) }}</span>
+                  <strong>{{ finding.title }}</strong>
+                </button>
+              </article>
+
+              <article class="archive-panel">
+                <header>
+                  <div>
+                    <span>复核队列</span>
+                    <strong>{{ dashboardReviewCases.length }} 项</strong>
+                  </div>
+                </header>
+                <div v-if="dashboardReviewCases.length === 0" class="archive-empty">
+                  暂无复核项。
+                </div>
+                <button
+                  v-for="caseItem in dashboardReviewCases"
+                  v-else
+                  :key="caseItem.id"
+                  type="button"
+                  class="archive-finding-row"
+                  @click="openCaseFromArchive(caseItem)"
+                >
+                  <span>{{ caseItem.reviewer || '未指定复核人' }}</span>
+                  <strong>{{ caseItem.title }}</strong>
+                </button>
+              </article>
+
+              <article class="archive-panel">
+                <header>
+                  <div>
+                    <span>资产概览</span>
+                    <strong>{{ dashboardRecentAssets.length }} 个近期资产</strong>
+                  </div>
+                </header>
+                <div v-if="dashboardRecentAssets.length === 0" class="archive-empty">
+                  暂无资产索引。
+                </div>
+                <div v-else class="archive-asset-list">
+                  <button
+                    v-for="asset in dashboardRecentAssets"
+                    :key="asset.id"
+                    type="button"
+                    @click="openSecurityAssetById(asset.id)"
+                  >
+                    <span>{{ assetTypeLabel(asset.assetType) }}</span>
+                    <strong>{{ asset.name }}</strong>
+                  </button>
+                </div>
+              </article>
+
+              <article class="archive-panel">
+                <header>
+                  <div>
+                    <span>最近文档</span>
+                    <strong>{{ dashboardRecentDocs.length }} 篇</strong>
+                  </div>
+                  <button type="button" @click="createNewDocumentManual">新建</button>
+                </header>
+                <div v-if="dashboardRecentDocs.length === 0" class="archive-empty">
+                  暂无本地文档。
+                </div>
+                <button
+                  v-for="doc in dashboardRecentDocs"
+                  v-else
+                  :key="doc.id"
+                  type="button"
+                  class="archive-doc-row"
+                  @click="selectDocument(doc.id)"
+                >
+                  <strong>{{ doc.title }}</strong>
+                  <span>{{ doc.fileName }}</span>
+                </button>
+              </article>
+
+              <article class="archive-panel archive-panel--wide">
+                <header>
+                  <div>
+                    <span>最近活动</span>
+                    <strong>{{ dashboardRecentActivities.length }} 条事件</strong>
+                  </div>
+                </header>
+                <div v-if="dashboardRecentActivities.length === 0" class="archive-empty">
+                  暂无审计活动。
+                </div>
+                <div v-else class="archive-activity-list">
+                  <div v-for="activity in dashboardRecentActivities" :key="activity.id">
+                    <span>{{ formatShortTime(activity.createdAt) }}</span>
+                    <strong>{{ activity.title }}</strong>
+                    <p>{{ activity.summary }}</p>
+                  </div>
+                </div>
+              </article>
+            </section>
+          </div>
+
+          <div v-else class="security-workspace">
             <section class="document-panel">
               <div v-if="!selectedDocId" class="no-doc-placeholder">
                 <FileText class="h-12 w-12 text-gray-800 mb-3" />
@@ -1539,10 +3179,27 @@ onMounted(() => {
 
               <div v-else class="document-editor">
                 <div class="editor-main-form">
-                  <div class="panel-heading mb-4">
-                    <PenTool class="h-3.5 w-3.5 text-emerald-400" />
-                    <span>Markdown 编辑</span>
+                  <div class="editor-section-title">
+                    <div class="flex items-center gap-1.5">
+                      <PenTool class="h-3.5 w-3.5 text-emerald-400" />
+                      <span>安全文档编辑</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span
+                        v-if="auditSummary"
+                        class="audit-mini-pill"
+                        :class="{ 'audit-mini-pill--danger': auditSummary.critical > 0, 'audit-mini-pill--warn': auditSummary.critical === 0 && auditSummary.warning > 0 }"
+                      >
+                        {{ auditSummary.total }} 个发现
+                      </span>
+                      <button @click="scanCurrentDocument()" class="editor-ai-btn" type="button">
+                        <RefreshCw v-if="auditLoading" class="h-3.5 w-3.5 animate-spin" />
+                        <AlertTriangle v-else class="h-3.5 w-3.5" />
+                        检查风险
+                      </button>
+                    </div>
                   </div>
+
                   <div class="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <label class="d-label">文档标题</label>
@@ -1602,12 +3259,35 @@ onMounted(() => {
 
                   <div class="flex-1 flex flex-col min-h-[300px]">
                     <label class="d-label">Markdown 内容</label>
-                    <textarea
-                      ref="editorTextareaRef"
-                      v-model="editingDoc.markdown"
-                      class="editor-textarea"
-                      placeholder="在这里输入 Markdown 文档..."
-                    ></textarea>
+                    <div class="selection-toolbar" v-if="selectedTextRange">
+                      <button @click="runSelectionAction('rewrite')" type="button">AI 改写</button>
+                      <button @click="runSelectionAction('summary')" type="button">总结</button>
+                      <button @click="runSelectionAction('redact')" type="button">脱敏</button>
+                      <button @click="runSelectionAction('explain')" type="button">解释</button>
+                    </div>
+                    <div class="editor-shell">
+                      <div class="line-gutter">
+                        <button
+                          v-for="line in editorLineNumbers"
+                          :key="line"
+                          type="button"
+                          class="editor-line-no"
+                          :class="lineRiskClass(line)"
+                        >
+                          {{ line }}
+                        </button>
+                      </div>
+                      <textarea
+                        ref="editorTextareaRef"
+                        v-model="editingDoc.markdown"
+                        class="editor-textarea"
+                        placeholder="在这里输入 Markdown 文档..."
+                        @select="handleEditorSelection"
+                        @keyup="handleEditorSelection"
+                        @mouseup="handleEditorSelection"
+                        @blur="handleEditorSelection"
+                      ></textarea>
+                    </div>
                   </div>
 
                   <details v-if="showEditorSecrets" class="secrets-drawer" open>
@@ -1690,12 +3370,527 @@ onMounted(() => {
               </div>
             </section>
 
-            <section class="preview-panel">
-              <div class="panel-heading">
-                <FileText class="h-3.5 w-3.5 text-emerald-400" />
-                <span>实时预览</span>
+            <section class="intelligence-sidebar">
+              <div class="right-tabs">
+                <button
+                  class="right-tab"
+                  :class="{ 'right-tab--active': rightPanelTab === 'assistant' }"
+                  @click="rightPanelTab = 'assistant'"
+                  type="button"
+                >
+                  AI 助手
+                </button>
+                <button
+                  class="right-tab"
+                  :class="{ 'right-tab--active': rightPanelTab === 'audit' }"
+                  @click="rightPanelTab = 'audit'"
+                  type="button"
+                >
+                  安全审计
+                  <span v-if="activeFindings.length" class="tab-count">{{ activeFindings.length }}</span>
+                </button>
+                <button
+                  class="right-tab"
+                  :class="{ 'right-tab--active': rightPanelTab === 'preview' }"
+                  @click="rightPanelTab = 'preview'"
+                  type="button"
+                >
+                  预览
+                </button>
               </div>
-              <div class="preview-surface" v-html="previewHtml"></div>
+
+              <div v-if="rightPanelTab === 'assistant'" class="right-panel-body">
+                <section class="assistant-summary">
+                  <h4>文档摘要</h4>
+                  <p>{{ selectedDocId ? (editingDoc.summary || '当前文档暂无摘要') : '选择文档后显示摘要' }}</p>
+                </section>
+
+                <section class="assistant-tasks">
+                  <h4>建议任务</h4>
+                  <button @click="runEditorAi('organize')" :disabled="editorAiLoading" type="button">整理格式与层级</button>
+                  <button @click="runEditorAi('summary')" :disabled="editorAiLoading" type="button">生成摘要</button>
+                  <button @click="extractDocumentTodos()" :disabled="editorAiLoading" type="button">
+                    <RefreshCw v-if="editorAiLoading" class="h-3.5 w-3.5 animate-spin" />
+                    提取待办
+                  </button>
+                  <button @click="redactCurrentDocument()" :disabled="documentRedactLoading" type="button">
+                    <RefreshCw v-if="documentRedactLoading" class="h-3.5 w-3.5 animate-spin" />
+                    一键脱敏
+                  </button>
+                  <button @click="scanCurrentDocument()" :disabled="auditLoading" type="button">检查风险</button>
+                </section>
+
+                <div class="messages-area messages-area--compact">
+                  <div
+                    v-for="(msg, idx) in chatMessages"
+                    :key="idx"
+                    class="message-row"
+                    :class="msg.role === 'user' ? 'message-row--user' : 'message-row--assistant'"
+                  >
+                    <div class="message-bubble shadow-xl">
+                      <div class="message-sender">
+                        <component :is="msg.role === 'user' ? Key : Brain" class="h-3 w-3" />
+                        <span>{{ msg.role === 'user' ? '您' : 'AI 大管家' }}</span>
+                      </div>
+                      <div class="message-text">
+                        {{ msg.content }}
+                      </div>
+
+                      <div v-if="msg.sources && msg.sources.length > 0" class="mt-3 border-t border-gray-800/80 pt-2">
+                        <p class="text-[10px] text-gray-500 font-bold mb-1.5">参考本地文档：</p>
+                        <div class="flex flex-wrap gap-1.5">
+                          <button
+                            v-for="src in msg.sources"
+                            :key="src.id"
+                            @click="selectDocument(src.id)"
+                            class="source-badge"
+                          >
+                            <FileText class="h-2.5 w-2.5 text-emerald-400" />
+                            <span>{{ src.title }}</span>
+                            <span class="text-[8px] text-emerald-500/60 font-semibold">{{ Math.round(src.score * 100) }}%</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="chatLoading" class="chat-loading-bubble">
+                    <RefreshCw class="animate-spin h-3.5 w-3.5 mr-2 text-emerald-400" />
+                    <span>AI 正在处理...</span>
+                  </div>
+                </div>
+
+                <div class="chat-input-bar-wrapper">
+                  <div class="chat-input-bar">
+                    <textarea
+                      ref="textareaRef"
+                      v-model="chatInput"
+                      @keydown.enter.prevent="sendChatMessage"
+                      class="c-textarea"
+                      placeholder="问 AI，或让它处理当前文档..."
+                      rows="1"
+                    ></textarea>
+                    <button
+                      @click="sendChatMessage"
+                      :disabled="chatLoading || !chatInput.trim()"
+                      class="c-send-btn"
+                    >
+                      <Send class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="rightPanelTab === 'audit'" class="right-panel-body">
+                <div class="audit-summary-grid">
+                  <div>
+                    <span>高危</span>
+                    <strong>{{ auditSummary?.critical ?? 0 }}</strong>
+                  </div>
+                  <div>
+                    <span>警告</span>
+                    <strong>{{ auditSummary?.warning ?? 0 }}</strong>
+                  </div>
+                  <div>
+                    <span>待复核</span>
+                    <strong>{{ auditSummary?.reviewing ?? 0 }}</strong>
+                  </div>
+                </div>
+
+                <div class="audit-action-row">
+                  <button @click="scanCurrentDocument()" class="audit-scan-btn" type="button">
+                    <RefreshCw v-if="auditLoading" class="h-3.5 w-3.5 animate-spin" />
+                    <AlertTriangle v-else class="h-3.5 w-3.5" />
+                    重新扫描当前文档
+                  </button>
+                  <button
+                    @click="applyBatchFindingFixes()"
+                    :disabled="batchFixLoading || auditLoading || batchFixCandidates.length === 0"
+                    class="audit-batch-btn"
+                    type="button"
+                  >
+                    <RefreshCw v-if="batchFixLoading" class="h-3.5 w-3.5 animate-spin" />
+                    <Sparkles v-else class="h-3.5 w-3.5" />
+                    批量处理 {{ batchFixCandidates.length }}
+                  </button>
+                </div>
+
+                <section class="risk-diff-panel" :class="{ 'risk-diff-panel--active': hasRiskDiffChanges }">
+                  <header class="risk-diff-header">
+                    <div>
+                      <span>版本风险变化</span>
+                      <strong>{{ riskDiffSummaryText(documentRiskDiff) }}</strong>
+                    </div>
+                    <RefreshCw v-if="diffLoading" class="h-3.5 w-3.5 animate-spin text-emerald-300" />
+                  </header>
+                  <div v-if="!documentRiskDiff" class="risk-diff-empty">
+                    保存一次文档后建立风险基线。
+                  </div>
+                  <div v-else class="risk-diff-metrics">
+                    <div>
+                      <span>新增</span>
+                      <strong>{{ documentRiskDiff.summary.added }}</strong>
+                    </div>
+                    <div>
+                      <span>修复</span>
+                      <strong>{{ documentRiskDiff.summary.resolved }}</strong>
+                    </div>
+                    <div>
+                      <span>移动</span>
+                      <strong>{{ documentRiskDiff.summary.moved }}</strong>
+                    </div>
+                  </div>
+                  <div v-if="visibleRiskDiffItems.length > 0" class="risk-diff-list">
+                    <button
+                      v-for="item in visibleRiskDiffItems"
+                      :key="`${item.changeType}-${item.fingerprint}`"
+                      type="button"
+                      class="risk-diff-item"
+                      :class="`risk-diff-item--${item.changeType}`"
+                      @click="revealRiskDiffItem(item)"
+                    >
+                      <span>{{ riskDiffTypeLabel(item.changeType) }} · {{ riskDiffItemLineLabel(item) }}</span>
+                      <strong>{{ item.title }}</strong>
+                    </button>
+                  </div>
+                </section>
+
+                <section class="case-queue">
+                  <header class="case-queue-header">
+                    <div>
+                      <span>治理队列</span>
+                      <strong>{{ governanceCases.length }} 个案件</strong>
+                    </div>
+                    <div class="case-report-actions">
+                      <button
+                        type="button"
+                        class="case-report-btn"
+                        :disabled="reportLoading"
+                        @click="generateSecurityReport('all')"
+                      >
+                        <RefreshCw v-if="reportLoading || governanceLoading" class="h-3.5 w-3.5 animate-spin" />
+                        <FileText v-else class="h-3.5 w-3.5" />
+                        全局
+                      </button>
+                      <button
+                        type="button"
+                        class="case-report-btn"
+                        :disabled="reportLoading || !selectedDocId || selectedDocId === 'new'"
+                        @click="generateSecurityReport('document')"
+                      >
+                        文档
+                      </button>
+                      <button
+                        type="button"
+                        class="case-report-btn"
+                        :disabled="reportLoading || !selectedAssetDetail"
+                        @click="generateSecurityReport('asset')"
+                      >
+                        资产
+                      </button>
+                      <button
+                        type="button"
+                        class="case-report-btn"
+                        :disabled="reportLoading"
+                        @click="generateSecurityReport('all', 30)"
+                      >
+                        近30天
+                      </button>
+                      <input
+                        v-model="reportTagsInput"
+                        class="case-report-tag-input"
+                        placeholder="标签"
+                        @keyup.enter="generateSecurityReport('tags')"
+                      />
+                      <button
+                        type="button"
+                        class="case-report-btn"
+                        :disabled="reportLoading || parseReportTagsInput().length === 0"
+                        @click="generateSecurityReport('tags')"
+                      >
+                        标签
+                      </button>
+                    </div>
+                  </header>
+
+                  <div v-if="visibleGovernanceCases.length === 0" class="case-empty">
+                    暂无风险案件
+                  </div>
+                  <article
+                    v-for="caseItem in visibleGovernanceCases"
+                    v-else
+                    :key="caseItem.id"
+                    class="case-card"
+                    :class="[`case-card--${caseItem.severity}`, `case-card--status-${caseItem.status}`]"
+                  >
+                    <header>
+                      <div>
+                        <span>{{ caseTypeLabel(caseItem.caseType) }} · {{ severityLabel(caseItem.severity) }}</span>
+                        <strong>{{ caseItem.title }}</strong>
+                      </div>
+                      <span class="case-status">{{ caseStatusLabel(caseItem.status) }}</span>
+                    </header>
+
+                    <div class="case-meta-line">
+                      <span>{{ caseItem.sourceFindingId || caseItem.id }}</span>
+                      <span>{{ formatShortTime(caseItem.updatedAt) }}</span>
+                    </div>
+
+                    <div class="case-fields">
+                      <input
+                        v-model="caseActionDrafts[caseItem.id].owner"
+                        type="text"
+                        placeholder="责任人"
+                      />
+                      <input
+                        v-model="caseActionDrafts[caseItem.id].dueAt"
+                        type="date"
+                        aria-label="截止日"
+                      />
+                    </div>
+                    <textarea
+                      v-model="caseActionDrafts[caseItem.id].rationale"
+                      rows="2"
+                      placeholder="处置备注 / 接受理由"
+                    ></textarea>
+                    <div class="case-fields">
+                      <input
+                        v-model="caseActionDrafts[caseItem.id].impactScope"
+                        type="text"
+                        placeholder="影响范围"
+                      />
+                      <input
+                        v-model="caseActionDrafts[caseItem.id].reviewer"
+                        type="text"
+                        placeholder="复核人"
+                      />
+                    </div>
+                    <textarea
+                      v-model="caseActionDrafts[caseItem.id].compensatingControls"
+                      rows="2"
+                      placeholder="补偿控制"
+                    ></textarea>
+                    <div class="case-fields">
+                      <input
+                        v-model="caseActionDrafts[caseItem.id].acceptedUntil"
+                        type="date"
+                        aria-label="接受有效期"
+                      />
+                      <button
+                        type="button"
+                        class="case-accept-btn"
+                        :disabled="isCaseBusy(caseItem.id)"
+                        @click="acceptCase(caseItem)"
+                      >
+                        接受
+                      </button>
+                    </div>
+
+                    <div v-if="caseItem.acceptedUntil || caseItem.impactScope || caseItem.compensatingControls || caseItem.reviewer" class="case-exception-detail">
+                      <span v-if="caseItem.acceptedUntil">有效期 {{ caseItem.acceptedUntil }}</span>
+                      <span v-if="caseItem.impactScope">影响 {{ caseItem.impactScope }}</span>
+                      <span v-if="caseItem.compensatingControls">补偿 {{ caseItem.compensatingControls }}</span>
+                      <span v-if="caseItem.reviewer">复核 {{ caseItem.reviewer }}</span>
+                    </div>
+
+                    <footer>
+                      <button :disabled="isCaseBusy(caseItem.id)" @click="updateCaseStatus(caseItem, 'acknowledged')" type="button">确认</button>
+                      <button :disabled="isCaseBusy(caseItem.id)" @click="updateCaseStatus(caseItem, 'fixing')" type="button">处理中</button>
+                      <button :disabled="isCaseBusy(caseItem.id)" @click="updateCaseStatus(caseItem, 'reviewing')" type="button">复核</button>
+                      <button :disabled="isCaseBusy(caseItem.id)" @click="updateCaseStatus(caseItem, 'closed')" type="button">关闭</button>
+                    </footer>
+                  </article>
+
+                  <div v-if="visibleGovernanceEvents.length > 0" class="case-event-list">
+                    <div v-for="event in visibleGovernanceEvents" :key="event.id">
+                      <span>{{ formatShortTime(event.createdAt) }}</span>
+                      <strong>{{ event.summary }}</strong>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="checklist-panel">
+                  <header class="checklist-header">
+                    <div>
+                      <span>安全 checklist</span>
+                      <strong>{{ visibleChecklistItems.length }} 项</strong>
+                    </div>
+                    <RefreshCw v-if="checklistLoading" class="h-3.5 w-3.5 animate-spin text-emerald-300" />
+                  </header>
+
+                  <div v-if="visibleChecklistItems.length === 0" class="checklist-empty">
+                    暂无推荐 checklist
+                  </div>
+                  <article
+                    v-for="item in visibleChecklistItems"
+                    v-else
+                    :key="item.id"
+                    class="checklist-card"
+                    :class="{ 'checklist-card--recommended': item.recommended, 'checklist-card--done': item.status === 'done', 'checklist-card--waived': item.status === 'waived' }"
+                  >
+                    <header>
+                      <div>
+                        <span>{{ item.recommended ? '推荐复核' : '常规项' }}</span>
+                        <strong>{{ item.title }}</strong>
+                      </div>
+                      <em>{{ checklistStatusLabel(item.status) }}</em>
+                    </header>
+                    <p>{{ item.description }}</p>
+                    <div class="checklist-standard">
+                      {{ checklistStandardsLabel(item) }}
+                    </div>
+                    <div v-if="item.evidence.length > 0" class="checklist-evidence">
+                      <span v-for="evidence in item.evidence" :key="evidence">{{ evidence }}</span>
+                    </div>
+                    <input
+                      v-model="item.note"
+                      type="text"
+                      placeholder="复核备注"
+                    />
+                    <footer>
+                      <button :disabled="isChecklistBusy(item.id)" @click="updateChecklistStatus(item, 'done')" type="button">完成</button>
+                      <button :disabled="isChecklistBusy(item.id)" @click="updateChecklistStatus(item, 'waived')" type="button">不适用</button>
+                      <button :disabled="isChecklistBusy(item.id)" @click="updateChecklistStatus(item, 'open')" type="button">重开</button>
+                    </footer>
+                  </article>
+                </section>
+
+                <section class="asset-panel">
+                  <header class="asset-header">
+                    <div>
+                      <span>资产地图</span>
+                      <strong>{{ securityAssets.length }} 个资产</strong>
+                    </div>
+                    <RefreshCw v-if="assetLoading" class="h-3.5 w-3.5 animate-spin text-emerald-300" />
+                  </header>
+
+                  <div v-if="visibleSecurityAssets.length === 0" class="asset-empty">
+                    暂无资产索引
+                  </div>
+                  <div v-else class="asset-list">
+                    <button
+                      v-for="asset in visibleSecurityAssets"
+                      :key="asset.id"
+                      type="button"
+                      class="asset-chip"
+                      :class="{ 'asset-chip--active': selectedAssetDetail?.asset.id === asset.id }"
+                      @click="selectSecurityAsset(asset)"
+                    >
+                      <span>{{ assetTypeLabel(asset.assetType) }}</span>
+                      <strong>{{ asset.name }}</strong>
+                    </button>
+                  </div>
+
+                  <article v-if="selectedAssetDetail" class="asset-detail">
+                    <header>
+                      <span>{{ assetTypeLabel(selectedAssetDetail.asset.assetType) }}</span>
+                      <strong>{{ selectedAssetDetail.asset.name }}</strong>
+                    </header>
+                    <div class="asset-detail-grid">
+                      <div>
+                        <span>文档</span>
+                        <strong>{{ selectedAssetDetail.documents.length }}</strong>
+                      </div>
+                      <div>
+                        <span>风险</span>
+                        <strong>{{ selectedAssetDetail.findings.length }}</strong>
+                      </div>
+                      <div>
+                        <span>治理项</span>
+                        <strong>{{ selectedAssetDetail.cases.length }}</strong>
+                      </div>
+                    </div>
+                    <div v-if="selectedAssetDetail.documents.length > 0" class="asset-related-list">
+                      <button
+                        v-for="doc in selectedAssetDetail.documents"
+                        :key="doc.id"
+                        type="button"
+                        @click="selectDocument(doc.id)"
+                      >
+                        {{ doc.title }}
+                      </button>
+                    </div>
+                    <div v-if="selectedAssetDetail.findings.length > 0" class="asset-finding-list">
+                      <span v-for="finding in selectedAssetDetail.findings.slice(0, 3)" :key="finding.id">
+                        L{{ finding.lineStart }} · {{ finding.title }}
+                      </span>
+                    </div>
+                  </article>
+
+                  <article v-if="securityAssetGraph" class="asset-graph">
+                    <header>
+                      <div>
+                        <span>轻量关系图</span>
+                        <strong>{{ securityAssetGraph.nodes.length }} 节点 · {{ securityAssetGraph.edges.length }} 关系</strong>
+                      </div>
+                      <RefreshCw v-if="graphLoading" class="h-3.5 w-3.5 animate-spin text-emerald-300" />
+                    </header>
+                    <div v-if="visibleGraphNodes.length === 0" class="asset-empty">
+                      暂无关系图
+                    </div>
+                    <div v-else class="graph-node-list">
+                      <span
+                        v-for="node in visibleGraphNodes"
+                        :key="node.id"
+                        class="graph-node-chip"
+                        :class="[`graph-node-chip--${node.nodeType}`, node.severity ? `graph-node-chip--${node.severity}` : '']"
+                      >
+                        <em>{{ graphNodeTypeLabel(node.nodeType) }}</em>
+                        <strong>{{ node.label }}</strong>
+                      </span>
+                    </div>
+                    <div v-if="visibleGraphEdges.length > 0" class="graph-edge-list">
+                      <div v-for="edge in visibleGraphEdges" :key="edge.id">
+                        <span>{{ graphEdgeTypeLabel(edge.edgeType) }}</span>
+                        <strong>{{ edge.label }}</strong>
+                      </div>
+                    </div>
+                  </article>
+                </section>
+
+                <div v-if="auditFindings.length === 0" class="audit-empty">
+                  <CheckCircle2 class="h-8 w-8 text-emerald-400" />
+                  <p>当前文档未发现规则风险。</p>
+                </div>
+                <div v-else class="audit-finding-list">
+                  <article
+                    v-for="finding in auditFindings"
+                    :key="finding.id"
+                    class="finding-card"
+                    :class="[
+                      `finding-card--${finding.severity}`,
+                      { 'finding-card--selected': selectedFindingId === finding.id, 'finding-card--muted': finding.status === 'ignored' || finding.status === 'fixed' },
+                    ]"
+                  >
+                    <header>
+                      <div>
+                        <span class="finding-line">{{ findingLineLabel(finding) }}</span>
+                        <strong>{{ finding.title }}</strong>
+                      </div>
+                      <span class="finding-severity">{{ severityLabel(finding.severity) }}</span>
+                    </header>
+                    <p>{{ finding.detail }}</p>
+                    <div class="finding-evidence">{{ finding.evidence }}</div>
+                    <div class="finding-recommendation">{{ finding.recommendation }}</div>
+                    <footer>
+                      <button @click="revealFinding(finding)" type="button">查看</button>
+                      <button @click="explainFinding(finding)" type="button">解释</button>
+                      <button @click="applyFindingFix(finding)" type="button">处理</button>
+                      <button @click="updateFindingStatus(finding, 'reviewing')" type="button">复核</button>
+                      <button @click="updateFindingStatus(finding, finding.status === 'ignored' ? 'open' : 'ignored')" type="button">
+                        {{ finding.status === 'ignored' ? '恢复' : '忽略' }}
+                      </button>
+                    </footer>
+                    <div class="finding-meta">
+                      {{ kindLabel(finding.kind) }} · {{ statusLabel(finding.status) }}
+                    </div>
+                  </article>
+                </div>
+              </div>
+
+              <div v-else class="right-panel-body right-panel-body--preview">
+                <div class="preview-surface" v-html="previewHtml"></div>
+              </div>
             </section>
           </div>
         </div>
@@ -2093,7 +4288,7 @@ onMounted(() => {
 }
 
 .memo-grid {
-  @apply flex-1 grid grid-cols-[230px_minmax(0,1fr)] min-h-0 transition-all duration-300;
+  @apply flex-1 grid grid-cols-[210px_minmax(0,1fr)] min-h-0 transition-all duration-300;
 }
 .memo-grid--collapsed {
   @apply grid-cols-[0px_minmax(0,1fr)];
@@ -2127,6 +4322,30 @@ onMounted(() => {
 .doc-item-summary {
   @apply text-[10px] text-gray-500 mt-1 line-clamp-2 leading-relaxed;
 }
+.doc-item-heading {
+  @apply flex min-w-0 items-center justify-between gap-2;
+}
+.doc-risk-meta {
+  @apply flex shrink-0 items-center gap-1;
+}
+.doc-risk-pill {
+  @apply inline-flex h-5 min-w-[34px] items-center justify-center rounded-md border px-1.5 text-[9px] font-bold;
+}
+.doc-risk-pill--critical {
+  @apply border-red-500/30 bg-red-500/10 text-red-300;
+}
+.doc-risk-pill--warning {
+  @apply border-amber-400/30 bg-amber-400/10 text-amber-200;
+}
+.doc-risk-pill--info {
+  @apply border-blue-400/20 bg-blue-400/10 text-blue-200;
+}
+.doc-risk-pill--safe {
+  @apply border-emerald-500/25 bg-emerald-500/10 text-emerald-300;
+}
+.doc-risk-count {
+  @apply max-w-[72px] truncate text-[9px] font-semibold text-gray-600;
+}
 .doc-delete-btn {
   @apply p-1 text-gray-700 hover:text-red-400 transition flex-shrink-0 opacity-0 group-hover:opacity-100;
 }
@@ -2141,6 +4360,15 @@ onMounted(() => {
 .workspace-toolbar {
   @apply px-3 py-2 border-b border-white/5 bg-gray-950/20 flex items-center justify-between gap-3;
 }
+.workspace-view-tabs {
+  @apply flex shrink-0 items-center rounded-lg border border-gray-800/80 bg-gray-950/50 p-0.5;
+}
+.workspace-view-tab {
+  @apply h-7 rounded-md px-2.5 text-[11px] font-bold text-gray-500 transition hover:text-gray-200;
+}
+.workspace-view-tab--active {
+  @apply bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/25;
+}
 .toolbar-icon-btn {
   @apply h-8 w-8 rounded-lg border border-gray-800/70 bg-gray-950/60 text-emerald-400 hover:bg-gray-900 transition flex items-center justify-center;
 }
@@ -2153,22 +4381,162 @@ onMounted(() => {
 .mode-new-btn {
   @apply h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-md shadow-emerald-950/20;
 }
-.collab-workspace {
-  @apply flex-1 min-h-0 grid grid-cols-[minmax(230px,0.8fr)_minmax(360px,1.45fr)_minmax(300px,1fr)];
+.governance-strip {
+  @apply grid grid-cols-4 gap-2 border-b border-white/5 bg-gray-950/20 p-3;
 }
-.chat-panel,
+.governance-metric {
+  @apply min-w-0 rounded-lg border border-gray-800/80 bg-gray-950/45 px-3 py-2;
+}
+.governance-metric--wide {
+  @apply col-span-1;
+}
+.metric-label {
+  @apply block text-[10px] font-bold uppercase tracking-wider text-gray-600;
+}
+.governance-metric strong {
+  @apply mt-1 block truncate text-sm font-bold text-gray-100;
+}
+.metric-foot {
+  @apply mt-0.5 block truncate text-[10px] text-gray-500;
+}
+.security-home {
+  @apply flex-1 min-h-0 overflow-y-auto bg-gray-950/5 p-4;
+}
+.archive-hero {
+  @apply flex min-h-[96px] items-center justify-between gap-4 border-b border-gray-800/80 pb-4;
+}
+.archive-hero-main {
+  @apply min-w-0;
+}
+.archive-hero-main span,
+.archive-panel header span,
+.archive-metric-card span {
+  @apply block text-[10px] font-bold uppercase tracking-wider text-gray-600;
+}
+.archive-hero-main strong {
+  @apply mt-1 block text-2xl font-bold text-gray-100;
+}
+.archive-hero-main p {
+  @apply mt-1 text-xs text-gray-500;
+}
+.archive-hero-actions {
+  @apply flex shrink-0 flex-wrap justify-end gap-2;
+}
+.archive-hero-actions button,
+.archive-panel header button {
+  @apply min-h-8 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50;
+}
+.archive-metric-grid {
+  @apply grid grid-cols-4 gap-2 border-b border-gray-800/80 py-4;
+}
+.archive-metric-card {
+  @apply min-w-0 rounded-lg border border-gray-800/80 bg-gray-950/45 px-3 py-3 text-left transition hover:border-emerald-500/30 hover:bg-emerald-500/5;
+}
+.archive-metric-card--danger {
+  @apply border-red-500/25 bg-red-500/5;
+}
+.archive-metric-card--warn {
+  @apply border-amber-400/25 bg-amber-400/5;
+}
+.archive-metric-card strong {
+  @apply mt-1 block text-xl font-bold text-gray-100;
+}
+.archive-metric-card em {
+  @apply mt-1 block truncate text-[10px] not-italic text-gray-500;
+}
+.archive-board {
+  @apply grid grid-cols-2 gap-3 pt-4;
+}
+.archive-panel {
+  @apply min-w-0 rounded-lg border border-gray-800/80 bg-gray-950/35 p-3;
+}
+.archive-panel--wide {
+  @apply col-span-2;
+}
+.archive-panel header {
+  @apply mb-3 flex items-center justify-between gap-3;
+}
+.archive-panel header div {
+  @apply min-w-0;
+}
+.archive-panel header strong {
+  @apply mt-0.5 block truncate text-sm font-bold text-gray-100;
+}
+.archive-empty {
+  @apply rounded-md border border-dashed border-gray-800 py-4 text-center text-xs text-gray-600;
+}
+.archive-risk-row,
+.archive-finding-row,
+.archive-doc-row {
+  @apply mb-2 block w-full min-w-0 rounded-md border border-gray-800 bg-gray-950/70 px-3 py-2 text-left transition last:mb-0 hover:border-emerald-500/30 hover:bg-emerald-500/5;
+}
+.archive-risk-row--critical {
+  @apply border-red-500/30 bg-red-500/5;
+}
+.archive-risk-row--warning {
+  @apply border-amber-400/25 bg-amber-400/5;
+}
+.archive-risk-row span,
+.archive-finding-row span,
+.archive-doc-row span {
+  @apply block truncate text-[10px] font-semibold text-gray-500;
+}
+.archive-risk-row strong,
+.archive-finding-row strong,
+.archive-doc-row strong {
+  @apply mt-0.5 block truncate text-xs font-bold text-gray-100;
+}
+.archive-risk-row em {
+  @apply mt-1 block truncate text-[10px] not-italic text-gray-600;
+}
+.archive-asset-list {
+  @apply flex flex-wrap gap-1.5;
+}
+.archive-asset-list button {
+  @apply flex max-w-full min-h-8 items-center gap-1.5 rounded-md border border-gray-800 bg-gray-950 px-2 text-left transition hover:border-emerald-500/30;
+}
+.archive-asset-list span {
+  @apply shrink-0 rounded bg-gray-900 px-1 py-0.5 text-[9px] font-bold text-gray-500;
+}
+.archive-asset-list strong {
+  @apply min-w-0 truncate text-[11px] font-semibold text-gray-300;
+}
+.archive-activity-list {
+  @apply grid grid-cols-1 gap-2;
+}
+.archive-activity-list div {
+  @apply rounded-md border border-gray-800 bg-gray-950/70 px-3 py-2;
+}
+.archive-activity-list span {
+  @apply block text-[10px] text-gray-600;
+}
+.archive-activity-list strong {
+  @apply mt-0.5 block truncate text-xs font-bold text-gray-200;
+}
+.archive-activity-list p {
+  @apply mt-1 line-clamp-2 text-[11px] leading-relaxed text-gray-500;
+}
+.security-workspace {
+  @apply flex-1 min-h-0 grid grid-cols-[minmax(320px,1fr)_320px];
+}
 .document-panel,
-.preview-panel {
+.intelligence-sidebar {
   @apply min-h-0 flex flex-col border-r border-white/5;
 }
-.preview-panel {
-  @apply border-r-0 bg-gray-950/10;
+.intelligence-sidebar {
+  @apply border-r-0 bg-gray-950/20;
 }
 .panel-heading {
   @apply h-10 px-4 border-b border-white/5 bg-gray-950/20 flex items-center gap-1.5 text-xs font-bold text-gray-400;
 }
+.editor-section-title {
+  @apply mb-4 flex min-h-[40px] items-center justify-between gap-3 border-b border-white/5 pb-3 text-xs font-bold text-gray-400;
+}
 .messages-area {
   @apply flex-1 overflow-y-auto p-4 space-y-4 min-h-0;
+}
+.messages-area--compact {
+  @apply p-3;
 }
 .message-row {
   @apply flex;
@@ -2258,7 +4626,40 @@ onMounted(() => {
   @apply h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-900 disabled:text-gray-700 text-xs font-semibold text-white transition;
 }
 .editor-textarea {
-  @apply flex-1 w-full px-4 py-3 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition font-mono resize-none mt-1 min-h-[300px] leading-relaxed;
+  @apply flex-1 w-full px-4 py-3 bg-gray-950 text-xs text-gray-200 focus:outline-none transition font-mono resize-none min-h-[300px] leading-relaxed;
+}
+.editor-shell {
+  @apply mt-1 flex flex-1 min-h-[300px] overflow-hidden rounded-xl border border-gray-800 bg-gray-950 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500;
+}
+.line-gutter {
+  @apply w-12 shrink-0 overflow-hidden border-r border-gray-800 bg-gray-950/80 py-3 text-right font-mono;
+}
+.editor-line-no {
+  @apply block h-5 w-full px-2 text-right text-[10px] leading-5 text-gray-700 transition;
+}
+.editor-line-no--critical {
+  @apply border-l-2 border-red-500 bg-red-500/10 text-red-300;
+}
+.editor-line-no--warning {
+  @apply border-l-2 border-amber-400 bg-amber-400/10 text-amber-300;
+}
+.editor-line-no--info {
+  @apply border-l-2 border-blue-400 bg-blue-400/10 text-blue-300;
+}
+.selection-toolbar {
+  @apply mb-2 flex w-fit items-center gap-1 rounded-lg border border-emerald-500/20 bg-gray-950 px-2 py-1 shadow-lg shadow-black/20;
+}
+.selection-toolbar button {
+  @apply rounded-md px-2 py-1 text-[10px] font-semibold text-gray-300 transition hover:bg-emerald-500/10 hover:text-emerald-300;
+}
+.audit-mini-pill {
+  @apply rounded-md border border-gray-800 bg-gray-950 px-2 py-1 text-[10px] font-bold text-gray-400;
+}
+.audit-mini-pill--danger {
+  @apply border-red-500/30 bg-red-500/10 text-red-300;
+}
+.audit-mini-pill--warn {
+  @apply border-amber-400/30 bg-amber-400/10 text-amber-300;
 }
 .add-sec-btn {
   @apply px-2 py-0.5 border border-emerald-800/40 hover:bg-emerald-900/10 text-emerald-400 rounded-lg text-[10px] font-semibold transition flex items-center;
@@ -2330,24 +4731,516 @@ onMounted(() => {
   @apply inline-flex rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[0.85em] font-mono text-emerald-300;
 }
 
+.right-tabs {
+  @apply grid h-12 grid-cols-3 gap-1 border-b border-white/5 bg-gray-950/35 p-2;
+}
+.right-tab {
+  @apply flex min-w-0 items-center justify-center gap-1 rounded-lg px-2 text-xs font-bold text-gray-500 transition hover:bg-gray-900 hover:text-gray-200;
+}
+.right-tab--active {
+  @apply bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/25;
+}
+.tab-count {
+  @apply inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] text-white;
+}
+.right-panel-body {
+  @apply flex flex-1 min-h-0 flex-col overflow-y-auto p-3;
+}
+.right-panel-body--preview {
+  @apply p-0;
+}
+.assistant-summary,
+.assistant-tasks {
+  @apply mb-3 rounded-lg border border-gray-800/80 bg-gray-950/45 p-3;
+}
+.assistant-summary h4,
+.assistant-tasks h4 {
+  @apply mb-2 text-xs font-bold text-gray-300;
+}
+.assistant-summary p {
+  @apply text-xs leading-relaxed text-gray-500;
+}
+.assistant-tasks {
+  @apply grid grid-cols-1 gap-2;
+}
+.assistant-tasks button {
+  @apply flex items-center gap-1.5 rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-left text-xs font-semibold text-gray-300 transition hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-55;
+}
+.audit-summary-grid {
+  @apply mb-3 grid grid-cols-3 gap-2;
+}
+.audit-summary-grid div {
+  @apply rounded-lg border border-gray-800/80 bg-gray-950/45 p-2 text-center;
+}
+.audit-summary-grid span {
+  @apply block text-[10px] font-bold text-gray-600;
+}
+.audit-summary-grid strong {
+  @apply mt-1 block text-lg font-bold text-gray-100;
+}
+.audit-action-row {
+  @apply mb-3 grid grid-cols-[1fr_auto] gap-2;
+}
+.audit-scan-btn {
+  @apply flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50;
+}
+.audit-batch-btn {
+  @apply flex h-9 min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 text-xs font-bold text-emerald-200 transition hover:border-emerald-400/40 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:border-gray-800 disabled:bg-gray-950/50 disabled:text-gray-600;
+}
+.risk-diff-panel {
+  @apply mb-3 space-y-2 rounded-lg border border-gray-800/80 bg-gray-950/35 p-2.5;
+}
+.risk-diff-panel--active {
+  @apply border-emerald-500/25 bg-emerald-500/5;
+}
+.risk-diff-header {
+  @apply flex items-start justify-between gap-2;
+}
+.risk-diff-header span {
+  @apply block text-[10px] font-bold uppercase text-gray-600;
+}
+.risk-diff-header strong {
+  @apply mt-0.5 block text-xs font-bold leading-snug text-gray-200;
+}
+.risk-diff-empty {
+  @apply rounded-md border border-dashed border-gray-800 py-3 text-center text-xs text-gray-600;
+}
+.risk-diff-metrics {
+  @apply grid grid-cols-3 gap-1.5;
+}
+.risk-diff-metrics div {
+  @apply rounded-md border border-gray-800 bg-gray-950/70 px-2 py-1.5 text-center;
+}
+.risk-diff-metrics span {
+  @apply block text-[10px] font-bold text-gray-600;
+}
+.risk-diff-metrics strong {
+  @apply block text-sm font-bold text-gray-100;
+}
+.risk-diff-list {
+  @apply space-y-1;
+}
+.risk-diff-item {
+  @apply block w-full rounded-md border border-gray-800 bg-gray-950/70 px-2 py-1.5 text-left transition hover:border-emerald-500/30 hover:bg-emerald-500/10;
+}
+.risk-diff-item span {
+  @apply block text-[10px] font-semibold text-gray-500;
+}
+.risk-diff-item strong {
+  @apply mt-0.5 block truncate text-[11px] font-bold text-gray-200;
+}
+.risk-diff-item--added {
+  @apply border-red-500/25 bg-red-500/5;
+}
+.risk-diff-item--resolved {
+  @apply border-emerald-500/25 bg-emerald-500/5;
+}
+.risk-diff-item--changed {
+  @apply border-blue-400/25 bg-blue-400/5;
+}
+.case-queue {
+  @apply mb-3 space-y-2 rounded-lg border border-gray-800/80 bg-gray-950/35 p-2.5;
+}
+.case-queue-header {
+  @apply flex items-center justify-between gap-2;
+}
+.case-queue-header span {
+  @apply block text-[10px] font-bold uppercase text-gray-600;
+}
+.case-queue-header strong {
+  @apply block text-xs font-bold text-gray-200;
+}
+.case-report-actions {
+  @apply flex shrink-0 flex-wrap justify-end gap-1;
+}
+.case-report-btn {
+  @apply flex min-h-8 shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 text-[10px] font-bold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50;
+}
+.case-report-tag-input {
+  @apply h-8 w-20 min-w-0 rounded-md border border-gray-800 bg-gray-950 px-2 text-[10px] font-semibold text-gray-300 outline-none transition placeholder:text-gray-600 focus:border-emerald-500/40;
+}
+.case-empty {
+  @apply rounded-md border border-dashed border-gray-800 py-4 text-center text-xs text-gray-600;
+}
+.case-card {
+  @apply rounded-lg border border-gray-800 bg-gray-950/60 p-2.5 shadow-sm shadow-black/10;
+}
+.case-card--critical {
+  @apply border-red-500/30;
+}
+.case-card--warning {
+  @apply border-amber-400/25;
+}
+.case-card--info {
+  @apply border-blue-400/20;
+}
+.case-card--status-accepted,
+.case-card--status-closed,
+.case-card--status-fixed {
+  @apply opacity-70;
+}
+.case-card header {
+  @apply flex items-start justify-between gap-2;
+}
+.case-card header div {
+  @apply min-w-0;
+}
+.case-card header span {
+  @apply block text-[10px] font-semibold text-gray-500;
+}
+.case-card header strong {
+  @apply mt-0.5 block truncate text-xs font-bold text-gray-100;
+}
+.case-status {
+  @apply shrink-0 rounded-md border border-white/10 bg-gray-900 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200;
+}
+.case-meta-line {
+  @apply mt-2 flex items-center justify-between gap-2 text-[10px] text-gray-600;
+}
+.case-meta-line span:first-child {
+  @apply min-w-0 truncate font-mono;
+}
+.case-fields {
+  @apply mt-2 grid grid-cols-2 gap-1.5;
+}
+.case-fields input,
+.case-card textarea {
+  @apply min-w-0 rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 text-[11px] text-gray-200 outline-none transition placeholder:text-gray-600 focus:border-emerald-500/50;
+}
+.case-card textarea {
+  @apply mt-1.5 w-full resize-none leading-relaxed;
+}
+.case-accept-btn {
+  @apply rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 py-1.5 text-[11px] font-bold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50;
+}
+.case-exception-detail {
+  @apply mt-2 flex flex-wrap gap-1;
+}
+.case-exception-detail span {
+  @apply max-w-full truncate rounded-md border border-amber-400/20 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200;
+}
+.case-card footer {
+  @apply mt-2 grid grid-cols-4 gap-1;
+}
+.case-card footer button {
+  @apply min-h-7 rounded-md border border-gray-800 bg-gray-950 px-1.5 text-[10px] font-semibold text-gray-300 transition hover:border-emerald-500/30 hover:text-emerald-300 disabled:opacity-50;
+}
+.case-event-list {
+  @apply space-y-1 border-t border-gray-800/80 pt-2;
+}
+.case-event-list div {
+  @apply rounded-md bg-black/15 px-2 py-1.5;
+}
+.case-event-list span {
+  @apply block text-[10px] text-gray-600;
+}
+.case-event-list strong {
+  @apply mt-0.5 block text-[11px] font-semibold leading-snug text-gray-300;
+}
+.checklist-panel {
+  @apply mb-3 space-y-2 rounded-lg border border-gray-800/80 bg-gray-950/30 p-2.5;
+}
+.checklist-header {
+  @apply flex items-center justify-between gap-2;
+}
+.checklist-header span {
+  @apply block text-[10px] font-bold uppercase text-gray-600;
+}
+.checklist-header strong {
+  @apply block text-xs font-bold text-gray-200;
+}
+.checklist-empty {
+  @apply rounded-md border border-dashed border-gray-800 py-4 text-center text-xs text-gray-600;
+}
+.checklist-card {
+  @apply rounded-lg border border-gray-800 bg-gray-950/55 p-2.5;
+}
+.checklist-card--recommended {
+  @apply border-emerald-500/25 bg-emerald-500/5;
+}
+.checklist-card--done,
+.checklist-card--waived {
+  @apply opacity-70;
+}
+.checklist-card header {
+  @apply flex items-start justify-between gap-2;
+}
+.checklist-card header div {
+  @apply min-w-0;
+}
+.checklist-card header span {
+  @apply block text-[10px] font-semibold text-gray-500;
+}
+.checklist-card header strong {
+  @apply mt-0.5 block truncate text-xs font-bold text-gray-100;
+}
+.checklist-card em {
+  @apply shrink-0 rounded-md border border-white/10 bg-gray-900 px-1.5 py-0.5 text-[10px] not-italic font-bold text-gray-300;
+}
+.checklist-card p {
+  @apply mt-2 text-[11px] leading-relaxed text-gray-400;
+}
+.checklist-standard {
+  @apply mt-2 rounded-md border border-gray-800 bg-black/15 px-2 py-1.5 text-[10px] leading-snug text-emerald-200;
+}
+.checklist-evidence {
+  @apply mt-2 flex flex-wrap gap-1;
+}
+.checklist-evidence span {
+  @apply max-w-full truncate rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] text-gray-500;
+}
+.checklist-card input {
+  @apply mt-2 min-h-8 w-full rounded-md border border-gray-800 bg-gray-950 px-2 text-[11px] text-gray-200 outline-none placeholder:text-gray-600 focus:border-emerald-500/50;
+}
+.checklist-card footer {
+  @apply mt-2 grid grid-cols-3 gap-1;
+}
+.checklist-card footer button {
+  @apply min-h-7 rounded-md border border-gray-800 bg-gray-950 px-1.5 text-[10px] font-semibold text-gray-300 transition hover:border-emerald-500/30 hover:text-emerald-300 disabled:opacity-50;
+}
+.asset-panel {
+  @apply mb-3 space-y-2 rounded-lg border border-gray-800/80 bg-gray-950/30 p-2.5;
+}
+.asset-header {
+  @apply flex items-center justify-between gap-2;
+}
+.asset-header span {
+  @apply block text-[10px] font-bold uppercase text-gray-600;
+}
+.asset-header strong {
+  @apply block text-xs font-bold text-gray-200;
+}
+.asset-empty {
+  @apply rounded-md border border-dashed border-gray-800 py-4 text-center text-xs text-gray-600;
+}
+.asset-list {
+  @apply flex flex-wrap gap-1.5;
+}
+.asset-chip {
+  @apply flex max-w-full min-h-8 items-center gap-1.5 rounded-md border border-gray-800 bg-gray-950 px-2 text-left transition hover:border-emerald-500/30;
+}
+.asset-chip span {
+  @apply shrink-0 rounded bg-gray-900 px-1 py-0.5 text-[9px] font-bold text-gray-500;
+}
+.asset-chip strong {
+  @apply min-w-0 truncate text-[11px] font-semibold text-gray-300;
+}
+.asset-chip--active {
+  @apply border-emerald-500/40 bg-emerald-500/10;
+}
+.asset-detail {
+  @apply rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5;
+}
+.asset-detail header {
+  @apply flex items-center justify-between gap-2;
+}
+.asset-detail header span {
+  @apply rounded-md bg-gray-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200;
+}
+.asset-detail header strong {
+  @apply min-w-0 truncate text-xs font-bold text-gray-100;
+}
+.asset-detail-grid {
+  @apply mt-2 grid grid-cols-3 gap-1.5;
+}
+.asset-detail-grid div {
+  @apply rounded-md border border-gray-800 bg-gray-950/70 px-2 py-1.5 text-center;
+}
+.asset-detail-grid span {
+  @apply block text-[10px] text-gray-600;
+}
+.asset-detail-grid strong {
+  @apply block text-sm font-bold text-gray-100;
+}
+.asset-related-list {
+  @apply mt-2 flex flex-wrap gap-1;
+}
+.asset-related-list button {
+  @apply max-w-full truncate rounded-md border border-gray-800 bg-gray-950 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:border-emerald-500/30 hover:text-emerald-300;
+}
+.asset-finding-list {
+  @apply mt-2 space-y-1;
+}
+.asset-finding-list span {
+  @apply block rounded-md bg-black/15 px-2 py-1 text-[10px] text-gray-400;
+}
+.asset-graph {
+  @apply rounded-lg border border-gray-800/80 bg-gray-950/35 p-2.5;
+}
+.asset-graph header {
+  @apply flex items-center justify-between gap-2;
+}
+.asset-graph header span {
+  @apply block text-[10px] font-bold uppercase text-gray-600;
+}
+.asset-graph header strong {
+  @apply block text-xs font-bold text-gray-200;
+}
+.graph-node-list {
+  @apply mt-2 flex flex-wrap gap-1.5;
+}
+.graph-node-chip {
+  @apply flex max-w-full min-h-7 items-center gap-1 rounded-md border border-gray-800 bg-gray-950 px-1.5;
+}
+.graph-node-chip em {
+  @apply shrink-0 not-italic rounded bg-gray-900 px-1 py-0.5 text-[9px] font-bold text-gray-500;
+}
+.graph-node-chip strong {
+  @apply min-w-0 truncate text-[10px] font-semibold text-gray-300;
+}
+.graph-node-chip--document {
+  @apply border-blue-400/20 bg-blue-400/5;
+}
+.graph-node-chip--asset {
+  @apply border-emerald-500/25 bg-emerald-500/5;
+}
+.graph-node-chip--finding,
+.graph-node-chip--critical {
+  @apply border-red-500/25 bg-red-500/5;
+}
+.graph-node-chip--secret {
+  @apply border-purple-400/20 bg-purple-400/5;
+}
+.graph-node-chip--case {
+  @apply border-amber-400/25 bg-amber-400/5;
+}
+.graph-node-chip--warning {
+  @apply border-amber-400/25 bg-amber-400/5;
+}
+.graph-node-chip--info {
+  @apply border-blue-400/20 bg-blue-400/5;
+}
+.graph-edge-list {
+  @apply mt-2 space-y-1 border-t border-gray-800/70 pt-2;
+}
+.graph-edge-list div {
+  @apply rounded-md bg-black/15 px-2 py-1.5;
+}
+.graph-edge-list span {
+  @apply block text-[9px] font-bold uppercase text-gray-600;
+}
+.graph-edge-list strong {
+  @apply mt-0.5 block truncate text-[10px] font-semibold text-gray-300;
+}
+.audit-empty {
+  @apply flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-gray-800/70 bg-gray-950/35 p-6 text-center text-xs text-gray-500;
+}
+.audit-finding-list {
+  @apply space-y-3;
+}
+.finding-card {
+  @apply rounded-lg border border-gray-800 bg-gray-950/55 p-3 shadow-md shadow-black/10 transition;
+}
+.finding-card--critical {
+  @apply border-red-500/35 bg-red-500/10;
+}
+.finding-card--warning {
+  @apply border-amber-400/30 bg-amber-400/10;
+}
+.finding-card--info {
+  @apply border-blue-400/25 bg-blue-400/10;
+}
+.finding-card--selected {
+  @apply ring-1 ring-emerald-400;
+}
+.finding-card--muted {
+  @apply opacity-55;
+}
+.finding-card header {
+  @apply flex items-start justify-between gap-2;
+}
+.finding-card header div {
+  @apply min-w-0;
+}
+.finding-card strong {
+  @apply block truncate text-sm font-bold text-gray-100;
+}
+.finding-line {
+  @apply mb-1 inline-flex rounded-md border border-gray-700 bg-gray-950 px-1.5 py-0.5 font-mono text-[10px] text-gray-400;
+}
+.finding-severity {
+  @apply shrink-0 rounded-md border border-white/10 bg-gray-950 px-1.5 py-0.5 text-[10px] font-bold text-gray-300;
+}
+.finding-card p {
+  @apply mt-2 text-xs leading-relaxed text-gray-400;
+}
+.finding-evidence {
+  @apply mt-2 break-all rounded-md border border-gray-800 bg-gray-950/70 px-2 py-1.5 font-mono text-[10px] text-gray-300;
+}
+.finding-recommendation {
+  @apply mt-2 rounded-md bg-black/15 px-2 py-1.5 text-[11px] leading-relaxed text-gray-400;
+}
+.finding-card footer {
+  @apply mt-3 grid grid-cols-4 gap-1;
+}
+.finding-card footer button {
+  @apply rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 text-[10px] font-semibold text-gray-300 transition hover:border-emerald-500/30 hover:text-emerald-300;
+}
+.finding-meta {
+  @apply mt-2 text-[10px] text-gray-600;
+}
+
 @media (max-width: 1400px) {
-  .collab-workspace {
-    @apply grid-cols-[minmax(220px,0.75fr)_minmax(320px,1.2fr)_minmax(280px,0.95fr)];
+  .security-workspace {
+    @apply grid-cols-[minmax(300px,1fr)_300px];
   }
 }
 
 @media (max-width: 1180px) {
-  .collab-workspace {
-    @apply grid-cols-[260px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(260px,0.75fr)];
+  .governance-strip {
+    @apply grid-cols-2;
   }
-  .chat-panel {
-    @apply row-span-2;
+  .archive-metric-grid,
+  .archive-board {
+    @apply grid-cols-2;
+  }
+  .security-workspace {
+    @apply grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_340px];
   }
   .document-panel {
     @apply border-r-0 border-b border-white/5;
   }
-  .preview-panel {
-    @apply col-start-2;
+}
+
+@media (max-width: 760px) {
+  .memo-layout {
+    @apply h-[82vh] min-h-[620px];
+  }
+  .action-bar,
+  .workspace-toolbar {
+    @apply flex-wrap;
+  }
+  .memo-grid,
+  .memo-grid--collapsed {
+    @apply grid-cols-1 grid-rows-[180px_minmax(0,1fr)];
+  }
+  .doc-sidebar {
+    @apply border-r-0 border-b border-white/5;
+  }
+  .governance-strip {
+    @apply grid-cols-2;
+  }
+  .archive-hero {
+    @apply items-start flex-col;
+  }
+  .archive-hero-actions {
+    @apply justify-start;
+  }
+  .archive-metric-grid,
+  .archive-board {
+    @apply grid-cols-1;
+  }
+  .archive-panel--wide {
+    @apply col-span-1;
+  }
+  .workspace-view-tabs {
+    @apply order-3 w-full;
+  }
+  .workspace-view-tab {
+    @apply flex-1;
+  }
+  .security-workspace {
+    @apply grid-cols-1 grid-rows-[minmax(0,1fr)_320px];
   }
 }
 

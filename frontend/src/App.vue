@@ -20,7 +20,7 @@ const themeStore = useThemeStore()
 
     <main
       class="app-shell"
-      :class="themeStore.isSidebarCollapsed ? 'grid-cols-[80px_minmax(0,1fr)]' : 'grid-cols-[280px_minmax(0,1fr)]'"
+      :class="themeStore.isSidebarCollapsed ? 'grid-cols-[80px_minmax(0,1fr)] max-[880px]:grid-cols-1' : 'grid-cols-[280px_minmax(0,1fr)] max-[880px]:grid-cols-1'"
     >
       <AppSidebar class="max-[880px]:min-h-0 max-[880px]:border-b max-[880px]:border-r-0" />
       <section class="app-content">
