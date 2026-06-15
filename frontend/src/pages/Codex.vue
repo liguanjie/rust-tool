@@ -520,16 +520,16 @@ function formatTime(timestamp: number) {
                 <DialogTrigger asChild>
                   <Button variant="ghost" class="text-destructive hover:text-destructive hover:bg-destructive/10" size="sm">清空</Button>
                 </DialogTrigger>
-                <DialogContent class="sm:max-w-md !bg-[#0f171e] !border-[rgba(16,185,129,0.15)] !text-white shadow-2xl shadow-black">
+                <DialogContent class="sm:max-w-md shadow-2xl shadow-black">
                   <DialogHeader>
-                    <DialogTitle class="text-white">确认清空执行记录？</DialogTitle>
-                    <DialogDescription class="text-gray-400">
+                    <DialogTitle>确认清空执行记录？</DialogTitle>
+                    <DialogDescription>
                       此操作将永久删除所有执行历史记录。无法撤销。
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter class="sm:justify-end gap-2 sm:space-x-2 mt-4">
                     <DialogClose asChild>
-                      <Button variant="secondary" class="!bg-transparent !border !border-[rgba(16,185,129,0.15)] hover:!bg-[rgba(16,185,129,0.05)] text-gray-300 hover:text-white">取消</Button>
+                      <Button variant="outline">取消</Button>
                     </DialogClose>
                     <DialogClose asChild>
                       <Button variant="destructive" @click="clearHistory">确认清空</Button>
@@ -599,20 +599,6 @@ function formatTime(timestamp: number) {
 */
 
 * {
-  --color-bg-sidebar: transparent;
-  --color-bg-main: transparent;
-  --color-border: var(--border-card, rgba(16, 185, 129, 0.15));
-  --color-border-hover: rgba(16, 185, 129, 0.4);
-  --color-text-main: var(--text-title, #ffffff);
-  --color-text-sub: var(--text-base, #94a3b8);
-  --color-text-muted: var(--text-muted, #64748b);
-  --color-primary: #10b981; /* Global Emerald */
-  --color-primary-hover: #059669;
-  --color-surface: var(--bg-card, rgba(15, 23, 30, 0.6));
-  --color-surface-hover: rgba(16, 185, 129, 0.05);
-  --color-terminal-bg: rgba(0, 0, 0, 0.5);
-  --color-terminal-text: #f8fafc;
-  
   --shadow-card: var(--shadow-card, 0 8px 32px 0 rgba(0, 0, 0, 0.6));
   --shadow-input: inset 0 2px 4px rgba(0, 0, 0, 0.2);
   
