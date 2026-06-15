@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, defineAsyncComponent } from 'vue'
-import { Folder, Play, Search, Trash2, Package, Terminal, Box, Wrench, Settings2, Sparkles, CheckCircle2, Cable, FolderSearch, Loader2 } from '@lucide/vue'
+import { Folder, Play, Search, Trash2, Package, Terminal, Box, Wrench, Settings2, Sparkles, CheckCircle2, Cable, FolderSearch, Loader2, Copy } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose
+} from '@/components/ui/dialog'
 
 const VlessToMihomo = defineAsyncComponent(() => import('./VlessToMihomo.vue'))
 
@@ -287,9 +297,9 @@ function formatTime(timestamp: number) {
     <aside class="saas-sidebar">
       <div class="sidebar-header">
         <h1 class="app-title">工作台</h1>
-        <div class="search-bar">
-          <Search class="h-4 w-4 text-muted-foreground mr-2" aria-hidden="true" />
-          <Input v-model="searchQuery" type="text" placeholder="寻找任务或功能..." class="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 h-auto" />
+        <div class="relative w-full mt-4">
+          <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <Input v-model="searchQuery" type="text" placeholder="寻找任务或功能..." class="w-full border-0 bg-[var(--bg-card)] focus-visible:ring-1 focus-visible:ring-emerald-500/50" style="padding-left: 2.5rem;" />
         </div>
       </div>
 
@@ -421,9 +431,9 @@ function formatTime(timestamp: number) {
             <template v-if="selectedScript.name === 'install-to-project.sh'">
               <div class="form-field">
                 <label>第一步：配置目标工作空间</label>
-                <div class="field-control">
-                  <Input v-model="projectDir" type="text" placeholder="例如：/Users/ben/my-new-project" />
-                  <Button variant="outline" @click="pickDirectory('projectDir')">选择目录</Button>
+                <div class="flex items-center gap-2">
+                  <Input v-model="projectDir" type="text" placeholder="例如：/Users/ben/my-new-project" class="flex-1" />
+                  <Button variant="secondary" @click="pickDirectory('projectDir')">选择目录</Button>
                 </div>
                 <span class="field-hint">指定一个本地文件夹作为目标注入的工作空间位置</span>
               </div>
@@ -489,11 +499,11 @@ function formatTime(timestamp: number) {
               </div>
             </template>
 
-            <div class="action-bar">
-              <Button size="lg" :disabled="isRunning" @click="() => runScript()">
+            <div class="mt-6 flex justify-end">
+              <Button size="lg" :disabled="isRunning" @click="() => runScript()" class="w-auto px-8 font-semibold">
                 <Play v-if="!isRunning" class="h-5 w-5 mr-2" aria-hidden="true" />
                 <Loader2 v-else class="h-5 w-5 mr-2 animate-spin" aria-hidden="true" />
-                {{ isRunning ? '执行中...' : '运行' }}
+                {{ isRunning ? '正在处理中...' : (selectedScript.name === 'install-to-project.sh' ? '立刻安装技能' : '立刻开始执行') }}
               </Button>
             </div>
             </div>
@@ -506,16 +516,35 @@ function formatTime(timestamp: number) {
                 <h2>执行记录</h2>
                 <p class="script-badge">History / Logs</p>
               </div>
-              <Button variant="ghost" class="text-destructive hover:text-destructive mt-2" size="sm" @click="clearHistory" v-if="executionHistory.length > 0">清空</Button>
+              <Dialog v-if="executionHistory.length > 0">
+                <DialogTrigger asChild>
+                  <Button variant="ghost" class="text-destructive hover:text-destructive hover:bg-destructive/10" size="sm">清空</Button>
+                </DialogTrigger>
+                <DialogContent class="sm:max-w-md !bg-[#0f171e] !border-[rgba(16,185,129,0.15)] !text-white shadow-2xl shadow-black">
+                  <DialogHeader>
+                    <DialogTitle class="text-white">确认清空执行记录？</DialogTitle>
+                    <DialogDescription class="text-gray-400">
+                      此操作将永久删除所有执行历史记录。无法撤销。
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter class="sm:justify-end gap-2 sm:space-x-2 mt-4">
+                    <DialogClose asChild>
+                      <Button variant="secondary" class="!bg-transparent !border !border-[rgba(16,185,129,0.15)] hover:!bg-[rgba(16,185,129,0.05)] text-gray-300 hover:text-white">取消</Button>
+                    </DialogClose>
+                    <DialogClose asChild>
+                      <Button variant="destructive" @click="clearHistory">确认清空</Button>
+                    </DialogClose>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
 
             <div class="form-container history-container">
               <template v-if="executionHistory.length > 0">
 
-              <!-- 历史搜索框 -->
-              <div class="history-search">
-                <Search class="h-4 w-4 icon-subtle" />
-                <Input v-model="historySearchQuery" type="text" placeholder="搜索参数、输出或脚本..." class="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 h-auto" />
+              <div class="relative w-full mb-4">
+                <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <Input v-model="historySearchQuery" type="text" placeholder="搜索参数、输出或脚本..." class="w-full border-0 bg-[var(--bg-card)] focus-visible:ring-1 focus-visible:ring-emerald-500/50" style="padding-left: 2.5rem;" />
               </div>
 
               <div class="feed-list">
@@ -530,15 +559,15 @@ function formatTime(timestamp: number) {
                       <span class="script-tag">{{ getScriptMeta(record.scriptName).title }}</span>
                       <span class="time">{{ formatTime(record.timestamp) }}</span>
                     </div>
-                    <div class="history-actions">
-                    <Button variant="outline" size="sm" @click="rerunHistory(record)" :disabled="isRunning">
-                      <Play class="h-3 w-3 mr-1" aria-hidden="true" /> 复用执行
-                    </Button>
-                  </div>
+                    <div class="shrink-0 mt-1 sm:mt-0">
+                      <Button variant="secondary" size="sm" @click="rerunHistory(record)" :disabled="isRunning">
+                        <Copy class="h-3 w-3 mr-1" aria-hidden="true" /> 复用技能
+                      </Button>
+                    </div>
                   </div>
                   
                   <div class="feed-args" v-if="record.args">
-                    参数：<code>{{ record.args }}</code>
+                    <span class="shrink-0">参数：</span><code class="break-all">{{ record.args }}</code>
                   </div>
 
                   <!-- 终端输出块 (折叠感) -->
@@ -603,7 +632,7 @@ function formatTime(timestamp: number) {
 
 /* --- Sidebar --- */
 .saas-sidebar {
-  width: 320px;
+  width: 280px;
   background: var(--color-bg-sidebar);
   border-right: 1px solid var(--color-border);
   display: flex;
@@ -612,7 +641,7 @@ function formatTime(timestamp: number) {
 }
 
 .sidebar-header {
-  padding: 1.5rem 1.5rem 1rem 1.5rem;
+  padding: 1.5rem 0.75rem 1rem 0.75rem;
 }
 
 .app-title {
@@ -679,7 +708,7 @@ function formatTime(timestamp: number) {
 .task-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 1rem 1rem 1rem;
+  padding: 0 0.75rem 1rem 0.75rem;
 }
 
 .list-label {
@@ -1219,14 +1248,17 @@ input:focus, select:focus {
 .feed-item-top {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
 
 .feed-info {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .status-dot {
@@ -1241,6 +1273,7 @@ input:focus, select:focus {
 .script-tag {
   font-weight: 600;
   font-size: 0.875rem;
+  white-space: nowrap;
 }
 
 .time {
@@ -1266,6 +1299,9 @@ input:focus, select:focus {
 }
 
 .feed-args {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
   font-size: 0.8125rem;
   color: var(--color-text-sub);
   margin-bottom: 0.75rem;
