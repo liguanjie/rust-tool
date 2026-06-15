@@ -630,8 +630,9 @@ pub(crate) async fn memo_delete_document(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QueryRequest {
-    query: String,
+pub struct QueryRequest {
+    pub query: String,
+    pub context: Option<String>,
 }
 
 #[tauri::command]
@@ -640,7 +641,7 @@ pub(crate) async fn memo_query(
     payload: QueryRequest,
 ) -> Result<SearchAnswerResponse, String> {
     require_unlocked(&state).await?;
-    state.manager.search_and_answer(&payload.query).await
+    state.manager.search_and_answer(&payload.query, payload.context.as_deref()).await
 }
 
 #[derive(Serialize)]
@@ -1081,4 +1082,43 @@ fn copy_dir_if_exists(source: &Path, target: &Path) -> Result<(), String> {
 
 fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
+}
+
+#[tauri::command]
+pub async fn memo_get_tree_state(state: State<'_, MemoDesktopState>) -> Result<serde_json::Value, String> {
+    require_unlocked(&state).await?;
+    state.manager.read_tree_state()
+}
+
+#[tauri::command]
+pub async fn memo_set_tree_state(state: State<'_, MemoDesktopState>, payload: serde_json::Value) -> Result<serde_json::Value, String> {
+    require_unlocked(&state).await?;
+    
+    // The payload comes wrapped as {"payload": {"state": ...}} from memoApi.ts
+    // Wait, let's see how I send it in memoApi.ts. If I send `payload`, it's just the object.
+    let tree_state = if payload.get("state").is_some() {
+        &payload["state"]
+    } else {
+        &payload
+    };
+
+    state.manager.write_tree_state(tree_state)?;
+    Ok(serde_json::json!({ "success": true }))
+}
+
+#[tauri::command]
+pub async fn memo_rename_folder(state: State<'_, MemoDesktopState>, payload: serde_json::Value) -> Result<serde_json::Value, String> {
+    require_unlocked(&state).await?;
+    let old_path = payload["oldPath"].as_str().unwrap_or_default();
+    let new_path = payload["newPath"].as_str().unwrap_or_default();
+    state.manager.rename_folder(old_path, new_path)?;
+    Ok(serde_json::json!({ "success": true }))
+}
+
+#[tauri::command]
+pub async fn memo_delete_folder(state: State<'_, MemoDesktopState>, payload: serde_json::Value) -> Result<serde_json::Value, String> {
+    require_unlocked(&state).await?;
+    let path = payload["path"].as_str().unwrap_or_default();
+    state.manager.delete_folder_to_unarchived(path)?;
+    Ok(serde_json::json!({ "success": true }))
 }

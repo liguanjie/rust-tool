@@ -578,6 +578,109 @@ impl MemoStore {
             .document_history_dir()
             .join(format!("{}.json", hex_encode(doc_id.as_bytes()))))
     }
+
+    pub fn read_tree_state(&self) -> Result<serde_json::Value, String> {
+        let path = self.indexes_path.join("tree-state.json");
+        if !path.exists() {
+            return Ok(serde_json::json!({}));
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read tree state: {:?}", e))?;
+        if content.trim().is_empty() {
+            return Ok(serde_json::json!({}));
+        }
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse tree state: {:?}", e))
+    }
+
+    pub fn write_tree_state(&self, state: &serde_json::Value) -> Result<(), String> {
+        fs::create_dir_all(&self.indexes_path)
+            .map_err(|e| format!("Failed to create indexes directory: {:?}", e))?;
+        let json = serde_json::to_string_pretty(state)
+            .map_err(|e| format!("Failed to serialize tree state: {:?}", e))?;
+        fs::write(self.indexes_path.join("tree-state.json"), json)
+            .map_err(|e| format!("Failed to write tree state: {:?}", e))
+    }
+
+    pub fn rename_folder(&self, old_path: &str, new_path: &str) -> Result<(), String> {
+        let old_dir = self.resolve_document_path(old_path)?;
+        let new_dir = self.resolve_document_path(new_path)?;
+
+        if !old_dir.exists() || !old_dir.is_dir() {
+            return Err("Old folder does not exist or is not a directory".to_string());
+        }
+        if new_dir.exists() {
+            return Err("New folder path already exists".to_string());
+        }
+
+        if let Some(parent) = new_dir.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent directories: {:?}", e))?;
+        }
+
+        fs::rename(&old_dir, &new_dir)
+            .map_err(|e| format!("Failed to rename folder: {:?}", e))?;
+        Ok(())
+    }
+
+    pub fn delete_folder_to_unarchived(&self, path: &str) -> Result<(), String> {
+        if path.trim() == "未归档" {
+            return Err("Cannot delete the unarchived folder".to_string());
+        }
+        
+        let target_dir = self.resolve_document_path(path)?;
+        if !target_dir.exists() || !target_dir.is_dir() {
+            return Err("Folder does not exist or is not a directory".to_string());
+        }
+
+        let unarchived_dir = self.vault_path.join("未归档");
+        fs::create_dir_all(&unarchived_dir)
+            .map_err(|e| format!("Failed to create unarchived directory: {:?}", e))?;
+
+        let mut files_to_move = Vec::new();
+        let mut dirs_to_visit = vec![target_dir.clone()];
+
+        while let Some(dir) = dirs_to_visit.pop() {
+            let entries = fs::read_dir(&dir)
+                .map_err(|e| format!("Failed to read directory: {:?}", e))?;
+            for entry in entries {
+                let entry = entry.map_err(|e| format!("Failed to read entry: {:?}", e))?;
+                let file_type = entry.file_type().map_err(|e| format!("Failed to get file type: {:?}", e))?;
+                if file_type.is_dir() {
+                    dirs_to_visit.push(entry.path());
+                } else if file_type.is_file() {
+                    let path = entry.path();
+                    if path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("md")) {
+                        files_to_move.push(path);
+                    }
+                }
+            }
+        }
+
+        for file_path in files_to_move {
+            let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
+            let mut dest_path = unarchived_dir.join(&file_name);
+            let mut counter = 1;
+            while dest_path.exists() {
+                let stem = file_path.file_stem().unwrap().to_string_lossy();
+                let ext = file_path.extension().unwrap_or_default().to_string_lossy();
+                let new_name = if ext.is_empty() {
+                    format!("{}_{}", stem, counter)
+                } else {
+                    format!("{}_{}.{}", stem, counter, ext)
+                };
+                dest_path = unarchived_dir.join(new_name);
+                counter += 1;
+            }
+            fs::rename(&file_path, &dest_path)
+                .map_err(|e| format!("Failed to move file to unarchived: {:?}", e))?;
+        }
+
+        // Clean up the empty directories
+        fs::remove_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to remove folder: {:?}", e))?;
+
+        Ok(())
+    }
 }
 
 fn ensure_memo_config_object(

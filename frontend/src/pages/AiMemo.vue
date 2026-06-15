@@ -22,6 +22,9 @@ import {
   ChevronLeft,
   FolderOpen,
   Folder,
+  FolderPlus,
+  FilePlus,
+  Edit2,
   Sparkles,
   AlertTriangle,
   CheckCircle2,
@@ -30,7 +33,7 @@ import {
 } from '@lucide/vue'
 import SecurePasswordInput from '../components/SecurePasswordInput.vue'
 import ToolShell from '../components/ToolShell.vue'
-import { memoRequest } from '../services/memoApi'
+import { memoRequest, getTreeState, setTreeState, renameFolder, deleteFolder } from '../services/memoApi'
 
 interface DraftResponse {
   title: string
@@ -482,13 +485,24 @@ const checklistActionLoading = ref<Record<string, boolean>>({})
 const selectedTextRange = ref<{ start: number; end: number; text: string } | null>(null)
 
 // Chat state
+const aiMode = ref<'read' | 'edit'>('read')
 const chatInput = ref('')
+const chatScrollRef = ref<HTMLElement | null>(null)
 const chatMessages = ref<any[]>([
   {
     role: 'assistant',
     content: '你好！我是您的 AI 安全文档助手。\n您可以随时在这里打下杂乱的文字，我会先在本地脱敏，再帮您整理成 Markdown 文档；也可以向我提问，我会从本地文档中检索。',
   },
 ])
+
+watch(chatMessages, () => {
+  nextTick(() => {
+    if (chatScrollRef.value) {
+      chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
+    }
+  })
+}, { deep: true })
+
 const chatLoading = ref(false)
 
 // Textarea DOM ref for auto-growing
@@ -649,105 +663,369 @@ const documentRiskSummaryMap = computed(() => {
 
 interface TreeNode {
   name: string
-  type: 'folder' | 'file'
   path: string
-  children?: TreeNode[]
+  type: 'file' | 'folder'
   doc?: any
+  children: TreeNode[]
 }
 
 interface FlatNode {
   name: string
-  type: 'folder' | 'file'
   path: string
-  depth: number
+  type: 'file' | 'folder'
   doc?: any
-  hasChildren: boolean
+  level: number
+  isExpanded?: boolean
+  hasChildren?: boolean
 }
 
-const expandedFolders = ref<Record<string, boolean>>({})
+const expandedFolders = ref<Set<string>>(new Set())
+const treeOrderMap = ref<Record<string, number>>({})
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuNode = ref<FlatNode | null>(null)
+const renamingNode = ref<FlatNode | null>(null)
+const renameInputValue = ref('')
+const draggedNode = ref<FlatNode | null>(null)
 
-const docTree = computed(() => {
-  const root: TreeNode = { name: 'Root', type: 'folder', path: '', children: [] }
+const loadTreeState = async () => {
+  try {
+    const state = await getTreeState()
+    if (state.expandedFolders) expandedFolders.value = new Set(state.expandedFolders)
+    if (state.orderMap) treeOrderMap.value = state.orderMap
+  } catch (e) {
+    console.error('Failed to load tree state', e)
+  }
+}
 
+const saveTreeState = async () => {
+  try {
+    await setTreeState({
+      expandedFolders: Array.from(expandedFolders.value),
+      orderMap: treeOrderMap.value
+    })
+  } catch (e) {
+    console.error('Failed to save tree state', e)
+  }
+}
+
+const docTree = computed<TreeNode[]>(() => {
+  const root: TreeNode[] = []
+  
   for (const doc of filteredDocs.value) {
-    const standardFileName = doc.fileName.replace(/\\/g, '/')
-    const parts = standardFileName.split('/')
-    let current = root
-
+    const parts = (doc.fileName || '未命名文档.md').split('/')
+    let currentLevel = root
+    let currentPath = ''
+    
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]
-      const isLast = i === parts.length - 1
-      const currentPath = parts.slice(0, i + 1).join('/')
-
-      if (isLast) {
-        current.children!.push({
-          name: doc.title || part,
-          type: 'file',
+      currentPath = currentPath ? `${currentPath}/${part}` : part
+      
+      const isFile = i === parts.length - 1
+      let existingNode = currentLevel.find(n => n.name === part && n.type === (isFile ? 'file' : 'folder'))
+      
+      if (!existingNode) {
+        existingNode = {
+          name: part,
           path: currentPath,
-          doc,
-        })
-      } else {
-        let folder = current.children!.find(c => c.type === 'folder' && c.name === part)
-        if (!folder) {
-          folder = {
-            name: part,
-            type: 'folder',
-            path: currentPath,
-            children: [],
-          }
-          current.children!.push(folder)
+          type: isFile ? 'file' : 'folder',
+          children: []
         }
-        current = folder
+        if (isFile) {
+          existingNode.doc = doc
+        }
+        currentLevel.push(existingNode)
       }
+      
+      currentLevel = existingNode.children
     }
   }
-
+  
   const sortNodes = (nodes: TreeNode[]) => {
     nodes.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === 'folder' ? -1 : 1
-      }
+      const orderA = treeOrderMap.value[a.path] ?? (a.type === 'folder' ? 0 : 1000000)
+      const orderB = treeOrderMap.value[b.path] ?? (b.type === 'folder' ? 0 : 1000000)
+      if (orderA !== orderB) return orderA - orderB
+      
+      if (a.type === 'folder' && b.type === 'file') return -1
+      if (a.type === 'file' && b.type === 'folder') return 1
       return a.name.localeCompare(b.name)
     })
     for (const node of nodes) {
-      if (node.children) {
-        sortNodes(node.children)
-      }
+      if (node.children.length > 0) sortNodes(node.children)
     }
   }
-
-  if (root.children) {
-    sortNodes(root.children)
-  }
-
-  return root.children || []
+  
+  sortNodes(root)
+  return root
 })
 
-const visibleFlatNodes = computed(() => {
+const visibleFlatNodes = computed<FlatNode[]>(() => {
   const result: FlatNode[] = []
-
-  const traverse = (nodes: TreeNode[], depth: number) => {
+  const filterText = searchFilter.value.toLowerCase()
+  
+  const traverse = (nodes: TreeNode[], level: number, parentExpanded: boolean) => {
     for (const node of nodes) {
-      const isExpanded = expandedFolders.value[node.path] !== false
+      const matchSearch = filterText === '' || node.name.toLowerCase().includes(filterText)
       
-      result.push({
-        name: node.name,
-        type: node.type,
-        path: node.path,
-        depth,
-        doc: node.doc,
-        hasChildren: !!(node.type === 'folder' && node.children && node.children.length > 0),
-      })
-
-      if (node.type === 'folder' && isExpanded && node.children) {
-        traverse(node.children, depth + 1)
+      let isExpanded = expandedFolders.value.has(node.path)
+      if (filterText !== '' && node.type === 'folder') {
+        const hasMatchingChild = (children: TreeNode[]): boolean => {
+          return children.some(c => c.name.toLowerCase().includes(filterText) || hasMatchingChild(c.children))
+        }
+        if (hasMatchingChild(node.children)) {
+          isExpanded = true
+        }
+      }
+      
+      if (parentExpanded && (matchSearch || (node.type === 'folder' && isExpanded))) {
+        result.push({
+          name: node.name,
+          path: node.path,
+          type: node.type,
+          doc: node.doc,
+          level,
+          isExpanded,
+          hasChildren: node.children.length > 0
+        })
+      }
+      
+      if (node.children.length > 0) {
+        traverse(node.children, level + 1, parentExpanded && isExpanded)
       }
     }
   }
-
-  traverse(docTree.value, 0)
+  
+  traverse(docTree.value, 0, true)
   return result
 })
+
+const toggleFolder = async (node: FlatNode) => {
+  if (node.type !== 'folder') return
+  if (expandedFolders.value.has(node.path)) {
+    expandedFolders.value.delete(node.path)
+  } else {
+    expandedFolders.value.add(node.path)
+  }
+  await saveTreeState()
+}
+
+const openContextMenu = (event: MouseEvent, node: FlatNode) => {
+  event.preventDefault()
+  contextMenuNode.value = node
+  contextMenuX.value = event.clientX
+  contextMenuY.value = event.clientY
+  contextMenuVisible.value = true
+}
+
+const closeContextMenu = () => {
+  contextMenuVisible.value = false
+  contextMenuNode.value = null
+}
+
+const startRenameNode = (node: FlatNode | null) => {
+  if (!node) return
+  renamingNode.value = node
+  renameInputValue.value = node.name
+  closeContextMenu()
+}
+
+const cancelRename = () => {
+  renamingNode.value = null
+  renameInputValue.value = ''
+}
+
+const submitRename = async () => {
+  if (!renamingNode.value) return
+  const node = renamingNode.value
+  if (node.path === '未归档' || node.path.startsWith('未归档/')) {
+    customAlert('未归档目录及其内部文件不允许重命名。', '无法重命名', 'warning')
+    cancelRename()
+    return
+  }
+  const newName = renameInputValue.value.trim()
+  if (!newName || newName === node.name) {
+    cancelRename()
+    return
+  }
+
+  const parts = node.path.split('/')
+  parts[parts.length - 1] = newName
+  let newPath = parts.join('/')
+  if (node.type === 'file' && !newPath.toLowerCase().endsWith('.md')) {
+    newPath += '.md'
+  }
+
+  try {
+    if (node.type === 'folder') {
+      await renameFolder(node.path, newPath)
+    } else if (node.doc) {
+      await memoRequest('/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: node.doc.id,
+          fileName: newPath,
+          title: node.doc.title,
+          markdown: node.doc.markdown || '',
+          secrets: node.doc.secrets || {},
+          summary: node.doc.summary || ''
+        })
+      })
+    }
+    // We need to reload documents
+    window.dispatchEvent(new CustomEvent('reload-docs-event'))
+  } catch (e) {
+    console.error('Rename failed', e)
+  }
+  cancelRename()
+}
+
+const deleteNode = async (node: FlatNode | null) => {
+  if (!node) return
+  closeContextMenu()
+  if (node.path === '未归档' || node.path.startsWith('未归档/')) {
+    customAlert('未归档目录及其内部文件不允许删除。', '无法删除', 'warning')
+    return
+  }
+  if (!confirm(`确定要删除 "${node.name}" 吗？`)) return
+  try {
+    if (node.type === 'folder') {
+      await deleteFolder(node.path)
+    } else if (node.doc) {
+      await memoRequest('/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: node.doc.id })
+      })
+    }
+    window.dispatchEvent(new CustomEvent('reload-docs-event'))
+  } catch (e) {
+    console.error('Delete failed', e)
+  }
+}
+
+const createNewDocInFolder = (node: FlatNode | null) => {
+  if (!node || node.type !== 'folder') return
+  closeContextMenu()
+  window.dispatchEvent(new CustomEvent('create-new-doc-event', { detail: { path: node.path } }))
+}
+
+const onDragStart = (event: DragEvent, node: FlatNode) => {
+  if (!event.dataTransfer) return
+  draggedNode.value = node
+  event.dataTransfer.effectAllowed = 'move'
+}
+
+const onDragOver = (event: DragEvent, node: FlatNode) => {
+  event.preventDefault()
+  if (!event.dataTransfer) return
+  event.dataTransfer.dropEffect = 'move'
+  
+  const el = event.currentTarget as HTMLElement
+  if (!el) return
+  document.querySelectorAll('.drag-over-folder').forEach(n => n.classList.remove('drag-over-folder', 'ring-2', 'ring-emerald-500', 'bg-gray-800/50'))
+  document.querySelectorAll('.drag-over-above').forEach(n => n.classList.remove('drag-over-above', 'border-t', 'border-emerald-500'))
+  document.querySelectorAll('.drag-over-below').forEach(n => n.classList.remove('drag-over-below', 'border-b', 'border-emerald-500'))
+
+  if (draggedNode.value && draggedNode.value.path === node.path) return
+
+  const rect = el.getBoundingClientRect()
+  const y = event.clientY - rect.top
+  
+  if (node.type === 'folder' && y > rect.height * 0.25 && y < rect.height * 0.75) {
+    el.classList.add('drag-over-folder', 'ring-2', 'ring-emerald-500', 'bg-gray-800/50')
+  } else if (y < rect.height / 2) {
+    el.classList.add('drag-over-above', 'border-t', 'border-emerald-500')
+  } else {
+    el.classList.add('drag-over-below', 'border-b', 'border-emerald-500')
+  }
+}
+
+const onDragLeave = (event: DragEvent) => {
+  const el = event.currentTarget as HTMLElement
+  if (!el) return
+  el.classList.remove('drag-over-folder', 'drag-over-above', 'drag-over-below', 'ring-2', 'ring-emerald-500', 'bg-gray-800/50', 'border-t', 'border-b')
+}
+
+const onDrop = async (event: DragEvent, targetNode: FlatNode) => {
+  event.preventDefault()
+  const el = event.currentTarget as HTMLElement
+  if (el) {
+    el.classList.remove('drag-over-folder', 'drag-over-above', 'drag-over-below', 'ring-2', 'ring-emerald-500', 'bg-gray-800/50', 'border-t', 'border-b')
+  }
+  
+  if (!draggedNode.value || draggedNode.value.path === targetNode.path) return
+
+  const source = draggedNode.value
+  draggedNode.value = null
+
+  if (source.path === '未归档') {
+    customAlert('未归档目录不允许移动。', '无法移动', 'warning')
+    return
+  }
+
+  const rect = el.getBoundingClientRect()
+  const y = event.clientY - rect.top
+  let dropType = 'below'
+  if (targetNode.type === 'folder' && y > rect.height * 0.25 && y < rect.height * 0.75) {
+    dropType = 'into'
+  } else if (y < rect.height / 2) {
+    dropType = 'above'
+  }
+
+  try {
+    let parentPath = ''
+    if (dropType === 'into') {
+      parentPath = targetNode.path
+    } else {
+      const parts = targetNode.path.split('/')
+      parts.pop()
+      parentPath = parts.join('/')
+    }
+
+    const sourceParts = source.path.split('/')
+    const sourceName = sourceParts.pop() || ''
+    const newPath = parentPath ? `${parentPath}/${sourceName}` : sourceName
+
+    if (source.path !== newPath) {
+      if (source.type === 'folder') {
+        await renameFolder(source.path, newPath)
+      } else if (source.doc) {
+        await memoRequest('/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: source.doc.id,
+            fileName: newPath,
+            title: source.doc.title,
+            markdown: source.doc.markdown || '',
+            secrets: source.doc.secrets || {},
+            summary: source.doc.summary || ''
+          })
+        })
+      }
+    }
+
+    const targetPathStr = targetNode.path || ''
+    const targetOrder = treeOrderMap.value[targetPathStr] ?? Number.MAX_SAFE_INTEGER / 2
+    let newOrder = targetOrder
+    if (dropType === 'above') {
+      newOrder = targetOrder - 1000
+    } else if (dropType === 'below') {
+      newOrder = targetOrder + 1000
+    } else {
+      newOrder = Date.now()
+    }
+    
+    treeOrderMap.value[newPath] = newOrder
+    await saveTreeState()
+    window.dispatchEvent(new CustomEvent('reload-docs-event'))
+  } catch (e) {
+    console.error('Drag drop failed', e)
+  }
+}
 
 function escapeHtml(value: string) {
   return value
@@ -866,15 +1144,6 @@ const previewHtml = computed(() => {
   }
   return renderMarkdown(editingDoc.value.markdown)
 })
-
-function handleNodeClick(node: FlatNode) {
-  if (node.type === 'folder') {
-    const current = expandedFolders.value[node.path] !== false
-    expandedFolders.value[node.path] = !current
-  } else if (node.type === 'file' && node.doc) {
-    selectDocument(node.doc.id)
-  }
-}
 
 // Auto-grow textarea handler
 function adjustTextareaHeight() {
@@ -2449,44 +2718,20 @@ async function sendChatMessage() {
   chatInput.value = ''
   adjustTextareaHeight() // Reset input height
 
-  // Analyze intent (Write vs Search)
-  const isWriteCommand = 
-    query.startsWith('记下') || 
-    query.startsWith('帮我记') || 
-    query.startsWith('保存文档') || 
-    query.startsWith('新建文档') || 
-    query.startsWith('写个文档') || 
-    query.includes('帮我保存');
   const hasActiveDoc = !!selectedDocId.value
-  const wantsCurrentDocEdit =
-    hasActiveDoc && (
-      query.includes('修改') ||
-      query.includes('改一下') ||
-      query.includes('优化') ||
-      query.includes('整理') ||
-      query.includes('补充') ||
-      query.includes('润色') ||
-      query.includes('重写') ||
-      query.includes('摘要') ||
-      query.includes('标题') ||
-      query.includes('当前文档') ||
-      query.includes('这篇文档') ||
-      query.includes('这个文档')
-    )
-  const wantsLocalSearch =
-    query.includes('查找') ||
-    query.includes('检索') ||
-    query.includes('搜索') ||
-    query.includes('查询') ||
-    query.includes('本地文档') ||
-    query.includes('文档里') ||
-    query.includes('知识库') ||
-    query.includes('密码是什么') ||
-    query.includes('密码是多少') ||
-    query.includes('服务器密码') ||
-    query.includes('api key') ||
-    query.includes('API Key') ||
-    query.includes('密钥')
+  let wantsCurrentDocEdit = false
+  let isWriteCommand = false
+  let wantsLocalSearch = false
+
+  if (aiMode.value === 'edit') {
+    if (hasActiveDoc) {
+      wantsCurrentDocEdit = true
+    } else {
+      isWriteCommand = true
+    }
+  } else {
+    wantsLocalSearch = true
+  }
 
   chatLoading.value = true
   try {
@@ -2533,10 +2778,15 @@ async function sendChatMessage() {
         })
       }
     } else if (wantsLocalSearch) {
+      let activeDocContext = undefined
+      if (hasActiveDoc && editingDoc.value.markdown) {
+        activeDocContext = `【系统提示：用户当前正在阅读的本地文档如下】\n# ${editingDoc.value.title}\n${editingDoc.value.markdown}`
+      }
+
       const res = await memoRequest('/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, context: activeDocContext }),
       })
       if (res.ok) {
         const data: SearchAnswerResponse = await res.json()
@@ -2553,10 +2803,15 @@ async function sendChatMessage() {
         })
       }
     } else {
+      let finalQuery = query
+      if (aiMode.value === 'read' && hasActiveDoc && editingDoc.value.markdown) {
+        finalQuery = `【系统提示：用户当前正在阅读的本地文档如下】\n# ${editingDoc.value.title}\n${editingDoc.value.markdown}\n\n【用户提问】：${query}`
+      }
+      
       const res = await memoRequest('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query: finalQuery }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -2733,19 +2988,31 @@ watch(showSettings, (visible) => {
 
 onMounted(() => {
   void fetchStatus()
+  window.addEventListener('reload-docs-event', () => loadDocuments())
+  window.addEventListener('create-new-doc-event', (e: any) => {
+    selectedDocId.value = 'new'
+    editingDoc.value = {
+      id: '',
+      title: '',
+      fileName: e.detail.path + '/新建文档.md',
+      markdown: '',
+      summary: '',
+      secrets: {}
+    }
+    chatMessages.value = []
+    editorSecretsList.value = []
+    chatInput.value = ''
+    if (window.innerWidth < 768) showDocSidebar.value = false
+  })
+  document.addEventListener('click', closeContextMenu)
 })
 </script>
 
 <template>
   <ToolShell
-    title="AI 安全文档"
-    description="本地 Markdown 文档库。支持 AI 辅助整理、本地脱敏、安全字段加密以及文档检索问答。"
-    :breadcrumbs="[
-      { label: '工具箱', to: '/toolbox' },
-      { label: 'AI 安全文档' },
-    ]"
-    fluid
-  >
+  title="AI 安全文档"
+  description="本地 Markdown 文档库。支持 AI 辅助整理、本地脱敏、安全字段加密以及文档检索问答。"
+  fluid hideHeader>
     <!-- Background glowing ambient lights for high-end feel -->
     <div class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
       <div class="absolute -top-[10%] -left-[10%] h-[350px] w-[350px] rounded-full bg-emerald-500/5 blur-[80px]"></div>
@@ -2838,54 +3105,113 @@ onMounted(() => {
                 在右侧聊天框打入“记下：...”让 AI 帮您生成文档吧！
               </p>
             </div>
-            <div v-else class="divide-y divide-gray-800/10 font-sans">
+            <!-- Tree View -->
+            <div class="font-sans text-sm pb-10 select-none">
               <div
                 v-for="node in visibleFlatNodes"
                 :key="node.path"
-                class="group flex items-center justify-between py-2 px-3 cursor-pointer hover:bg-gray-800/25 transition-colors relative"
-                :class="{ 'bg-emerald-500/5': node.type === 'file' && selectedDocId === node.doc?.id }"
-                :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
-                @click="handleNodeClick(node)"
+                draggable="true"
+                @dragstart="onDragStart($event, node)"
+                @dragover="onDragOver($event, node)"
+                @dragleave="onDragLeave($event)"
+                @drop="onDrop($event, node)"
+                @click="node.type === 'folder' ? toggleFolder(node) : selectDocument(node.doc.id)"
+                @contextmenu="openContextMenu($event, node)"
+                class="group flex items-center cursor-pointer transition border-l-2"
+                :class="[
+                  node.type === 'file' && selectedDocId === node.doc?.id ? 'border-emerald-500 bg-gray-800/50' : 'border-transparent hover:bg-gray-800/30',
+                  node.type === 'folder' ? 'py-1.5' : 'py-2'
+                ]"
+                :style="{ paddingLeft: `${node.level * 16 + 12}px`, paddingRight: '12px' }"
               >
-                <div class="flex items-center gap-2 min-w-0 flex-1">
-                  <!-- Folder / File Icon -->
-                  <component 
-                    :is="node.type === 'folder' ? (expandedFolders[node.path] !== false ? FolderOpen : Folder) : FileText" 
-                    class="h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200"
-                    :class="node.type === 'folder' ? 'text-amber-500/90' : 'text-emerald-400/80'"
-                  />
-                  <div class="min-w-0 flex-1">
-                    <div class="doc-item-heading">
-                      <h4 class="text-xs text-gray-200 truncate" :class="node.type === 'folder' ? 'font-bold text-gray-300' : 'font-medium'">
-                        {{ node.name }}
-                      </h4>
-                      <div v-if="node.type === 'file'" class="doc-risk-meta">
-                        <span
-                          class="doc-risk-pill"
-                          :class="`doc-risk-pill--${docRiskTone(docRiskSummary(node.doc.id))}`"
-                        >
-                          {{ docRiskLabel(docRiskSummary(node.doc.id)) }}
-                        </span>
-                        <span class="doc-risk-count">{{ docRiskCountLabel(docRiskSummary(node.doc.id)) }}</span>
-                      </div>
-                    </div>
-                    <p v-if="node.type === 'file'" class="text-[9px] text-gray-500 truncate mt-0.5">
-                      {{ node.doc.summary }}
-                    </p>
-                  </div>
+                <!-- Folder Icon -->
+                <div v-if="node.type === 'folder'" class="flex items-center gap-1.5 text-gray-400 flex-1 overflow-hidden">
+                  <span class="w-4 h-4 flex items-center justify-center shrink-0">
+                    <ChevronDown v-if="node.isExpanded" class="h-3.5 w-3.5" />
+                    <ChevronRight v-else class="h-3.5 w-3.5" />
+                  </span>
+                  <FolderOpen v-if="node.isExpanded" class="h-4 w-4 shrink-0 text-amber-500/80" />
+                  <Folder v-else class="h-4 w-4 shrink-0 text-amber-500/80" />
+                  
+                  <template v-if="renamingNode?.path === node.path">
+                    <input 
+                      v-model="renameInputValue" 
+                      @blur="submitRename" 
+                      @keyup.enter="submitRename"
+                      @keyup.esc="cancelRename"
+                      class="flex-1 bg-gray-900 border border-emerald-500/50 rounded px-1.5 py-0.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                      autofocus
+                      @click.stop
+                    />
+                  </template>
+                  <span v-else class="truncate font-medium text-gray-300">{{ node.name }}</span>
                 </div>
 
-                <!-- Delete button for files -->
-                <button
-                  v-if="node.type === 'file'"
-                  @click.stop="deleteDocument(node.doc.id, node.doc.title)"
-                  class="p-1 text-gray-700 hover:text-red-400 transition flex-shrink-0 opacity-0 group-hover:opacity-100"
-                  title="删除文档"
-                >
-                  <Trash2 class="h-3 w-3" />
-                </button>
+                <!-- File Icon -->
+                <div v-else class="flex flex-col flex-1 overflow-hidden pl-[22px]">
+                  <div class="flex items-center gap-1.5">
+                    <FileText class="h-3.5 w-3.5 shrink-0" :class="selectedDocId === node.doc?.id ? 'text-emerald-400' : 'text-gray-500'" />
+                    
+                    <template v-if="renamingNode?.path === node.path">
+                      <input 
+                        v-model="renameInputValue" 
+                        @blur="submitRename" 
+                        @keyup.enter="submitRename"
+                        @keyup.esc="cancelRename"
+                        class="flex-1 bg-gray-900 border border-emerald-500/50 rounded px-1.5 py-0.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                        autofocus
+                        @click.stop
+                      />
+                    </template>
+                    <span 
+                      v-else 
+                      class="truncate font-medium"
+                      :class="selectedDocId === node.doc?.id ? 'text-emerald-300' : 'text-gray-300'"
+                    >
+                      {{ node.name }}
+                    </span>
+                  </div>
+                  
+                  <!-- File Metadata -->
+                  <div v-if="node.doc && renamingNode?.path !== node.path" class="flex justify-between items-center mt-1 pl-5">
+                    <span class="text-[10px] text-gray-600 block">
+                      {{ new Date(node.doc.updatedAt).toLocaleDateString() }}
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                      <span v-if="node.doc.summary && node.doc.summary.length > 5" class="bg-indigo-900/40 text-indigo-400 text-[9px] px-1 py-px rounded flex items-center border border-indigo-500/20">
+                        <Sparkles class="h-2 w-2 mr-0.5" /> AI
+                      </span>
+                      <span v-if="Object.keys(node.doc.secrets || {}).length > 0" class="bg-rose-900/40 text-rose-400 text-[9px] px-1 py-px rounded flex items-center border border-rose-500/20">
+                        <Key class="h-2 w-2 mr-0.5" /> 密
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- Context Menu -->
+            <Teleport to="body">
+              <div 
+                v-if="contextMenuVisible" 
+                class="fixed z-50 bg-gray-900 border border-gray-800 rounded-lg shadow-xl shadow-black/50 py-1 w-48 text-sm text-gray-300"
+                :style="{ top: contextMenuY + 'px', left: contextMenuX + 'px' }"
+              >
+                <div v-if="contextMenuNode?.type === 'folder'" @click="createNewDocInFolder(contextMenuNode)" class="px-3 py-1.5 hover:bg-emerald-500/20 hover:text-emerald-400 cursor-pointer flex items-center gap-2">
+                  <FilePlus class="h-3.5 w-3.5" />
+                  新建文档
+                </div>
+                <div class="h-px bg-gray-800 my-1 w-full"></div>
+                <div @click="startRenameNode(contextMenuNode)" class="px-3 py-1.5 hover:bg-emerald-500/20 hover:text-emerald-400 cursor-pointer flex items-center gap-2">
+                  <Edit2 class="h-3.5 w-3.5" />
+                  重命名
+                </div>
+                <div @click="deleteNode(contextMenuNode)" class="px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-400 cursor-pointer flex items-center gap-2">
+                  <Trash2 class="h-3.5 w-3.5" />
+                  删除
+                </div>
+              </div>
+            </Teleport>
           </div>
         </aside>
 
@@ -2959,29 +3285,6 @@ onMounted(() => {
                 <Plus class="h-3.5 w-3.5" />
                 新建文档
               </button>
-            </div>
-          </div>
-
-          <div class="governance-strip">
-            <div class="governance-metric">
-              <span class="metric-label">未关闭风险</span>
-              <strong>{{ governanceRiskSummary?.open ?? 0 }}</strong>
-              <span class="metric-foot">高危 {{ governanceRiskSummary?.critical ?? 0 }}</span>
-            </div>
-            <div class="governance-metric">
-              <span class="metric-label">待复核</span>
-              <strong>{{ governanceRiskSummary?.reviewing ?? 0 }}</strong>
-              <span class="metric-foot">到期 {{ governanceRiskSummary?.expiredAcceptances ?? 0 }} · 14天内 {{ governanceRiskSummary?.expiringSoon ?? 0 }}</span>
-            </div>
-            <div class="governance-metric">
-              <span class="metric-label">安全资产</span>
-              <strong>{{ governanceAssetSummary?.total ?? 0 }}</strong>
-              <span class="metric-foot">接口 {{ governanceAssetSummary?.apiEndpoints ?? 0 }} · 数据库 {{ governanceAssetSummary?.databases ?? 0 }}</span>
-            </div>
-            <div class="governance-metric governance-metric--wide">
-              <span class="metric-label">最近活动</span>
-              <strong>{{ governanceSummary?.recentActivities?.[0]?.title || '暂无审计活动' }}</strong>
-              <span class="metric-foot">{{ governanceSummary?.recentActivities?.[0]?.summary || '打开文档后会生成本地审计记录' }}</span>
             </div>
           </div>
 
@@ -3179,86 +3482,7 @@ onMounted(() => {
 
               <div v-else class="document-editor">
                 <div class="editor-main-form">
-                  <div class="editor-section-title">
-                    <div class="flex items-center gap-1.5">
-                      <PenTool class="h-3.5 w-3.5 text-emerald-400" />
-                      <span>安全文档编辑</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span
-                        v-if="auditSummary"
-                        class="audit-mini-pill"
-                        :class="{ 'audit-mini-pill--danger': auditSummary.critical > 0, 'audit-mini-pill--warn': auditSummary.critical === 0 && auditSummary.warning > 0 }"
-                      >
-                        {{ auditSummary.total }} 个发现
-                      </span>
-                      <button @click="scanCurrentDocument()" class="editor-ai-btn" type="button">
-                        <RefreshCw v-if="auditLoading" class="h-3.5 w-3.5 animate-spin" />
-                        <AlertTriangle v-else class="h-3.5 w-3.5" />
-                        检查风险
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label class="d-label">文档标题</label>
-                      <input v-model="editingDoc.title" type="text" class="d-input" />
-                    </div>
-                    <div>
-                      <label class="d-label">文件名</label>
-                      <input v-model="editingDoc.fileName" type="text" class="d-input" />
-                    </div>
-                  </div>
-
-                  <div class="mb-4">
-                    <label class="d-label">文档摘要</label>
-                    <input v-model="editingDoc.summary" type="text" class="d-input" />
-                  </div>
-
-                  <div class="editor-ai-strip">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <Sparkles class="h-4 w-4 text-emerald-400 flex-shrink-0" />
-                      <input
-                        v-model="editorAiInstruction"
-                        type="text"
-                        class="editor-ai-input"
-                        placeholder="让 AI 帮我：例如整理成部署文档、补充排查步骤..."
-                        @keydown.enter.prevent="runEditorAi('custom')"
-                      />
-                    </div>
-                    <div class="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        @click="runEditorAi('organize')"
-                        :disabled="editorAiLoading"
-                        type="button"
-                        class="editor-ai-btn"
-                      >
-                        <RefreshCw v-if="editorAiLoading" class="h-3.5 w-3.5 animate-spin" />
-                        <Sparkles v-else class="h-3.5 w-3.5" />
-                        整理当前内容
-                      </button>
-                      <button
-                        @click="runEditorAi('summary')"
-                        :disabled="editorAiLoading"
-                        type="button"
-                        class="editor-ai-btn"
-                      >
-                        生成摘要
-                      </button>
-                      <button
-                        @click="runEditorAi('custom')"
-                        :disabled="editorAiLoading || !editorAiInstruction.trim()"
-                        type="button"
-                        class="editor-ai-run-btn"
-                      >
-                        应用到当前文档
-                      </button>
-                    </div>
-                  </div>
-
                   <div class="flex-1 flex flex-col min-h-[300px]">
-                    <label class="d-label">Markdown 内容</label>
                     <div class="selection-toolbar" v-if="selectedTextRange">
                       <button @click="runSelectionAction('rewrite')" type="button">AI 改写</button>
                       <button @click="runSelectionAction('summary')" type="button">总结</button>
@@ -3400,27 +3624,9 @@ onMounted(() => {
               </div>
 
               <div v-if="rightPanelTab === 'assistant'" class="right-panel-body">
-                <section class="assistant-summary">
-                  <h4>文档摘要</h4>
-                  <p>{{ selectedDocId ? (editingDoc.summary || '当前文档暂无摘要') : '选择文档后显示摘要' }}</p>
-                </section>
+                
 
-                <section class="assistant-tasks">
-                  <h4>建议任务</h4>
-                  <button @click="runEditorAi('organize')" :disabled="editorAiLoading" type="button">整理格式与层级</button>
-                  <button @click="runEditorAi('summary')" :disabled="editorAiLoading" type="button">生成摘要</button>
-                  <button @click="extractDocumentTodos()" :disabled="editorAiLoading" type="button">
-                    <RefreshCw v-if="editorAiLoading" class="h-3.5 w-3.5 animate-spin" />
-                    提取待办
-                  </button>
-                  <button @click="redactCurrentDocument()" :disabled="documentRedactLoading" type="button">
-                    <RefreshCw v-if="documentRedactLoading" class="h-3.5 w-3.5 animate-spin" />
-                    一键脱敏
-                  </button>
-                  <button @click="scanCurrentDocument()" :disabled="auditLoading" type="button">检查风险</button>
-                </section>
-
-                <div class="messages-area messages-area--compact">
+                <div class="messages-area messages-area--compact" ref="chatScrollRef">
                   <div
                     v-for="(msg, idx) in chatMessages"
                     :key="idx"
@@ -3432,9 +3638,7 @@ onMounted(() => {
                         <component :is="msg.role === 'user' ? Key : Brain" class="h-3 w-3" />
                         <span>{{ msg.role === 'user' ? '您' : 'AI 大管家' }}</span>
                       </div>
-                      <div class="message-text">
-                        {{ msg.content }}
-                      </div>
+                      <div class="message-text markdown-body" v-html="renderMarkdown(msg.content)"></div>
 
                       <div v-if="msg.sources && msg.sources.length > 0" class="mt-3 border-t border-gray-800/80 pt-2">
                         <p class="text-[10px] text-gray-500 font-bold mb-1.5">参考本地文档：</p>
@@ -3461,6 +3665,12 @@ onMounted(() => {
                 </div>
 
                 <div class="chat-input-bar-wrapper">
+                  <div class="flex items-center gap-2 mb-2 px-1">
+                    <select v-model="aiMode" class="bg-gray-950/80 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-emerald-500 cursor-pointer">
+                      <option value="read">📖 阅读 (问答与检索)</option>
+                      <option value="edit">✏️ 编辑 (修改当前文档)</option>
+                    </select>
+                  </div>
                   <div class="chat-input-bar">
                     <textarea
                       ref="textareaRef"
@@ -4275,7 +4485,7 @@ onMounted(() => {
 
 /* Main Memo Layout */
 .memo-layout {
-  @apply flex flex-col h-[75vh] min-h-[550px] border border-white/5 rounded-2xl bg-gray-900/30 backdrop-blur-xl overflow-hidden shadow-2xl;
+  @apply flex flex-col h-[calc(100vh-64px)] min-h-[550px] border border-white/5 rounded-2xl bg-gray-900/30 backdrop-blur-xl overflow-hidden shadow-2xl;
 }
 .action-bar {
   @apply px-4 py-2.5 bg-gray-950/40 border-b border-white/5 flex justify-between items-center;
@@ -4400,7 +4610,7 @@ onMounted(() => {
   @apply mt-0.5 block truncate text-[10px] text-gray-500;
 }
 .security-home {
-  @apply flex-1 min-h-0 overflow-y-auto bg-gray-950/5 p-4;
+  @apply flex-1 flex flex-col min-h-0 overflow-y-auto bg-gray-950/5 p-4;
 }
 .archive-hero {
   @apply flex min-h-[96px] items-center justify-between gap-4 border-b border-gray-800/80 pb-4;
@@ -4445,10 +4655,11 @@ onMounted(() => {
   @apply mt-1 block truncate text-[10px] not-italic text-gray-500;
 }
 .archive-board {
-  @apply grid grid-cols-2 gap-3 pt-4;
+  @apply flex-1 grid grid-cols-2 gap-3 pt-4;
+  grid-template-rows: auto minmax(100px, 1fr) minmax(100px, 1fr) minmax(150px, 1fr);
 }
 .archive-panel {
-  @apply min-w-0 rounded-lg border border-gray-800/80 bg-gray-950/35 p-3;
+  @apply min-w-0 flex flex-col rounded-lg border border-gray-800/80 bg-gray-950/35 p-3;
 }
 .archive-panel--wide {
   @apply col-span-2;
@@ -4463,7 +4674,7 @@ onMounted(() => {
   @apply mt-0.5 block truncate text-sm font-bold text-gray-100;
 }
 .archive-empty {
-  @apply rounded-md border border-dashed border-gray-800 py-4 text-center text-xs text-gray-600;
+  @apply flex-1 flex items-center justify-center rounded-md border border-dashed border-gray-800 py-4 text-center text-xs text-gray-600;
 }
 .archive-risk-row,
 .archive-finding-row,
@@ -4517,7 +4728,7 @@ onMounted(() => {
   @apply mt-1 line-clamp-2 text-[11px] leading-relaxed text-gray-500;
 }
 .security-workspace {
-  @apply flex-1 min-h-0 grid grid-cols-[minmax(320px,1fr)_320px];
+  @apply flex-1 min-h-0 grid grid-cols-[minmax(0,1fr)_400px];
 }
 .document-panel,
 .intelligence-sidebar {
@@ -5182,7 +5393,7 @@ onMounted(() => {
 
 @media (max-width: 1400px) {
   .security-workspace {
-    @apply grid-cols-[minmax(300px,1fr)_300px];
+    @apply grid-cols-[minmax(0,1fr)_360px];
   }
 }
 
@@ -5204,7 +5415,7 @@ onMounted(() => {
 
 @media (max-width: 760px) {
   .memo-layout {
-    @apply h-[82vh] min-h-[620px];
+    @apply h-[calc(100vh-64px)] min-h-[620px];
   }
   .action-bar,
   .workspace-toolbar {

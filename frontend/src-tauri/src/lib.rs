@@ -227,7 +227,11 @@ pub fn run() {
             memo_commands::memo_backup,
             memo_commands::memo_restore,
             memo_commands::memo_translate_key,
-            memo_commands::memo_migrate_data_dir
+            memo_commands::memo_migrate_data_dir,
+            memo_commands::memo_get_tree_state,
+            memo_commands::memo_set_tree_state,
+            memo_commands::memo_rename_folder,
+            memo_commands::memo_delete_folder
         ])
         .run(tauri::generate_context!())
         .expect("failed to run RustTool desktop app");

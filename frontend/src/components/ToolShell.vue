@@ -12,12 +12,13 @@ defineProps<{
     onClick?: () => void
   }>
   fluid?: boolean
+  hideHeader?: boolean
 }>()
 </script>
 
 <template>
   <article class="tool-shell" :class="{ 'tool-shell--fluid': fluid }">
-    <header class="tool-header">
+    <header v-if="!hideHeader" class="tool-header">
       <div>
         <nav v-if="breadcrumbs?.length" class="breadcrumb-nav" aria-label="面包屑">
           <template v-for="(item, index) in breadcrumbs" :key="`${item.label}-${index}`">

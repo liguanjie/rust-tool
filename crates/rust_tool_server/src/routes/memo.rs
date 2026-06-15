@@ -935,6 +935,7 @@ pub async fn delete_document(
 #[derive(Deserialize)]
 pub struct QueryRequest {
     pub query: String,
+    pub context: Option<String>,
 }
 
 pub async fn query_memos(
@@ -942,7 +943,7 @@ pub async fn query_memos(
     Json(payload): Json<QueryRequest>,
 ) -> MemoResult<SearchAnswerResponse> {
     require_unlocked(&state).await?;
-    let answer = state.memo_manager.search_and_answer(&payload.query).await?;
+    let answer = state.memo_manager.search_and_answer(&payload.query, payload.context.as_deref()).await?;
     Ok(Json(answer))
 }
 
@@ -1103,4 +1104,57 @@ Identifier:",
     let cleaned: String = result.chars().filter(|c| c.is_alphanumeric()).collect();
 
     Ok(Json(TranslateKeyResponse { key: cleaned }))
+}
+
+#[derive(Deserialize)]
+pub struct TreeStateRequest {
+    pub state: serde_json::Value,
+}
+
+pub async fn get_tree_state(
+    State(state): State<AppState>,
+) -> MemoResult<serde_json::Value> {
+    require_unlocked(&state).await?;
+    let tree_state = state.memo_manager.read_tree_state()?;
+    Ok(Json(tree_state))
+}
+
+pub async fn set_tree_state(
+    State(state): State<AppState>,
+    Json(payload): Json<TreeStateRequest>,
+) -> MemoResult<serde_json::Value> {
+    require_unlocked(&state).await?;
+    state.memo_manager.write_tree_state(&payload.state)?;
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameFolderRequest {
+    pub old_path: String,
+    pub new_path: String,
+}
+
+pub async fn rename_folder(
+    State(state): State<AppState>,
+    Json(payload): Json<RenameFolderRequest>,
+) -> MemoResult<serde_json::Value> {
+    require_unlocked(&state).await?;
+    state.memo_manager.rename_folder(&payload.old_path, &payload.new_path)?;
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteFolderRequest {
+    pub path: String,
+}
+
+pub async fn delete_folder(
+    State(state): State<AppState>,
+    Json(payload): Json<DeleteFolderRequest>,
+) -> MemoResult<serde_json::Value> {
+    require_unlocked(&state).await?;
+    state.memo_manager.delete_folder_to_unarchived(&payload.path)?;
+    Ok(Json(serde_json::json!({ "success": true })))
 }

@@ -576,10 +576,22 @@ impl MemoManager {
     pub async fn chat_with_ai(&self, query: &str) -> Result<String, String> {
         let client = self.get_ollama_client();
         let redacted_query = redactor::redact_secrets(query);
+        
+        let docs = self.store.get_all_memos().unwrap_or_default();
+        let mut doc_list_str = String::new();
+        for d in docs {
+            let title = if d.title.is_empty() { &d.file_name } else { &d.title };
+            let mut summary = d.summary.clone();
+            if summary.is_empty() { summary = "暂无摘要".to_string() }
+            doc_list_str.push_str(&format!("- {} (摘要: {})\n", title, summary));
+        }
+        
+        let sys_prompt = format!("你是内置于本地 Markdown 知识库的安全 AI 助手。请直接回答用户聊天。如果用户询问当前有哪些文档，或者问某文档讲了什么内容，请根据以下当前本地文档列表及其摘要直接回答：\n{}\n如果你不知道，请回答不知道。如果用户要求你修改、生成或搜索文档（摘要无法满足时），请提示他们可以通过应用前端切换至【编辑】或【阅读】（并搜索）模式来完成。由于你无法直接读取全量正文或修改文档，你的职责主要是基于标题和摘要回答问题和提供信息。", doc_list_str);
+
         let messages = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "You are a concise assistant embedded in a local Markdown knowledge-base app. Answer normal chat directly. If the user asks to create, edit, or search local documents, briefly tell them what action to request in the app.".to_string(),
+                content: sys_prompt,
             },
             ChatMessage {
                 role: "user".to_string(),
@@ -588,6 +600,22 @@ impl MemoManager {
         ];
 
         client.chat(messages, false).await
+    }
+
+    pub fn read_tree_state(&self) -> Result<serde_json::Value, String> {
+        self.store.read_tree_state()
+    }
+
+    pub fn write_tree_state(&self, state: &serde_json::Value) -> Result<(), String> {
+        self.store.write_tree_state(state)
+    }
+
+    pub fn rename_folder(&self, old_path: &str, new_path: &str) -> Result<(), String> {
+        self.store.rename_folder(old_path, new_path)
+    }
+
+    pub fn delete_folder_to_unarchived(&self, path: &str) -> Result<(), String> {
+        self.store.delete_folder_to_unarchived(path)
     }
 
     // --- Core feature 1: AI-assisted write ---
@@ -1685,7 +1713,7 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
 
     // --- Core feature 3: AI Search & QA (RAG) ---
 
-    pub async fn search_and_answer(&self, query: &str) -> Result<SearchAnswerResponse, String> {
+    pub async fn search_and_answer(&self, query: &str, active_context: Option<&str>) -> Result<SearchAnswerResponse, String> {
         let client = self.get_ollama_client();
         let redacted_query = redactor::redact_secrets(query);
 
@@ -1706,6 +1734,10 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
         // Take Top-3 most relevant documents
         let mut references = Vec::new();
         let mut source_docs = Vec::new();
+        
+        if let Some(ctx) = active_context {
+            references.push(ctx.to_string());
+        }
 
         // We will read contents of top matches
         for (doc_id, score) in scores.into_iter().take(3) {
@@ -1743,8 +1775,9 @@ Your response MUST be a JSON object ONLY, with no extra markdown wrapping (do no
         }
 
         if references.is_empty() {
+            let answer = self.chat_with_ai(query).await?;
             return Ok(SearchAnswerResponse {
-                answer: "没有在本地文档库中找到相关内容。".to_string(),
+                answer,
                 sources: Vec::new(),
             });
         }

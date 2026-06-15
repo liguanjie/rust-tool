@@ -97,6 +97,18 @@ async function toCommandCall(path: string, init: RequestInit): Promise<CommandCa
   if (method === 'GET' && path === '/assets/list') {
     return command('memo_assets_list')
   }
+  if (method === 'GET' && path === '/tree-state') {
+    return command('memo_get_tree_state')
+  }
+  if (method === 'POST' && path === '/tree-state') {
+    return command('memo_set_tree_state', { payload })
+  }
+  if (method === 'POST' && path === '/folder/rename') {
+    return command('memo_rename_folder', { payload })
+  }
+  if (method === 'POST' && path === '/folder/delete') {
+    return command('memo_delete_folder', { payload })
+  }
   if (method === 'GET' && path.startsWith('/assets/detail')) {
     const queryIndex = path.indexOf('?')
     const params = queryIndex >= 0 ? new URLSearchParams(path.slice(queryIndex + 1)) : new URLSearchParams()
@@ -279,4 +291,67 @@ function classifyError(message: string) {
     return { code: 'bad_request', status: 400 }
   }
   return { code: 'internal_error', status: 500 }
+}
+
+export async function getTreeState(): Promise<any> {
+  const isTauri = !!(window as any).__TAURI_IPC__
+  if (isTauri) {
+    return command('memo_get_tree_state')
+  }
+  const response = await fetch('/api/memo/tree-state')
+  if (!response.ok) {
+    throw new Error('Failed to fetch tree state')
+  }
+  return response.json()
+}
+
+export async function setTreeState(state: any): Promise<any> {
+  const isTauri = !!(window as any).__TAURI_IPC__
+  const payload = { state }
+  if (isTauri) {
+    return command('memo_set_tree_state', { payload })
+  }
+  const response = await fetch('/api/memo/tree-state', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!response.ok) {
+    throw new Error('Failed to set tree state')
+  }
+  return response.json()
+}
+
+export async function renameFolder(oldPath: string, newPath: string): Promise<any> {
+  const isTauri = !!(window as any).__TAURI_IPC__
+  const payload = { oldPath, newPath }
+  if (isTauri) {
+    return command('memo_rename_folder', { payload })
+  }
+  const response = await fetch('/api/memo/folder/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!response.ok) {
+    throw new Error('Failed to rename folder')
+  }
+  return response.json()
+}
+
+export async function deleteFolder(path: string): Promise<any> {
+  const isTauri = !!(window as any).__TAURI_IPC__
+  const payload = { path }
+  if (isTauri) {
+    return command('memo_delete_folder', { payload })
+  }
+  const response = await fetch('/api/memo/folder/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!response.ok) {
+    throw new Error('Failed to delete folder')
+  }
+  return response.json()
 }
