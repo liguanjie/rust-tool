@@ -1,106 +1,91 @@
-# RustTool Agent Guidelines
+# RustTool 黄金手册 (Agent Guidelines)
 
-本文件是后续 Codex/Agent 在本项目中继续开发时的长期规范。实施方案、阶段记录和临时分析文档可以放在 `.agents/`；稳定规则应沉淀到本文件。
+本文件是后续 Codex/Agent 在本项目中继续开发时的长期核心规范。所有的架构演进、代码编写、安全处理均须以此为最高准则。
 
-## 项目定位
+---
 
-RustTool 是一个本地优先的工具站，当前主线是桌面优先的 AI 安全文档与密码库能力。
+## 🚀 架构规范 (ARCH)
 
-- 主要使用环境是 macOS。
-- 桌面版和 Web 版必须共享同一套 Vue 页面。
-- 业务核心必须沉淀在 `crates/rust_tool_core`。
-- Web 模式通过 HTTP API 调用 `rust_tool_server`。
-- 桌面模式通过 Tauri command 直接调用 Rust 核心，不依赖本地后端端口。
+### ARCH-001 桌面与 Web 核心业务同源 [MUST]
+**描述**：本项目的主线是“桌面优先的工具站”。桌面版 (Tauri) 和 Web 版 (Axum) **必须共享同一套 Vue 页面**。无论 HTTP 路由分发还是 Tauri Command，都仅仅是薄入口层，**所有的核心业务逻辑必须下沉沉淀在 `crates/rust_tool_core` 中**。禁止在 `server` 或 `src-tauri` 层级手写独立业务逻辑。
 
-## 开发入口
+### ARCH-002 前端调用统一适配层 [MUST]
+**描述**：新增或修改功能时，必须保持桌面与 Web 行为一致。前端页面**不得直接散落 `fetch` 或硬编码 API 路径**。必须通过统一适配层封装调用后端能力，并在其中同时兼容 Web HTTP 请求与 Tauri `invoke` 调用。错误响应格式应保持前后端约定一致（如 `{ error: { code, message } }`）。
 
+---
+
+## 🛡️ 安全规范 (SEC)
+
+### SEC-001 密码与凭据内存安全 [MUST]
+**描述**：处理敏感输入（主密码、API Key、Token 等）时，**明文绝对不得落盘、不得写入日志 (tracing/console)、不得进入普通错误消息**。在 Rust 层涉及到核心密钥生命周期时，应尽可能使用 `Zeroize` 等防内存泄漏的技术。密码库列表接口只能返回凭据元数据与索引，不得批量返回明文值。
+
+### SEC-002 前端敏感输入管控 [MUST]
+**描述**：所有的敏感输入框必须统一使用项目中封装好的密文输入组件（如存在 `SecurePasswordInput.vue`），不要在页面中手写粗陋的 `<input type="password" />`。密码输入框默认必须隐藏，由组件内部管理“显示/隐藏”状态，不应该将状态提升为页面级变量。
+
+### SEC-003 AI 数据边界隔离 [MUST]
+**描述**：默认**不得**把密码、Token、API Key、私钥等明文数据发送给大模型（如通过 Codex 发送分析请求）。若功能必须允许 AI 读取解密内容，UI 和代码路径必须清楚给出警告，并取得用户的显式同意。
+
+---
+
+## ⚠️ 异常规范 (EX)
+
+### EX-001 禁止静默吞掉异常与粗暴 Panic [MUST]
+**描述**：在核心业务代码 (`rust_tool_core`) 中，**全面禁止使用粗暴的 `.unwrap()` 和 `panic!()`**。所有可能失败的操作都必须通过 `Result` 将异常向上抛出。异常的定义必须依靠规范化的库（如 `thiserror` 定义特定领域错误，或 `anyhow` 处理顶层错误转换）。
+
+### EX-004 异常应包含技术与业务含义 [SHOULD]
+**描述**：向前端返回错误时，必须剥离底层敏感技术堆栈，但应包含能够准确定位的业务错误码（code）与易读的错误消息（message）。
+
+---
+
+## 🧹 整洁代码 (CLEAN)
+
+### CLEAN-001 Rust 零警告原则 [MUST]
+**描述**：合并代码前必须保证 `cargo clippy` 检查通过且无警告。不可使用的死代码、未使用的变量必须清理。
+
+### CLEAN-002 样式定义解耦 [MUST]
+**描述**：前端页面禁止在组件内使用大面积的硬编码颜色和结构类（如 `!bg-[#0f171e]`）。必须复用全局定义的极客暗黑主题变量（通过 `var(--color-surface)` 等 Shadcn 映射层）。
+
+---
+
+## 💻 Vue 与前端规范 (VUE)
+
+### VUE-001 组件复用与隔离 [SHOULD]
+**描述**：遵循 Vue 3 Composition API 的最佳实践，复杂的视图交互必须抽离为 Composable 钩子，防止单个大组件（上帝组件）体积过度膨胀。Shadcn 组件修改需遵循现有的主题系统规范，不要侵入式修改第三方组件源码包。
+
+### VUE-002 状态管理基准 [MUST]
+**描述**：全局级别的用户设定、偏好或核心上下文可以放在 Pinia 状态树中，但不应将每次请求的临时数据也塞入全局 Store。状态与字典必须存在唯一权威源。
+
+---
+
+## 🔖 命名规范 (NAME)
+
+### NAME-001 Rust 命名习惯 [MUST]
+**描述**：严格遵守 Rust 官方规范，变量名与函数使用 `snake_case`，结构体与枚举采用 `PascalCase`。
+
+### NAME-002 Vue 组件命名 [MUST]
+**描述**：Vue 单文件组件（SFC）必须统一采用 `PascalCase`（大驼峰）命名，其 `name` 属性必须与文件名保持一致。
+
+---
+
+## 🛠 开发与验证规程
+
+### DEV-001 开发入口
 macOS/Unix 优先使用项目根目录的 `./rt`：
+- `./rt`：显示中文交互菜单。
+- `./rt dev`：启动 Web 开发服务。
+- `./rt desktop`：启动 Tauri 桌面开发版。
+- `./rt test`：运行 Rust 与前端测试。
 
-- `./rt` 显示中文交互菜单。
-- `./rt dev` 启动 Web 开发服务。
-- `./rt desktop` 启动 Tauri 桌面开发版。
-- `./rt test` 运行 Rust 与前端测试。
-- `./rt build-desktop` 构建桌面应用。
-
-不要新增只能在 Windows 上工作的主流程；Windows 只能作为兼容能力保留。
-
-## 桌面与 Web 一致性
-
-新增或修改 AI 安全文档/密码库功能时，必须保持桌面与 Web 行为一致。
-
-- 页面入口：`frontend/src/pages/AiMemo.vue`、`frontend/src/pages/SecretVault.vue`
-- 前端适配层：`frontend/src/services/memoApi.ts`
-- HTTP 路由：`crates/rust_tool_server/src/routes/memo.rs`
-- Tauri command：`frontend/src-tauri/src/memo_commands.rs`
-- Tauri 注册入口：`frontend/src-tauri/src/lib.rs`
-
-规则：
-
-1. 前端页面不得直接散落 `fetch('/api/memo/...')` 或硬编码 `/api/memo`。
-2. AI 安全文档/密码库页面必须通过 `memoRequest(...)` 调用后端能力。
-3. 新增接口时必须同步更新 HTTP 路由、Tauri command 和 `memoApi.ts` 映射。
-4. Web 与桌面的错误响应应保持页面可统一读取：`{ error: { code, message } }`。
-
-## 敏感输入组件
-
-所有密码、API Key、Token、WebDAV 密码、主密码等敏感输入框，必须使用：
-
-```text
-frontend/src/components/SecurePasswordInput.vue
-```
-
-不要在页面里手写：
-
-```html
-<input type="password" />
-```
-
-使用规则：
-
-1. 主密码文案使用“显示主密码 / 隐藏主密码”。
-2. API Key 文案使用“显示 API Key / 隐藏 API Key”。
-3. WebDAV 密码文案使用“显示 WebDAV 密码 / 隐藏 WebDAV 密码”。
-4. 输入框默认必须隐藏，只有用户点击眼睛按钮时临时显示。
-5. 不要把密码可见状态散落成页面级 `showXxxPassword`，交给 `SecurePasswordInput` 内部管理。
-
-## 安全规则
-
-1. 明文主密码不得落盘、不得写入日志、不得进入错误消息。
-2. 密码库列表接口只能返回 secret 索引，不得返回明文值。
-3. secret 明文只能在单项 reveal/copy 时临时解密。
-4. 默认不得把密码、Token、API Key、私钥等明文发送给大模型。
-5. 如果用户显式开启“允许 AI 检索并读取解密后的密码”，UI 和代码路径必须清楚体现这是高风险行为。
-6. 修改主密码必须先创建本地备份，成功后必须立即锁定保险箱。
-
-## 资料库目录
-
-AI 安全文档资料库默认目录策略：
-
-- macOS: `~/Library/Application Support/rust-tool`
-- Windows: `%APPDATA%/rust-tool`
-- Linux/Unix: `$XDG_DATA_HOME/rust-tool` 或 `~/.local/share/rust-tool`
-
-Tauri 自身应用配置目录可以继续存放桌面壳设置；AI 安全文档资料库必须使用上面的 `rust-tool` 目录策略，以保证桌面与 Web 的资料库一致。
-
-## 验证要求
-
+### DEV-002 验证要求
 改动完成后按风险选择验证：
+- 前端改动至少运行 `pnpm run build`。
+- Rust 改动至少运行 `cargo test`。
+- 明显影响界面的需要真实启动交互验证（推荐使用 `RUSTTOOL_DATA_DIR=/private/tmp/rusttool-verify ./rt server` 隔离测试数据）。
 
-- 前端 UI/组件改动：至少运行 `pnpm run build`。
-- Rust 核心或 API 改动：至少运行相关 `cargo test`。
-- 跨前端、后端、Tauri 的共享改动：优先运行 `./rt test`。
-- 明显影响用户界面的改动：使用浏览器或桌面窗口做一次真实交互验证。
-
-验证真实数据相关功能时，优先使用临时资料目录，例如：
-
-```sh
-RUSTTOOL_DATA_DIR=/private/tmp/rusttool-verify ./rt server
-```
-
-不要在未说明的情况下操作用户真实资料库。
+---
 
 ## 文档分工
 
-- `AGENTS.md`：长期规则，后续 Agent 应优先阅读。
-- `.agents/*.md`：实施方案、阶段记录、设计草案、临时决策缓存。
+- `AGENTS.md`：长期规则，也就是本《黄金手册》，后续 Agent 应优先阅读并遵守。
+- `.agents/*.md`：实施方案、阶段记录、设计草案、临时决策缓存（功能开发完毕后应主动清理过期图纸）。
 - `README.md`：面向使用者和开发者的项目说明。
