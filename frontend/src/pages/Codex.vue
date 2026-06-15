@@ -295,7 +295,7 @@ function formatTime(timestamp: number) {
           <div class="list-group">
             <div class="list-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
               <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <h3 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-sub); margin: 0;">本地技能</h3>
+                <h3 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-sub); margin: 0;">AI 技能</h3>
                 <span class="badge">{{ filteredLocalScripts.length }}</span>
               </div>
               <button class="btn-icon-small" @click="pickDirectory('dir')" title="配置本地技能目录">
@@ -368,23 +368,23 @@ function formatTime(timestamp: number) {
             <div class="icon-glow"></div>
             <Sparkles class="h-10 w-10 text-emerald-400 relative z-10" />
           </div>
-          <h2 class="bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Codex 自动化工作台</h2>
+          <h2 class="bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">智能工作台</h2>
           <p class="onboarding-desc">
-            选择左侧任务卡片，即可一键注入核心架构或执行自动化脚本。
+            选择左侧任务卡片，即可使用 AI 技能自动化执行任务，或使用内置工具进行管理配置。
           </p>
           <div class="features-grid-new">
             <div class="feature-card-new">
-              <div class="feature-icon-new"><Box class="h-5 w-5 text-emerald-400" /></div>
+              <div class="feature-icon-new"><Terminal class="h-5 w-5 text-emerald-400" /></div>
               <div class="feature-text-new">
-                <h3>极速脚手架</h3>
-                <p>毫秒级初始化标准工程结构</p>
+                <h3>AI 技能驱动</h3>
+                <p>挂载本地脚本，扩展核心自动化能力</p>
               </div>
             </div>
             <div class="feature-card-new">
-              <div class="feature-icon-new"><Terminal class="h-5 w-5 text-emerald-400" /></div>
+              <div class="feature-icon-new"><Wrench class="h-5 w-5 text-emerald-400" /></div>
               <div class="feature-text-new">
-                <h3>自动化执行</h3>
-                <p>摆脱繁琐的手动配置过程</p>
+                <h3>开箱即用工具</h3>
+                <p>集成常用网络代理与系统配置模块</p>
               </div>
             </div>
           </div>
@@ -397,7 +397,21 @@ function formatTime(timestamp: number) {
           <div class="workspace-left">
             <div class="workspace-header">
               <h2>{{ getScriptMeta(selectedScript.name).title }}</h2>
-              <p class="script-badge">{{ selectedScript.name }}</p>
+              <div class="script-badges" style="display: flex; gap: 0.5rem; align-items: center;">
+                <span 
+                  v-if="selectedScript.path !== 'internal'" 
+                  class="script-badge" 
+                  style="opacity: 0.7; font-family: monospace; cursor: pointer; transition: all 0.2s;"
+                  title="点击重新选择技能目录"
+                  @click="pickDirectory('dir')"
+                  onmouseover="this.style.opacity='1'; this.style.borderColor='var(--color-primary)'"
+                  onmouseout="this.style.opacity='0.7'; this.style.borderColor='var(--color-border)'"
+                >
+                  <FolderSearch class="h-3 w-3 inline-block mr-1" style="vertical-align: text-bottom;" />
+                  {{ selectedScript.path.replace('/' + selectedScript.name, '') }}
+                </span>
+                <span class="script-badge">{{ selectedScript.name }}</span>
+              </div>
             </div>
 
             <div class="form-container">

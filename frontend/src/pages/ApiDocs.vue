@@ -3,7 +3,6 @@ import { BookOpen, Copy, Server, Search, Play, X, Send, Loader2, AlertTriangle, 
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiDocModules, buildCurlExample, findApiDocModule, type ApiEndpointDoc } from '../apiDocs'
-import ToolShell from '../components/ToolShell.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -211,35 +210,44 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
 </script>
 
 <template>
-  <ToolShell
-    title="接口文档"
-    description="查看 RustTool 对外提供的 REST API，包含请求参数、响应示例和调用示例。"
-    eyebrow="开发"
-    :breadcrumbs="breadcrumbs"
-  >
-    <section class="api-doc-layout">
-      <!-- 左侧模块导航 -->
-      <aside class="api-doc-nav">
-        <h3>模块</h3>
-        <button
-          v-for="module in apiDocModules"
-          :key="module.id"
-          type="button"
-          :class="{ 'api-doc-nav-item--active': module.id === selectedModule.id }"
-          class="api-doc-nav-item"
-          @click="selectModule(module.id)"
-        >
-          <BookOpen class="h-4 w-4" aria-hidden="true" />
-          <span>
-            <strong>{{ module.name }}</strong>
-            <small>{{ module.endpoints.length }} 个接口</small>
-          </span>
-        </button>
-      </aside>
+  <div class="saas-layout">
+    <!-- 左侧：模块导航 -->
+    <aside class="saas-sidebar">
+      <div class="sidebar-header">
+        <h1 class="app-title">接口文档</h1>
+      </div>
 
-      <!-- 中间主内容区 -->
-      <div class="api-doc-content">
-        <section class="api-doc-summary">
+      <div class="task-list">
+        <div class="list-group">
+          <div class="list-header" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <h3 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-sub); margin: 0;">模块</h3>
+          </div>
+          <div class="script-list">
+            <div
+              v-for="module in apiDocModules"
+              :key="module.id"
+              class="task-card"
+              :class="{ active: module.id === selectedModule.id }"
+              @click="selectModule(module.id)"
+            >
+              <div class="task-icon-wrapper" :class="{ active: module.id === selectedModule.id }">
+                <BookOpen class="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div class="task-info">
+                <h4>{{ module.name }}</h4>
+                <p>{{ module.endpoints.length }} 个接口</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 中间主内容区 -->
+    <main class="main-content main-content-scroll">
+      <div class="flex w-full flex-col items-start gap-8 lg:flex-row">
+        <div class="api-doc-content min-w-0 flex-1 w-full">
+          <section class="api-doc-summary">
           <div class="service-title">
             <span class="service-icon">
               <Server class="h-5 w-5" aria-hidden="true" />
@@ -493,7 +501,7 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
       </div>
 
       <!-- 右侧悬浮目录 (方案 B) -->
-      <aside class="api-doc-toc">
+      <aside class="api-doc-toc w-48 shrink-0">
         <h3>本页目录</h3>
         <div v-if="filteredEndpoints.length > 0" class="api-doc-toc-list">
           <button
@@ -517,6 +525,7 @@ async function sendRequest(endpoint: ApiEndpointDoc) {
         </div>
         <p v-else class="text-xs text-stone-400 px-1 m-0">无接口</p>
       </aside>
-    </section>
-  </ToolShell>
+      </div>
+    </main>
+  </div>
 </template>
