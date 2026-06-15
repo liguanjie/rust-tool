@@ -1,277 +1,122 @@
-# RustTool
+<h1 align="center">RustTool</h1>
 
-RustTool 是一个本地工具站，后端使用 Rust，前端使用 Vue。
+<p align="center">
+  <strong>基于 Rust + Tauri 的跨平台高效桌面工作站与 AI 工具合集</strong>
+</p>
 
-第一期工具：将 `vless://` 链接转换为 Clash Party/Mihomo YAML。
+<p align="center">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-v2-blue?logo=tauri">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-Backend-orange?logo=rust">
+  <img alt="Vue" src="https://img.shields.io/badge/Vue.js-3.x-4fc08d?logo=vuedotjs">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-Frontend-646cff?logo=vite">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-green">
+</p>
 
-新增工具：AI 安全文档。支持本地 Markdown 文档库、本地脱敏、敏感字段加密、OpenAI 兼容接口检索问答、备份与恢复。
+---
 
-## 技术选型
+## ✨ 核心特性 (Features)
 
-- Rust workspace
-- Axum + Tokio
-- Clap CLI
-- Vue 3 + Vite + TypeScript
-- Vue Router + Pinia
-- Tailwind CSS
-- Vitest
+1. 🤖 **AI 技能安装向导 (Codex Installer)**
+   - 支持动态扫描本地团队规范仓库，一键将底层的 Antigravity 核心引擎与架构规范（如 B2B、SCM 业务架构）注入到本地业务项目中，极速完成研发环境初始化。
+2. 🔒 **AI 安全文档 (Secure AI Notes)**
+   - **本地优先**：纯本地存放 Markdown 文档与向量数据库，断网可用。
+   - **高强加密**：内置 KDBX 级密码保险箱保存敏感密钥，主密码本地验证，绝不落盘。
+   - **隐私脱敏**：AI 交互前自动对敏感字段进行提取和 `{{secret}}` 占位，避免隐私泄露给云端大模型。
+   - **智能辅助**：无缝对接兼容 OpenAI 格式的大语言模型接口，支持智能检索问答。
+3. 🔧 **网络代理增强工具 (Network Utility)**
+   - 将 `vless://` 链接一键转换为 Clash Party / Mihomo YAML 格式，并提供本机节点即时测速及快速切换能力。
 
-## 桌面与 Web 一致性
+---
 
-RustTool 的桌面版和 Web 版共用同一套 Vue 页面和 `rust_tool_core` 业务核心。Web 模式通过 HTTP API 调用 `rust_tool_server`；桌面模式通过 Tauri command 直接调用 Rust 核心，不依赖本地后端端口。AI 安全文档前端调用必须经过 `frontend/src/services/memoApi.ts` 适配层，新增接口时需要同步维护 HTTP 路由、Tauri command 和前端适配映射。长期规范见根目录 `AGENTS.md`，实施记录见 `.agents/06_桌面与Web一致性规范.md`。
+## 📸 应用预览 (Screenshots)
 
-后续使用 Codex 新窗口继续开发时，请先阅读根目录 `AGENTS.md`；AI 安全文档功能不得在桌面版和 Web 版之间拆成两套页面或两套业务逻辑。
+*(此处推荐上传应用界面截图或操作动图，增强展示效果)*
+- `[占位：主界面概览截图]`
+- `[占位：AI 技能向导操作演示]`
+- `[占位：安全文档检索与密码库展示]`
 
-## 目录结构
+---
 
+## 📦 下载与安装 (Installation)
+
+### 普通用户下载 (推荐)
+前往项目的 [Releases](../../releases) 页面下载最新编译版本：
+- **macOS (Apple Silicon)**: 下载 `RustTool_*_aarch64.dmg` 文件，双击打开并将 `RustTool.app` 拖入应用程序文件夹即可。
+- **macOS (Intel)** / **Windows**: *(请根据系统类型下载对应的压缩包或安装程序)*
+
+### 初始配置指南
+- 首次下载安装后，系统默认将资料库安全地存储在您的系统应用数据目录中，普通用户**无需任何配置**即可直接开箱使用。
+- 若需更改文档存储路径或绑定 `99_codex` 规范仓库源，可在应用的**设置页面**或对应模块面板中进行路径指派与迁移。
+
+---
+
+## 🛠 开发者指南 (Developer Guide)
+
+本章节面向希望参与二次开发、自行编译代码的开发者。
+
+### 技术选型 (Tech Stack)
+- **核心框架**: Tauri v2 (Desktop), Axum + Tokio (Rust Server), Clap (CLI)
+- **前端技术**: Vue 3 + Vite + TypeScript, Vue Router + Pinia, Tailwind CSS, Vitest
+
+### 目录结构 (Structure)
 ```text
-crates/rust_tool_core   Core conversion logic
-crates/rust_tool_server Axum API server and frontend static hosting
-crates/rust_tool_cli    Command-line wrapper
-frontend                Vue 3 + Vite + TypeScript app
+crates/rust_tool_core   # 核心业务逻辑实现 (Core business logic)
+crates/rust_tool_server # Axum API 服务端与前端静态托管
+crates/rust_tool_cli    # 纯命令行入口 (Command-line wrapper)
+frontend                # Vue 3 独立前端应用
+frontend/src-tauri      # Tauri 桌面端宿主壳 (rust_tool_desktop)
 ```
 
-## CLI 使用
+### 本地开发与构建 (Setup & Build)
 
-```powershell
-cargo run -p rust_tool_cli -- convert-vless "vless://..."
-cargo run -p rust_tool_cli -- convert-vless --proxy-only "vless://..."
-cargo run -p rust_tool_cli -- convert-vless -o mihomo.yaml "vless://..."
-```
-
-## 本地开发
-
-### macOS / Unix
-
-项目根目录提供 `./rt` 作为 macOS/Linux 开发入口：
+项目根目录提供了跨平台的 `./rt` 快捷控制脚本，大幅简化了全栈协同开发的复杂度：
 
 ```sh
-./rt
-./rt install
-./rt dev
+./rt                # 打开带有数字选项的交互菜单
+./rt install        # 一键安装前端 NPM 依赖与 Rust 依赖
+./rt dev            # 联合启动：Rust 后端(5172端口) 和 Vue 前端开发热更服务器(5173端口)
+./rt desktop        # 启动 Tauri 桌面开发版，便于调试原生能力
+./rt build-desktop  # 编译打包 Tauri 桌面级 Release 最终应用 (生成 dmg / exe)
+./rt test           # 运行全栈测试 (Rust 单元测试 + Vitest)
+./rt clean          # 清理全部构建产物，释放空间
 ```
 
-直接运行 `./rt` 会显示交互菜单，可按数字选择启动桌面版、开发服务、测试、安装依赖、构建桌面应用和清理构建产物等常用操作。
+*(如果前端开发服务需要代理到自定义的新端口，启动前在环境中设置 `RUSTTOOL_SERVER_PORT` 即可。)*
 
-`./rt dev` 会同时启动后端和前端：
-
-```text
-Backend:  http://127.0.0.1:5172
-Frontend: http://127.0.0.1:5173
-```
-
-高级调试时也可以单独启动：
-
-```sh
-./rt server
-./rt frontend
-```
-
-后端默认监听 `127.0.0.1:5172`。端口被占用时可以改端口：
-
-```sh
-./rt server --port 18080
-RUSTTOOL_SERVER_PORT=18080 ./rt dev
-```
-
-如果前端开发服务也要代理到新端口，启动前设置同一个 `RUSTTOOL_SERVER_PORT` 即可。
-
-### Windows
-
-Windows 下仍可使用：
-
-```powershell
-rt install
-rt dev
-rt server
-rt frontend
-```
-
-## 本地 API
-
-RustTool 后端提供本机 REST API，默认只监听 `127.0.0.1`。
-
-```text
-GET  /api/health
-POST /api/tools/vless-to-mihomo
-GET  /api/clash-party/health
-GET  /api/clash-party/state
-POST /api/clash-party/nodes/check
-POST /api/clash-party/subscriptions/switch
-POST /api/clash-party/nodes/switch
-POST /api/memo/unlock
-POST /api/memo/lock
-GET  /api/memo/status
-POST /api/memo/settings
-GET  /api/memo/data-dir
-POST /api/memo/data-dir/migrate
-POST /api/memo/test-connection
-GET  /api/memo/list
-GET  /api/memo/doc/:id
-GET  /api/memo/secrets
-POST /api/memo/secrets/reveal
-POST /api/memo/change-master-password
-POST /api/memo/save
-POST /api/memo/draft
-POST /api/memo/delete
-POST /api/memo/query
-POST /api/memo/chat
-POST /api/memo/backup
-POST /api/memo/restore
-POST /api/memo/translate-key
-```
-
-Clash Party / Mihomo API 默认读取：
-
-```sh
-export RUSTTOOL_CLASH_PARTY_API_URL="http://127.0.0.1:9998"
-export RUSTTOOL_CLASH_PARTY_API_SECRET="your-secret"
-export RUSTTOOL_CLASH_PARTY_DATA_DIR="$HOME/Library/Application Support/mihomo-party"
-export RUSTTOOL_CLASH_PARTY_DELAY_TIMEOUT_MS="5000"
-export RUSTTOOL_CLASH_PARTY_DELAY_TEST_URL="https://www.gstatic.com/generate_204"
-```
-
-切换节点前会主动调用 Mihomo 节点测速接口。检测超时或不可用时，RustTool 会拒绝切换。
-
-检测节点：
-
-```sh
-curl -sS -X POST "http://127.0.0.1:5172/api/clash-party/nodes/check" \
-  -H "content-type: application/json" \
-  -d '{"nodeName":"raw-node-name"}'
-```
-
-切换订阅：
-
-```sh
-curl -sS -X POST "http://127.0.0.1:5172/api/clash-party/subscriptions/switch" \
-  -H "content-type: application/json" \
-  -d '{"subscriptionId":"your-profile-id"}'
-```
-
-切换节点：
-
-```sh
-curl -sS -X POST "http://127.0.0.1:5172/api/clash-party/nodes/switch" \
-  -H "content-type: application/json" \
-  -d '{"groupName":"PROXY","nodeName":"raw-node-name"}'
-```
-
-## AI 安全文档
-
-AI 安全文档默认使用本机资料库根目录：
-
-```sh
-export RUSTTOOL_DATA_DIR="$HOME/RustToolData" # 可选
-```
-
-未设置时，macOS 默认使用 `~/Library/Application Support/rust-tool`，Windows 默认使用 `%APPDATA%\rust-tool`，其他 Unix 系统默认使用 `$XDG_DATA_HOME/rust-tool` 或 `~/.local/share/rust-tool`。
-
-资料库内当前结构：
-
-```text
-config.json  非敏感配置、主密码校验材料和资料库迁移指针
-documents/   Markdown 文档库，frontmatter 保存文档元数据
-embeddings/  向量缓存文件，可按需重建
-secrets.kdbx KDBX 密码库，用于保存 API Key 和文档 secret
-```
-
-文档列表以 `documents/**/*.md` 为准。用户直接在 `documents/` 下新增 Markdown 文件后，应用会在文档列表中显示；应用保存的文档会自动写入 frontmatter，记录 `id`、`title`、`summary` 和 `updatedAt`。
-
-安装后默认使用系统应用数据目录，普通用户无需配置即可使用。设置页提供资料库目录迁移：迁移时会要求保密库已解锁，自动创建备份，复制 `config.json`、`documents/`、`embeddings/` 和 `secrets.kdbx` 到新目录，并把新路径写入默认目录下的 `config.json`。迁移成功后当前会话会锁定；重启应用后使用新目录，旧目录会保留。
-
-默认 OpenAI 兼容接口配置：
-
-```text
-Base URL:                 https://api.openai.com/v1
-Chat Model:               gpt-5.5
-Embedding Model:          text-embedding-3-small
-Reasoning Effort:         xhigh
-Disable Response Storage: true
-```
-
-安全行为：
-
-- 保密库需要先调用 `/api/memo/unlock` 解锁。锁定状态访问文档、密码库、检索、备份、恢复、设置保存等接口会返回 `401`。
-- 明文主密码不会落盘；服务只在 `config.json` 中保存盐和加密校验 token。
-- 解锁成功后会用同一个主密码打开或创建 `secrets.kdbx`；如果旧资料库没有文件版校验 token 但已有 `secrets.kdbx`，会先用 KDBX 验证密码并初始化新的校验材料。锁定后会从内存中释放 KDBX 对象和主密钥。
-- AI 调用前会先在本地脱敏，密码、Token、API Key、私钥等会替换为 `{{secret:pending_n}}`，默认不会把明文 secret 发送给大模型。
-- 文档正文以 Markdown 文件保存，敏感字段以 `{{secret:key}}` 占位；新保存的 secret 会写入 `secrets.kdbx`。
-- 密码库页面只读取 secret 索引；明文值只在单项查看或复制时通过 `/api/memo/secrets/reveal` 临时解密返回，默认不会进入 AI 上下文。
-- 主密码可在保险箱已解锁时修改。修改时会先创建本地备份，再更新 password verifier 和 KDBX 保存密码；成功后会自动锁定，要求使用新主密码重新解锁。
-- `/api/memo/status` 只返回 `hasApiKey`，不会回显已保存的 API Key。设置页 API Key 留空会保留原值。
-- 文档 `fileName` 必须是库内相对路径，不能使用绝对路径或 `..`；同名文件会被拒绝。
-- 备份会包含 `config.json`、`documents/`、`embeddings/` 和 `secrets.kdbx`；恢复会先解压到临时目录并校验其中包含 RustTool 资料库数据，校验成功后才替换现有数据，并在恢复成功后回到锁定状态。
-- 开启“允许 AI 检索并读取解密后的密码”后，解密 secret 可能随上下文发送给配置的大模型服务；云端模型场景建议保持关闭。
-
-错误响应格式：
-
-```json
-{
-  "error": {
-    "code": "vault_locked",
-    "message": "Vault is locked. Please unlock first."
-  }
-}
-```
-
-常见状态码：
-
-```text
-401 vault_locked  保密库未解锁
-400 bad_request   参数、路径、备份包或文件名冲突错误
-404 not_found     文档不存在
-500 internal_error 服务端处理失败
-```
-
-## 常用命令
-
-```sh
-./rt                # 打开交互菜单
-./rt install        # 安装前端依赖
-./rt dev            # 同时启动后端和前端开发服务
-./rt desktop        # 启动 Tauri 桌面开发版
-./rt test           # 跑 Rust + 前端测试
-./rt build-desktop  # 构建 Tauri 桌面应用
-./rt clean          # 清理构建产物
-```
-
-高级命令仍然可直接输入：
-
-```sh
-./rt server    # 只启动 Rust 后端
-./rt frontend  # 只启动 Vue 前端
-./rt build     # 构建前端 + Rust release 二进制
-./rt run       # 运行 release 后端服务
-```
-
-## 构建检查
-
-推荐：
-
+构建发布前，强烈推荐统一执行校验：
 ```sh
 ./rt test
 ./rt build
 ```
 
-手动命令：
+---
 
+## 🏗 架构设计与机制 (Architecture & Concepts)
+
+### 1. 桌面与 Web 架构一致性
+RustTool 的桌面版和 Web 版共用**同一套 Vue 页面**和 `rust_tool_core` 业务核心。
+- **Web 模式**：通过 HTTP API (Axum) 发起请求调用 `rust_tool_server`。
+- **桌面模式**：通过 Tauri command 发起 IPC 通信直接调用 Rust 核心，不依赖本地网卡端口，更加高效安全。
+- **规范要求**：在二次开发新增接口时，需要同步维护 HTTP 路由、Tauri command 和前端的 `Api` 适配映射层。长期约定请参考根目录的 `AGENTS.md`。
+
+### 2. 深入：AI 安全文档机制
+支持通过系统环境变量进行深度自定义 (极客玩法)：
 ```sh
-cargo test
-cd frontend
-pnpm run test:run
-pnpm run build
+export RUSTTOOL_DATA_DIR="$HOME/RustToolData" # 显式指定文档与保险箱的存放根目录
+export RUSTTOOL_CLASH_PARTY_API_URL="http://127.0.0.1:9998" # 指定底层代理测速接口
 ```
 
-发布时先执行 `pnpm run build`，再启动 `rust_tool_server`，后端会托管 `frontend/dist`。
+**严格的安全行为准则：**
+- **密码库机制**：任何敏感操作必须先调用 `unlock` 解锁保密库。主密码哈希校验全部在内存中进行，**明文密码绝对不落盘**。应用进入锁定状态后会立即清零释放内存中的 KDBX 对象与主密钥。
+- **AI 脱敏保护**：文档正文的密码、Token 等敏感内容会被提取并替换为 `{{secret:key}}`，真实数值保存在 KDBX 保险箱内。当与大语言模型交互问答时，默认拒绝向云端发送明文密钥。
 
-## 当前验证状态
+---
 
-前端已通过：
+## 🤝 参与贡献 (Contributing)
 
-```sh
-pnpm run test:run
-pnpm run build
-```
+1. 请在动手开发前，完整阅读本根目录下的 `AGENTS.md`，了解开发约定和协作规范。
+2. 提交代码变更前，请务必在本地终端运行 `./rt test`，确保所有单元测试 100% 绿灯通过。
+3. AI 安全文档功能**严禁**在桌面版和 Web 版之间拆成两套业务逻辑，必须严格遵从一致性适配规范。
 
-当前机器的 PATH 中没有检测到 `cargo`/`rustc`，Rust 侧需要安装 Rust 工具链后再运行 `cargo test`。
+## 📄 开源协议 (License)
+本项目代码遵循 [MIT License](LICENSE) 开源协议。
