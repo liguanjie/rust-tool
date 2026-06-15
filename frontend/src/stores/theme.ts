@@ -6,7 +6,7 @@ export const useThemeStore = defineStore('theme', () => {
 
   localStorage.removeItem('theme-mode')
 
-  const isSidebarCollapsed = ref(localStorage.getItem('sidebar-collapsed') === 'true')
+  const isSidebarCollapsed = ref(localStorage.getItem('sidebar-collapsed') !== 'false')
 
   function toggleSidebar() {
     isSidebarCollapsed.value = !isSidebarCollapsed.value

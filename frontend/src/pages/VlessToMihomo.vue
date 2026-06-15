@@ -2,7 +2,6 @@
 import { computed, onMounted } from 'vue'
 import { ExternalLink } from '@lucide/vue'
 import ResultPanel from '../components/ResultPanel.vue'
-import ToolShell from '../components/ToolShell.vue'
 import { useVlessToMihomoStore } from '../stores/vlessToMihomo'
 
 const tool = useVlessToMihomoStore()
@@ -25,14 +24,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <ToolShell
-    title="VLESS 转 Mihomo"
-    description="将 3x-ui 生成的 vless:// 链接转换为 Clash Party/Mihomo YAML。"
-    :breadcrumbs="[
-      { label: '工具箱', to: '/toolbox' },
-      { label: 'VLESS 转 Mihomo' },
-    ]"
-  >
+  <div class="vless-tool-wrapper">
     <div class="tool-grid">
       <section class="input-panel vless-config-panel">
         <section class="config-section">
@@ -266,5 +258,22 @@ onMounted(() => {
         />
       </div>
     </div>
-  </ToolShell>
+  </div>
 </template>
+
+<style scoped>
+.vless-tool-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 2rem 3rem;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: start;
+  flex: 1;
+}
+</style>

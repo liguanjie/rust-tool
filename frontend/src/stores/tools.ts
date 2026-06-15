@@ -19,14 +19,14 @@ export const useToolsStore = defineStore('tools', () => {
   const groups: ToolGroup[] = [
     {
       id: 'toolbox',
-      name: '工具箱',
+      name: '工具栏',
       items: [
         {
-          id: 'vless-to-mihomo',
-          name: 'VLESS 转 Mihomo',
-          path: '/toolbox/vless-to-mihomo',
-          description: '将 3x-ui VLESS 链接转换为 Clash Party/Mihomo YAML',
-          icon: Cable,
+          id: 'codex',
+          name: '工作台',
+          path: '/toolbox/codex',
+          description: '管理并运行 Codex 本地自动化脚本与工具',
+          icon: Terminal,
         },
         {
           id: 'api-docs',
@@ -34,13 +34,6 @@ export const useToolsStore = defineStore('tools', () => {
           path: '/tools/api-docs',
           description: '查看 RustTool REST API',
           icon: BookOpen,
-        },
-        {
-          id: 'codex',
-          name: 'Codex 管理',
-          path: '/toolbox/codex',
-          description: '管理并运行 Codex 本地自动化脚本',
-          icon: Terminal,
         },
       ],
     },

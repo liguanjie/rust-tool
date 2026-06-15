@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
-import { Folder, Play, Search, Trash2, Package, Terminal, Box, Wrench, Settings2, Sparkles, CheckCircle2 } from '@lucide/vue'
+import { ref, onMounted, watch, computed, defineAsyncComponent } from 'vue'
+import { Folder, Play, Search, Trash2, Package, Terminal, Box, Wrench, Settings2, Sparkles, CheckCircle2, Cable, FolderSearch } from '@lucide/vue'
+
+const VlessToMihomo = defineAsyncComponent(() => import('./VlessToMihomo.vue'))
 
 interface ScriptInfo {
   name: string
@@ -31,6 +33,11 @@ const SCRIPT_DICT: Record<string, { title: string, desc: string, icon: any }> = 
     title: 'Codex 技能安装向导',
     desc: '一键为目标项目注入底层框架规范与核心自动化能力。',
     icon: Package
+  },
+  '@tool:vless': {
+    title: 'VLESS 转 Mihomo',
+    desc: '将 3x-ui VLESS 链接转换为 Clash Party/Mihomo YAML',
+    icon: Cable
   }
 }
 
@@ -55,6 +62,14 @@ const filteredScripts = computed(() => {
     const meta = getScriptMeta(s.name)
     return s.name.toLowerCase().includes(lowerQ) || meta.title.toLowerCase().includes(lowerQ)
   })
+})
+
+const filteredLocalScripts = computed(() => {
+  return filteredScripts.value.filter(s => s.path !== 'internal')
+})
+
+const filteredInternalScripts = computed(() => {
+  return filteredScripts.value.filter(s => s.path === 'internal')
 })
 
 const scriptArgs = ref('')
@@ -124,12 +139,25 @@ async function fetchScripts() {
     const tauriCore = await import('@tauri-apps/api/core').catch(() => null)
     if (tauriCore && tauriCore.isTauri()) {
       const { invoke } = tauriCore
-      scripts.value = await invoke<ScriptInfo[]>('get_workbench_scripts', { dir: dir.value })
+      const backendScripts = await invoke<ScriptInfo[]>('get_workbench_scripts', { dir: dir.value })
+      const merged = [...backendScripts, { name: '@tool:vless', path: 'internal' }]
+      merged.sort((a, b) => {
+        if (a.name === 'install-to-project.sh') return -1
+        if (b.name === 'install-to-project.sh') return 1
+        return a.name.localeCompare(b.name)
+      })
+      scripts.value = merged
     } else {
       const res = await fetch(`/api/workbench/scripts?dir=${encodeURIComponent(dir.value)}`)
       const json = await res.json()
       if (json.success) {
-        scripts.value = json.data
+        const merged = [...json.data, { name: '@tool:vless', path: 'internal' }]
+        merged.sort((a, b) => {
+          if (a.name === 'install-to-project.sh') return -1
+          if (b.name === 'install-to-project.sh') return 1
+          return a.name.localeCompare(b.name)
+        })
+        scripts.value = merged
       } else {
         errorMsg.value = json.error || '获取脚本列表失败'
         scripts.value = []
@@ -263,55 +291,101 @@ function formatTime(timestamp: number) {
       </div>
 
       <div class="task-list">
-        <p class="list-label">任务库 <span class="badge">{{ filteredScripts.length }}</span></p>
-        
-        <div 
-          v-for="script in filteredScripts" 
-          :key="script.path"
-          :class="['task-card', { active: selectedScript?.path === script.path }]"
-          @click="selectScript(script)"
-        >
-          <div class="task-icon-wrapper" :class="{ active: selectedScript?.path === script.path }">
-            <component :is="getScriptMeta(script.name).icon" class="h-5 w-5" />
+        <div class="task-lists">
+          <div class="list-group">
+            <div class="list-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <h3 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-sub); margin: 0;">本地技能</h3>
+                <span class="badge">{{ filteredLocalScripts.length }}</span>
+              </div>
+              <button class="btn-icon-small" @click="pickDirectory('dir')" title="配置本地技能目录">
+                <FolderSearch class="h-4 w-4 icon-subtle" />
+              </button>
+            </div>
+
+            <div class="script-list">
+              <div 
+                v-for="s in filteredLocalScripts" 
+                :key="s.name"
+                class="task-card"
+                :class="{ active: selectedScript?.name === s.name }"
+                @click="selectScript(s)"
+              >
+                <div class="task-icon-wrapper" :class="{ active: selectedScript?.name === s.name }">
+                  <component :is="getScriptMeta(s.name).icon" class="h-5 w-5" />
+                </div>
+                <div class="task-info">
+                  <h4>{{ getScriptMeta(s.name).title }}</h4>
+                  <p>{{ getScriptMeta(s.name).desc }}</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="task-info">
-            <h4>{{ getScriptMeta(script.name).title }}</h4>
-            <p>{{ getScriptMeta(script.name).desc }}</p>
+
+          <div class="list-group" style="margin-top: 1.5rem;" v-if="filteredInternalScripts.length > 0">
+            <div class="list-header" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+              <h3 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-sub); margin: 0;">内置工具</h3>
+              <span class="badge">{{ filteredInternalScripts.length }}</span>
+            </div>
+
+            <div class="script-list">
+              <div 
+                v-for="s in filteredInternalScripts" 
+                :key="s.name"
+                class="task-card"
+                :class="{ active: selectedScript?.name === s.name }"
+                @click="selectScript(s)"
+              >
+                <div class="task-icon-wrapper" :class="{ active: selectedScript?.name === s.name }">
+                  <component :is="getScriptMeta(s.name).icon" class="h-5 w-5" />
+                </div>
+                <div class="task-info">
+                  <h4>{{ getScriptMeta(s.name).title }}</h4>
+                  <p>{{ getScriptMeta(s.name).desc }}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div v-if="filteredScripts.length === 0" class="empty-list">
+        <div v-if="filteredLocalScripts.length === 0 && filteredInternalScripts.length === 0" class="empty-list">
           没有找到匹配的任务
         </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <button class="settings-btn" @click="pickDirectory('dir')" title="更改工作空间">
-          <Settings2 class="h-4 w-4" />
-          <span>工作空间设置</span>
-        </button>
       </div>
     </aside>
 
     <!-- 右侧：操作区 -->
     <main class="saas-main">
-      <div class="main-content-scroll">
+      <div v-if="selectedScript && selectedScript.name === '@tool:vless'" style="flex: 1; display: flex; flex-direction: column; overflow-y: auto;">
+        <VlessToMihomo />
+      </div>
+
+      <div v-else class="main-content-scroll">
         
         <!-- 空状态 (Onboarding) -->
         <div v-if="!selectedScript" class="onboarding-state">
-          <div class="hero-icon">
-            <Sparkles class="h-12 w-12 text-[#10b981]" />
+          <div class="hero-icon-new">
+            <div class="icon-glow"></div>
+            <Sparkles class="h-10 w-10 text-emerald-400 relative z-10" />
           </div>
-          <h2>欢迎来到 Codex 自动化工作台</h2>
-          <p>请在左侧选择一个你要执行的任务卡片开始你的自动化之旅。</p>
-          <div class="features-grid">
-            <div class="feature-item">
-              <Box class="h-5 w-5 text-[#10b981]" />
-              <span>开箱即用的脚手架引擎</span>
+          <h2 class="bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Codex 自动化工作台</h2>
+          <p class="onboarding-desc">
+            选择左侧任务卡片，即可一键注入核心架构或执行自动化脚本。
+          </p>
+          <div class="features-grid-new">
+            <div class="feature-card-new">
+              <div class="feature-icon-new"><Box class="h-5 w-5 text-emerald-400" /></div>
+              <div class="feature-text-new">
+                <h3>极速脚手架</h3>
+                <p>毫秒级初始化标准工程结构</p>
+              </div>
             </div>
-            <div class="feature-item">
-              <CheckCircle2 class="h-5 w-5 text-[#10b981]" />
-              <span>全自动执行与状态追踪</span>
+            <div class="feature-card-new">
+              <div class="feature-icon-new"><Terminal class="h-5 w-5 text-emerald-400" /></div>
+              <div class="feature-text-new">
+                <h3>自动化执行</h3>
+                <p>摆脱繁琐的手动配置过程</p>
+              </div>
             </div>
           </div>
         </div>
@@ -329,12 +403,12 @@ function formatTime(timestamp: number) {
             <div class="form-container">
             <template v-if="selectedScript.name === 'install-to-project.sh'">
               <div class="form-field">
-                <label>第一步：选择你要安装的目录/项目</label>
+                <label>第一步：配置目标工作空间</label>
                 <div class="input-with-button">
                   <input v-model="projectDir" type="text" placeholder="例如：/Users/ben/my-new-project" />
                   <button class="btn-outline" @click="pickDirectory('projectDir')">选择目录</button>
                 </div>
-                <span class="field-hint">指定一个本地文件夹作为目标注入位置</span>
+                <span class="field-hint">指定一个本地文件夹作为目标注入的工作空间位置</span>
               </div>
               
               <div class="form-field">
@@ -401,7 +475,7 @@ function formatTime(timestamp: number) {
             <div class="action-row">
               <button class="btn-primary-action" :disabled="isRunning" @click="() => runScript()">
                 <Play class="h-4 w-4" :class="{'spin-pulse': isRunning}" />
-                <span>{{ isRunning ? '正在处理中...' : '立刻开始执行' }}</span>
+                <span>{{ isRunning ? '正在处理中...' : (selectedScript.name === 'install-to-project.sh' ? '立刻安装技能' : '立刻开始执行') }}</span>
               </button>
             </div>
             </div>
@@ -557,6 +631,25 @@ function formatTime(timestamp: number) {
 
 .search-bar input::placeholder {
   color: var(--color-text-muted);
+  opacity: 0.8;
+}
+
+.btn-icon-small {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.btn-icon-small:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
 }
 
 .icon-subtle {
@@ -691,54 +784,97 @@ function formatTime(timestamp: number) {
 
 /* Onboarding State */
 .onboarding-state {
-  max-width: 500px;
-  margin-top: 4rem;
+  max-width: 560px;
+  margin-top: 6rem;
   text-align: center;
 }
 
-.hero-icon {
-  width: 80px;
-  height: 80px;
-  background: rgba(16, 185, 129, 0.1);
-  border-radius: 24px;
+.hero-icon-new {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 2rem auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 1.5rem auto;
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 32px;
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+}
+
+.icon-glow {
+  position: absolute;
+  inset: -1px;
+  border-radius: 32px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.4), transparent);
+  opacity: 0.5;
+  filter: blur(8px);
+  z-index: 0;
 }
 
 .onboarding-state h2 {
-  font-size: 1.75rem;
-  font-weight: 700;
+  font-size: 2.25rem;
+  font-weight: 800;
   margin-bottom: 1rem;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 
-.onboarding-state p {
-  font-size: 1rem;
+.onboarding-desc {
+  font-size: 1.0625rem;
   color: var(--color-text-sub);
   line-height: 1.6;
-  margin-bottom: 2.5rem;
+  margin-bottom: 3rem;
+  max-width: 420px;
+  margin-inline: auto;
 }
 
-.features-grid {
+.features-grid-new {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
-.feature-item {
+.feature-card-new {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  padding: 1rem;
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  font-weight: 500;
-  box-shadow: var(--shadow-card);
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.feature-card-new:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgba(16, 185, 129, 0.15);
+}
+
+.feature-icon-new {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feature-text-new h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  margin-bottom: 0.25rem;
+}
+
+.feature-text-new p {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
 }
 
 /* Task Workspace (Form Area) */
