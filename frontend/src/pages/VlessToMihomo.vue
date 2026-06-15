@@ -3,6 +3,9 @@ import { computed, onMounted } from 'vue'
 import { ExternalLink } from '@lucide/vue'
 import ResultPanel from '../components/ResultPanel.vue'
 import { useVlessToMihomoStore } from '../stores/vlessToMihomo'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 const tool = useVlessToMihomoStore()
 const templateHints = {
@@ -29,10 +32,10 @@ onMounted(() => {
       <section class="input-panel vless-config-panel">
         <section class="config-section">
           <label class="field-label" for="vless-input">VLESS 链接</label>
-          <textarea
+          <Textarea
             id="vless-input"
             v-model="tool.input"
-            class="vless-input"
+            class="min-h-[100px]"
             spellcheck="false"
             placeholder="每行一个 vless:// 链接&#10;vless://uuid@example.com:443?type=tcp&security=reality..."
           />
@@ -42,13 +45,12 @@ onMounted(() => {
         <section class="config-section">
           <label class="field-control" for="download-name">
             <span class="field-label">下载文件名</span>
-            <input
+            <Input
               id="download-name"
-              :value="tool.downloadName"
-              class="text-input"
+              :model-value="tool.downloadName"
               type="text"
               placeholder="自动读取链接 # 后面的名称"
-              @input="tool.updateDownloadName(($event.target as HTMLInputElement).value)"
+              @update:model-value="(val) => tool.updateDownloadName(val as string)"
             />
           </label>
 
@@ -221,9 +223,9 @@ onMounted(() => {
           </div>
         </section>
 
-        <button class="primary-button" type="button" :disabled="!tool.canConvert" @click="tool.convert">
+        <Button class="w-full mt-4" size="lg" type="button" :disabled="!tool.canConvert" @click="tool.convert">
           {{ tool.loading ? '转换中...' : '转换' }}
-        </button>
+        </Button>
 
         <p v-if="tool.error" class="error-message">{{ tool.error }}</p>
       </section>

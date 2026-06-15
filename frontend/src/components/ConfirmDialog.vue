@@ -1,5 +1,14 @@
 <script setup lang="ts">
 import { AlertTriangle } from '@lucide/vue'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 defineProps<{
   title: string
@@ -10,45 +19,44 @@ defineProps<{
   tone?: 'default' | 'danger'
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   cancel: []
   confirm: []
 }>()
+
+const open = true
 </script>
 
 <template>
-  <div class="confirm-backdrop" @click.self="$emit('cancel')">
-    <section
-      class="confirm-dialog"
-      :class="{ 'confirm-dialog--danger': tone === 'danger' }"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
-    >
-      <header class="confirm-header">
-        <span class="confirm-icon" :class="{ 'confirm-icon--danger': tone === 'danger' }">
-          <AlertTriangle class="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div>
-          <h3 id="confirm-dialog-title">{{ title }}</h3>
-          <p>{{ message }}</p>
-        </div>
-      </header>
-      <p v-if="warning" class="confirm-warning">{{ warning }}</p>
-      <footer class="confirm-footer">
-        <button class="secondary-button" type="button" :disabled="loading" @click="$emit('cancel')">
+  <Dialog :open="open" @update:open="(val) => { if(!val) emit('cancel') }">
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle class="flex items-center gap-2" :class="{ 'text-destructive': tone === 'danger' }">
+          <AlertTriangle class="h-5 w-5" />
+          {{ title }}
+        </DialogTitle>
+        <DialogDescription>
+          {{ message }}
+        </DialogDescription>
+      </DialogHeader>
+      
+      <p v-if="warning" class="text-sm font-medium text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20 mt-2">
+        {{ warning }}
+      </p>
+
+      <DialogFooter>
+        <Button variant="outline" :disabled="loading" @click="emit('cancel')">
           取消
-        </button>
-        <button
-          :class="tone === 'danger' ? 'danger-button' : 'primary-button compact-primary'"
-          type="button"
-          :disabled="loading"
-          @click="$emit('confirm')"
+        </Button>
+        <Button 
+          :variant="tone === 'danger' ? 'destructive' : 'default'" 
+          :disabled="loading" 
+          @click="emit('confirm')"
         >
-          <AlertTriangle v-if="tone === 'danger'" class="h-4 w-4" aria-hidden="true" />
-          <span>{{ loading ? '执行中' : confirmText }}</span>
-        </button>
-      </footer>
-    </section>
-  </div>
+          <AlertTriangle v-if="tone === 'danger'" class="h-4 w-4 mr-2" />
+          {{ loading ? '执行中' : confirmText }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>

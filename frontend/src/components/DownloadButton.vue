@@ -2,6 +2,7 @@
 import { CheckCircle2, Download, X, XCircle } from '@lucide/vue'
 import { ref } from 'vue'
 import { downloadYaml } from '../api/download'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   text: string
@@ -49,10 +50,10 @@ function hideToast() {
 
 <template>
   <span class="download-action">
-    <button class="icon-button" type="button" title="下载 YAML" :disabled="saving || !text" @click="downloadText">
-      <Download class="h-4 w-4" aria-hidden="true" />
-      <span class="button-label">{{ saving ? '保存中' : '下载' }}</span>
-    </button>
+    <Button variant="secondary" size="sm" type="button" title="下载 YAML" :disabled="saving || !text" @click="downloadText">
+      <Download class="h-4 w-4 mr-2" aria-hidden="true" />
+      {{ saving ? '保存中' : '下载' }}
+    </Button>
     <Transition name="toast">
       <div v-if="toast" class="toast-message" :class="`toast-message--${toast.type}`" role="status">
         <CheckCircle2 v-if="toast.type === 'success'" class="toast-icon" aria-hidden="true" />

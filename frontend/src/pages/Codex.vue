@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, defineAsyncComponent } from 'vue'
-import { Folder, Play, Search, Trash2, Package, Terminal, Box, Wrench, Settings2, Sparkles, CheckCircle2, Cable, FolderSearch } from '@lucide/vue'
+import { Folder, Play, Search, Trash2, Package, Terminal, Box, Wrench, Settings2, Sparkles, CheckCircle2, Cable, FolderSearch, Loader2 } from '@lucide/vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 const VlessToMihomo = defineAsyncComponent(() => import('./VlessToMihomo.vue'))
 
@@ -286,8 +288,8 @@ function formatTime(timestamp: number) {
       <div class="sidebar-header">
         <h1 class="app-title">工作台</h1>
         <div class="search-bar">
-          <Search class="h-4 w-4 icon-subtle" />
-          <input v-model="searchQuery" type="text" placeholder="寻找任务或功能..." />
+          <Search class="h-4 w-4 text-muted-foreground mr-2" aria-hidden="true" />
+          <Input v-model="searchQuery" type="text" placeholder="寻找任务或功能..." class="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 h-auto" />
         </div>
       </div>
 
@@ -419,9 +421,9 @@ function formatTime(timestamp: number) {
             <template v-if="selectedScript.name === 'install-to-project.sh'">
               <div class="form-field">
                 <label>第一步：配置目标工作空间</label>
-                <div class="input-with-button">
-                  <input v-model="projectDir" type="text" placeholder="例如：/Users/ben/my-new-project" />
-                  <button class="btn-outline" @click="pickDirectory('projectDir')">选择目录</button>
+                <div class="field-control">
+                  <Input v-model="projectDir" type="text" placeholder="例如：/Users/ben/my-new-project" />
+                  <Button variant="outline" @click="pickDirectory('projectDir')">选择目录</Button>
                 </div>
                 <span class="field-hint">指定一个本地文件夹作为目标注入的工作空间位置</span>
               </div>
@@ -483,15 +485,16 @@ function formatTime(timestamp: number) {
             <template v-else>
               <div class="form-field">
                 <label>任务执行参数（可选）</label>
-                <input v-model="scriptArgs" type="text" placeholder="输入参数，以空格分隔..." class="full-width" />
+                <Input v-model="scriptArgs" type="text" placeholder="输入参数，以空格分隔..." class="w-full" />
               </div>
             </template>
 
-            <div class="action-row">
-              <button class="btn-primary-action" :disabled="isRunning" @click="() => runScript()">
-                <Play class="h-4 w-4" :class="{'spin-pulse': isRunning}" />
-                <span>{{ isRunning ? '正在处理中...' : (selectedScript.name === 'install-to-project.sh' ? '立刻安装技能' : '立刻开始执行') }}</span>
-              </button>
+            <div class="action-bar">
+              <Button size="lg" :disabled="isRunning" @click="() => runScript()">
+                <Play v-if="!isRunning" class="h-5 w-5 mr-2" aria-hidden="true" />
+                <Loader2 v-else class="h-5 w-5 mr-2 animate-spin" aria-hidden="true" />
+                {{ isRunning ? '执行中...' : '运行' }}
+              </Button>
             </div>
             </div>
           </div>
@@ -503,7 +506,7 @@ function formatTime(timestamp: number) {
                 <h2>执行记录</h2>
                 <p class="script-badge">History / Logs</p>
               </div>
-              <button class="btn-text text-red" @click="clearHistory" v-if="executionHistory.length > 0" style="margin-top: 0.5rem;">清空</button>
+              <Button variant="ghost" class="text-destructive hover:text-destructive mt-2" size="sm" @click="clearHistory" v-if="executionHistory.length > 0">清空</Button>
             </div>
 
             <div class="form-container history-container">
@@ -512,7 +515,7 @@ function formatTime(timestamp: number) {
               <!-- 历史搜索框 -->
               <div class="history-search">
                 <Search class="h-4 w-4 icon-subtle" />
-                <input v-model="historySearchQuery" type="text" placeholder="搜索参数、输出或脚本..." />
+                <Input v-model="historySearchQuery" type="text" placeholder="搜索参数、输出或脚本..." class="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 h-auto" />
               </div>
 
               <div class="feed-list">
@@ -527,9 +530,11 @@ function formatTime(timestamp: number) {
                       <span class="script-tag">{{ getScriptMeta(record.scriptName).title }}</span>
                       <span class="time">{{ formatTime(record.timestamp) }}</span>
                     </div>
-                    <button class="btn-outline-small" @click="rerunHistory(record)" :disabled="isRunning">
-                      载入配置
-                    </button>
+                    <div class="history-actions">
+                    <Button variant="outline" size="sm" @click="rerunHistory(record)" :disabled="isRunning">
+                      <Play class="h-3 w-3 mr-1" aria-hidden="true" /> 复用执行
+                    </Button>
+                  </div>
                   </div>
                   
                   <div class="feed-args" v-if="record.args">

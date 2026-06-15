@@ -70,45 +70,61 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="smart-select" :class="{ 'smart-select--open': open }">
-    <button class="smart-select-trigger" type="button" @click="open = !open">
-      <span class="smart-select-value">
-        <strong>{{ selectedItem?.label || placeholder }}</strong>
-        <small v-if="selectedItem?.description">{{ selectedItem.description }}</small>
+  <div ref="root" class="relative" :class="{ 'z-50': open }">
+    <button
+      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      type="button"
+      @click="open = !open"
+    >
+      <span class="flex items-center gap-2 truncate text-left">
+        <span class="truncate font-medium">{{ selectedItem?.label || placeholder }}</span>
+        <small v-if="selectedItem?.description" class="text-muted-foreground truncate">{{ selectedItem.description }}</small>
       </span>
-      <span v-if="selectedItem?.badge" class="smart-select-badge">{{ selectedItem.badge }}</span>
-      <ChevronDown class="h-4 w-4 smart-select-chevron" aria-hidden="true" />
+      <div class="flex items-center gap-2 shrink-0">
+        <span v-if="selectedItem?.badge" class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold transition-colors border-transparent bg-secondary text-secondary-foreground">{{ selectedItem.badge }}</span>
+        <ChevronDown class="h-4 w-4 opacity-50" aria-hidden="true" />
+      </div>
     </button>
 
-    <div v-if="open" class="smart-select-menu">
-      <label class="smart-select-search">
-        <Search class="h-4 w-4" aria-hidden="true" />
-        <input v-model="query" type="text" :placeholder="searchPlaceholder" autocomplete="off" />
-      </label>
+    <div
+      v-if="open"
+      class="absolute top-full z-50 mt-1 max-h-96 w-full min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+    >
+      <div class="flex items-center border-b px-3">
+        <Search class="mr-2 h-4 w-4 shrink-0 opacity-50" />
+        <input
+          v-model="query"
+          class="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          type="text"
+          :placeholder="searchPlaceholder"
+          autocomplete="off"
+        />
+      </div>
 
-      <div class="smart-select-options">
+      <div class="max-h-[300px] overflow-y-auto p-1">
         <button
           v-for="item in filteredItems"
           :key="item.value"
-          class="smart-select-option"
+          class="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
           :class="{
-            'smart-select-option--selected': item.value === modelValue,
-            'smart-select-option--active': item.active,
-            'smart-select-option--disabled': item.disabled,
+            'bg-accent text-accent-foreground': item.value === modelValue,
+            'opacity-50 pointer-events-none': item.disabled,
           }"
           type="button"
           :disabled="item.disabled"
           @click="selectItem(item.value)"
         >
-          <span class="smart-select-option-copy">
-            <strong>{{ item.label }}</strong>
-            <small v-if="item.description">{{ item.description }}</small>
+          <span class="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+            <Check v-if="item.value === modelValue" class="h-4 w-4" />
           </span>
-          <span v-if="item.badge" class="smart-select-badge">{{ item.badge }}</span>
-          <Check v-if="item.value === modelValue" class="h-4 w-4 smart-select-check" aria-hidden="true" />
+          <span class="flex items-center gap-2 truncate text-left">
+            <span class="font-medium">{{ item.label }}</span>
+            <small v-if="item.description" class="text-muted-foreground truncate">{{ item.description }}</small>
+          </span>
+          <span v-if="item.badge" class="ml-auto inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground">{{ item.badge }}</span>
         </button>
 
-        <p v-if="filteredItems.length === 0" class="smart-select-empty">{{ emptyText }}</p>
+        <p v-if="filteredItems.length === 0" class="py-6 text-center text-sm text-muted-foreground">{{ emptyText }}</p>
       </div>
     </div>
   </div>

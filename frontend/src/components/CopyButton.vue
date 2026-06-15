@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Copy } from '@lucide/vue'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   text: string
@@ -17,8 +18,8 @@ async function copyText() {
 </script>
 
 <template>
-  <button class="icon-button" type="button" title="复制结果" @click="copyText">
-    <Copy class="h-4 w-4" aria-hidden="true" />
-    <span class="button-label">复制</span>
-  </button>
+  <Button variant="secondary" size="sm" type="button" title="复制结果" @click="copyText">
+    <Copy class="h-4 w-4 mr-2" aria-hidden="true" />
+    复制
+  </Button>
 </template>

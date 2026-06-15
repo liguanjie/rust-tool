@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
 import { Eye, EyeOff } from '@lucide/vue'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -45,57 +47,30 @@ function toggleVisible() {
 </script>
 
 <template>
-  <div class="secure-password-input">
-    <input
+  <div class="relative w-full">
+    <Input
       ref="inputRef"
-      :value="modelValue"
+      :model-value="modelValue"
+      @update:model-value="(val) => emit('update:modelValue', val as string)"
       :type="visible ? 'text' : 'password'"
-      :class="['secure-password-input__input', inputClass]"
+      :class="['pr-10', inputClass]"
       :autocomplete="autocomplete"
       :placeholder="placeholder"
       :disabled="disabled"
-      @input="updateValue"
     />
-    <button
+    <Button
+      variant="ghost"
+      size="icon"
       type="button"
-      class="secure-password-input__toggle"
+      class="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground hover:text-foreground"
       :title="visible ? hideTitle : showTitle"
       :disabled="disabled"
       @click="toggleVisible"
     >
       <EyeOff v-if="visible" class="h-4 w-4" />
       <Eye v-else class="h-4 w-4" />
-    </button>
+    </Button>
   </div>
 </template>
 
-<style scoped>
-@reference "tailwindcss";
 
-.secure-password-input {
-  @apply relative w-full;
-}
-
-.secure-password-input__input {
-  @apply w-full rounded-xl border border-gray-800 bg-gray-950 px-4 pr-12 py-2.5 text-sm text-gray-200 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500;
-}
-
-.secure-password-input__input.vault-input {
-  background: var(--bg-input);
-  border: 1px solid var(--border-input);
-  color: var(--text-input-color);
-  @apply h-11 px-4 pr-12 py-0;
-}
-
-.secure-password-input__input.lock-input {
-  @apply border-gray-800 bg-gray-950 py-2.5 text-center font-mono text-gray-200;
-}
-
-.secure-password-input__input.m-input {
-  @apply px-3 pr-12 py-2 text-xs text-gray-300;
-}
-
-.secure-password-input__toggle {
-  @apply absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-500/10 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50;
-}
-</style>
