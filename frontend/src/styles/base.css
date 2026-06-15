@@ -7,31 +7,31 @@
 
 :root,
 .dark {
-  /* Geek dark theme variables */
-  --bg-app: #070c14;
-  --text-base: #cbd5e1;
-  --text-muted: #94a3b8;
-  --bg-card: rgba(15, 23, 42, 0.45);
-  --border-card: rgba(255, 255, 255, 0.06);
-  --shadow-card: 0 8px 32px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-  --backdrop-card: blur(16px);
-  --hover-border-card: rgba(16, 185, 129, 0.25);
-  --hover-shadow-card: 0 0 25px rgba(16, 185, 129, 0.04);
+  /* Geek dark theme variables (Cyberpunk Glassmorphism) */
+  --bg-app: #050a0f;
+  --text-base: #94a3b8;
+  --text-muted: #64748b;
+  --bg-card: rgba(15, 23, 30, 0.6);
+  --border-card: rgba(16, 185, 129, 0.15);
+  --shadow-card: 0 8px 32px 0 rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(16, 185, 129, 0.02);
+  --backdrop-card: blur(20px);
+  --hover-border-card: rgba(16, 185, 129, 0.4);
+  --hover-shadow-card: 0 0 25px rgba(16, 185, 129, 0.15), inset 0 0 20px rgba(16, 185, 129, 0.05);
 
-  --bg-sidebar: rgba(10, 14, 23, 0.8);
-  --border-sidebar: rgba(255, 255, 255, 0.05);
-  --text-sidebar-title: #ffffff;
-  --text-sidebar-sub: #6b7280;
-  --bg-sidebar-item: rgba(255, 255, 255, 0.01);
-  --border-sidebar-item: rgba(255, 255, 255, 0.03);
-  --text-sidebar-item: #9ca3af;
-  --bg-sidebar-active: rgba(16, 185, 129, 0.06);
-  --border-sidebar-active: rgba(16, 185, 129, 0.35);
-  --shadow-sidebar-active: 0 0 15px rgba(16, 185, 129, 0.05), inset 3px 0 0 #10b981;
-  --text-sidebar-active: #34d399;
-  --icon-sidebar-active: #34d399;
-  --logo-bg: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  --logo-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
+  --bg-sidebar: rgba(10, 14, 20, 0.85);
+  --border-sidebar: rgba(16, 185, 129, 0.1);
+  --text-sidebar-title: #f1f5f9;
+  --text-sidebar-sub: #475569;
+  --bg-sidebar-item: transparent;
+  --border-sidebar-item: transparent;
+  --text-sidebar-item: #94a3b8;
+  --bg-sidebar-active: linear-gradient(90deg, rgba(16, 185, 129, 0.15) 0%, transparent 100%);
+  --border-sidebar-active: transparent;
+  --shadow-sidebar-active: inset 3px 0 0 #10b981;
+  --text-sidebar-active: #10b981;
+  --icon-sidebar-active: #10b981;
+  --logo-bg: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  --logo-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
 
   --text-title: #ffffff;
   --text-subtitle: #94a3b8;
@@ -51,14 +51,14 @@
   --hover-text-btn-sec: #34d399;
   --hover-shadow-btn-sec: 0 0 12px rgba(16, 185, 129, 0.1);
 
-  --bg-input: rgba(15, 23, 42, 0.6);
-  --border-input: rgba(255, 255, 255, 0.08);
+  --bg-input: rgba(5, 10, 15, 0.6);
+  --border-input: rgba(16, 185, 129, 0.2);
   --text-input-color: #f1f5f9;
 
-  --bg-pill-good: rgba(16, 185, 129, 0.1);
-  --border-pill-good: rgba(16, 185, 129, 0.2);
-  --text-pill-good: #34d399;
-  --shadow-pill-good: 0 0 12px rgba(16, 185, 129, 0.08);
+  --bg-pill-good: rgba(16, 185, 129, 0.15);
+  --border-pill-good: rgba(16, 185, 129, 0.3);
+  --text-pill-good: #10b981;
+  --shadow-pill-good: 0 0 15px rgba(16, 185, 129, 0.2);
 
   --bg-pill-warn: rgba(245, 158, 11, 0.1);
   --border-pill-warn: rgba(245, 158, 11, 0.2);
@@ -181,7 +181,7 @@ button:disabled {
   }
 
   .sidebar-item:hover {
-    @apply border-emerald-500/30 bg-emerald-500/[0.03] text-emerald-400;
+    @apply text-[#10b981];
   }
 
   .sidebar-item-icon {
@@ -453,7 +453,7 @@ button:disabled {
     background: var(--bg-input);
     border: 1px solid var(--border-input);
     color: var(--text-input-color);
-    @apply min-h-[40px] w-full rounded-lg px-3 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10;
+    @apply min-h-[40px] w-full rounded-lg px-3 outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/20 focus:bg-[#10b981]/5;
   }
 
   .path-input-row {
@@ -525,9 +525,9 @@ button:disabled {
   }
 
   .primary-button {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
-    @apply min-h-[42px] w-full rounded-lg border-0 font-bold text-white transition-all duration-200 hover:brightness-110 hover:shadow-[0_4px_20px_rgba(16,185,129,0.4)] active:scale-[0.98];
+    background: #10b981;
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+    @apply min-h-[42px] w-full rounded-lg border-0 font-bold text-[#022c22] transition-all duration-200 hover:brightness-125 hover:shadow-[0_0_25px_rgba(16,185,129,0.6)] active:scale-[0.98];
   }
 
   .compact-primary {

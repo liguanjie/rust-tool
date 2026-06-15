@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { BookOpen, Cable } from '@lucide/vue'
+import { BookOpen, Cable, Terminal } from '@lucide/vue'
 
 export interface ToolItem {
   id: string
@@ -34,6 +34,13 @@ export const useToolsStore = defineStore('tools', () => {
           path: '/tools/api-docs',
           description: '查看 RustTool REST API',
           icon: BookOpen,
+        },
+        {
+          id: 'codex',
+          name: 'Codex 管理',
+          path: '/toolbox/codex',
+          description: '管理并运行 Codex 本地自动化脚本',
+          icon: Terminal,
         },
       ],
     },

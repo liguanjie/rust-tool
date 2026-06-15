@@ -2,13 +2,22 @@ use rust_tool_core::{
     convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
     TransitProviderOptions, TransitProxyOptions,
 };
+use rust_tool_core::workbench::{execute_script, list_scripts, ExecutionResult, ScriptInfo};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
+#[tauri::command]
+fn get_workbench_scripts(dir: String) -> Result<Vec<ScriptInfo>, String> {
+    list_scripts(&dir)
+}
 
-
+#[tauri::command]
+fn run_workbench_script(path: String, args: String) -> Result<ExecutionResult, String> {
+    let args_vec: Vec<String> = args.split_whitespace().map(|s| s.to_string()).collect();
+    execute_script(&path, args_vec)
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum VlessOutputMode {
@@ -181,11 +190,14 @@ fn save_yaml_file(
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             convert_vless_to_mihomo,
             save_yaml_file,
             get_vless_tool_settings,
-            save_vless_tool_settings
+            save_vless_tool_settings,
+            get_workbench_scripts,
+            run_workbench_script
         ])
         .run(tauri::generate_context!())
         .expect("failed to run RustTool desktop app");

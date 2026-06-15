@@ -1,6 +1,7 @@
 pub mod clash_party;
 
 pub mod tools;
+pub mod workbench;
 
 pub use clash_party::{
     check_clash_party_api, check_clash_party_node, default_clash_party_api_url,

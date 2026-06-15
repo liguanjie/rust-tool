@@ -8,7 +8,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::routes::{clash_party, health, tools};
+use crate::routes::{clash_party, health, tools, workbench};
 use crate::static_files;
 
 #[derive(Clone)]
@@ -45,6 +45,8 @@ pub fn build_app_with_state(state: AppState) -> Router {
             "/api/clash-party/nodes/switch",
             post(clash_party::switch_node),
         )
+        .route("/api/workbench/scripts", get(workbench::get_scripts))
+        .route("/api/workbench/scripts/execute", post(workbench::run_script))
         .fallback(static_files::serve_static)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
