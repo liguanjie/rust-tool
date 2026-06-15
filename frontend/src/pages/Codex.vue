@@ -116,7 +116,8 @@ async function pickDirectory(targetRef: 'dir' | 'projectDir') {
     const tauriCore = await import('@tauri-apps/api/core').catch(() => null)
     if (tauriCore && tauriCore.isTauri()) {
       const { open } = await import('@tauri-apps/plugin-dialog')
-      const selected = await open({ directory: true })
+      const defaultPath = targetRef === 'dir' ? dir.value : projectDir.value
+      const selected = await open({ directory: true, defaultPath: defaultPath || undefined })
       if (selected && typeof selected === 'string') {
         if (targetRef === 'dir') {
           dir.value = selected

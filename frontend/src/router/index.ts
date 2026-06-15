@@ -7,7 +7,7 @@ export const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/toolbox',
+      redirect: '/toolbox/codex',
     },
     {
       path: '/toolbox',
