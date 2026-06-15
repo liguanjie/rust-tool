@@ -20,6 +20,11 @@ run_frontend() {
   pnpm "$@"
 }
 
+clear_ports() {
+  echo "正在检查并清理可能被占用的端口 (5172, 5173)..."
+  lsof -ti:5172,5173 | xargs kill -9 2>/dev/null || true
+}
+
 cleanup_dev() {
   if [[ -n "${SERVER_PID:-}" ]]; then
     kill "$SERVER_PID" 2>/dev/null || true
@@ -123,6 +128,9 @@ run_command() {
   dev)
     require_command cargo
     require_command pnpm
+    
+    clear_ports
+
     DEV_STATUS_DIR="$(mktemp -d)"
     cd "$ROOT_DIR"
     run_and_record "$DEV_STATUS_DIR/server.exit" cargo run -p rust_tool_server -- "$@" &
@@ -139,6 +147,7 @@ run_command() {
     wait_for_dev_processes
     ;;
   desktop)
+    clear_ports
     run_frontend tauri:dev
     ;;
   server)
@@ -152,6 +161,7 @@ run_command() {
   test)
     require_command cargo
     require_command pnpm
+    clear_ports
     cd "$ROOT_DIR"
     cargo test
     run_frontend run test:run
