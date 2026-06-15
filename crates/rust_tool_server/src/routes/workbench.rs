@@ -23,7 +23,7 @@ pub struct ApiResponse<T> {
 pub async fn get_scripts(
     Query(query): Query<ListScriptsQuery>,
 ) -> Json<ApiResponse<Vec<ScriptInfo>>> {
-    let dir = query.dir.unwrap_or_else(|| "/Users/ben/work/99_codex/codex".to_string());
+    let dir = query.dir.unwrap_or_else(|| "/Users/ben/work/99_codex".to_string());
     
     match list_scripts(&dir) {
         Ok(scripts) => Json(ApiResponse {

@@ -41,9 +41,9 @@ interface HistoryRecord {
 
 // 产品化的文案字典映射 (前端美化)
 const SCRIPT_DICT: Record<string, { title: string, desc: string, icon: any }> = {
-  'install-to-project.sh': {
-    title: 'Codex 技能安装向导',
-    desc: '一键为目标项目注入底层框架规范与核心自动化能力。',
+  'bundle:install-to-project': {
+    title: 'AI 技能安装向导',
+    desc: '一键为目标项目注入底层框架规范与核心自动化能力 (包含所有子引擎)。',
     icon: Package
   },
   '@tool:vless': {
@@ -62,9 +62,18 @@ function getScriptMeta(scriptName: string) {
   }
 }
 
-const dir = ref('/Users/ben/work/99_codex/codex')
+const dir = ref('/Users/ben/work/99_codex')
 const scripts = ref<ScriptInfo[]>([])
 const selectedScript = ref<ScriptInfo | null>(null)
+const bundleSelection = ref<string[]>([])
+
+watch(selectedScript, (newVal) => {
+  if (newVal && newVal.name === 'bundle:install-to-project') {
+    bundleSelection.value = newVal.path.split('|||')
+  } else {
+    bundleSelection.value = []
+  }
+})
 const searchQuery = ref('')
 
 const filteredScripts = computed(() => {
@@ -150,32 +159,37 @@ async function fetchScripts() {
   errorMsg.value = ''
   try {
     const tauriCore = await import('@tauri-apps/api/core').catch(() => null)
+    let backendScripts: ScriptInfo[] = []
     if (tauriCore && tauriCore.isTauri()) {
       const { invoke } = tauriCore
-      const backendScripts = await invoke<ScriptInfo[]>('get_workbench_scripts', { dir: dir.value })
-      const merged = [...backendScripts, { name: '@tool:vless', path: 'internal' }]
-      merged.sort((a, b) => {
-        if (a.name === 'install-to-project.sh') return -1
-        if (b.name === 'install-to-project.sh') return 1
-        return a.name.localeCompare(b.name)
-      })
-      scripts.value = merged
+      backendScripts = await invoke<ScriptInfo[]>('get_workbench_scripts', { dir: dir.value })
     } else {
       const res = await fetch(`/api/workbench/scripts?dir=${encodeURIComponent(dir.value)}`)
       const json = await res.json()
       if (json.success) {
-        const merged = [...json.data, { name: '@tool:vless', path: 'internal' }]
-        merged.sort((a, b) => {
-          if (a.name === 'install-to-project.sh') return -1
-          if (b.name === 'install-to-project.sh') return 1
-          return a.name.localeCompare(b.name)
-        })
-        scripts.value = merged
+        backendScripts = json.data
       } else {
-        errorMsg.value = json.error || '获取脚本列表失败'
-        scripts.value = []
+        throw new Error(json.error || '获取脚本列表失败')
       }
     }
+
+    const installScripts = backendScripts.filter(s => s.name.endsWith('install-to-project.sh'))
+    const normalScripts = backendScripts.filter(s => !s.name.endsWith('install-to-project.sh'))
+
+    const merged = [...normalScripts, { name: '@tool:vless', path: 'internal' }]
+    if (installScripts.length > 0) {
+      merged.push({ 
+        name: 'bundle:install-to-project', 
+        path: installScripts.map(s => s.path).join('|||')
+      })
+    }
+
+    merged.sort((a, b) => {
+      if (a.name === 'bundle:install-to-project') return -1
+      if (b.name === 'bundle:install-to-project') return 1
+      return a.name.localeCompare(b.name)
+    })
+    scripts.value = merged
   } catch (err: any) {
     errorMsg.value = err.message
     scripts.value = []
@@ -191,7 +205,7 @@ async function rerunHistory(record: HistoryRecord) {
   const targetScript = scripts.value.find(s => s.name === record.scriptName)
   if (targetScript) {
     selectedScript.value = targetScript
-    if (targetScript.name === 'install-to-project.sh') {
+    if (targetScript.name === 'bundle:install-to-project') {
       const parts = record.args.split(' ')
       if (parts.length >= 1) projectDir.value = parts[0]
       if (parts.length >= 2) projectSkill.value = parts[1]
@@ -217,7 +231,7 @@ async function runScript(forceArgs?: string) {
   errorMsg.value = ''
 
   let finalArgs = scriptArgs.value
-  if (selectedScript.value.name === 'install-to-project.sh') {
+  if (selectedScript.value.name === 'bundle:install-to-project') {
     finalArgs = `${projectDir.value} ${projectSkill.value}`.trim()
   }
   
@@ -227,30 +241,60 @@ async function runScript(forceArgs?: string) {
 
   try {
     const tauriCore = await import('@tauri-apps/api/core').catch(() => null)
-    let resData: ExecutionResult | null = null
+    let resData: ExecutionResult = { stdout: '', stderr: '', exit_code: 0, success: true }
 
-    if (tauriCore && tauriCore.isTauri()) {
-      const { invoke } = tauriCore
-      resData = await invoke<ExecutionResult>('run_workbench_script', {
-        path: selectedScript.value.path,
-        args: finalArgs
-      })
-    } else {
-      const res = await fetch('/api/workbench/scripts/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          path: selectedScript.value.path,
+    const isBundle = selectedScript.value.name === 'bundle:install-to-project'
+    const pathsToRun = isBundle ? bundleSelection.value : [selectedScript.value.path]
+
+    if (pathsToRun.length === 0) {
+      alert("请至少选择一个技能执行！")
+      return
+    }
+
+    for (const p of pathsToRun) {
+      let currentRes: ExecutionResult | null = null
+      
+      if (isBundle) {
+        let engineName = '系统模块'
+        if (p.includes('antigravity/')) engineName = '🤖 Antigravity 核心引擎'
+        else if (p.includes('codex/')) engineName = '📚 Codex 底层规范'
+        resData.stdout += `\n\n✨ [阶段] 开始注入: ${engineName}\n--------------------------------------------------\n`
+      }
+
+      if (tauriCore && tauriCore.isTauri()) {
+        const { invoke } = tauriCore
+        currentRes = await invoke<ExecutionResult>('run_workbench_script', {
+          path: p,
           args: finalArgs
         })
-      })
-      const json = await res.json()
-      if (json.success) {
-        resData = json.data
       } else {
-        errorMsg.value = json.error || '执行失败'
+        const res = await fetch('/api/workbench/scripts/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            path: p,
+            args: finalArgs
+          })
+        })
+        const json = await res.json()
+        if (json.success) {
+          currentRes = json.data
+        } else {
+          errorMsg.value = json.error || '执行失败'
+          break
+        }
+      }
+
+      if (currentRes) {
+        resData.stdout += currentRes.stdout
+        resData.stderr += currentRes.stderr
+        resData.exit_code = currentRes.exit_code
+        resData.success = currentRes.success
+        if (!currentRes.success) {
+          break
+        }
       }
     }
 
@@ -410,7 +454,7 @@ function formatTime(timestamp: number) {
           <div class="workspace-left">
             <div class="workspace-header">
               <h2>{{ getScriptMeta(selectedScript.name).title }}</h2>
-              <div class="script-badges" style="display: flex; gap: 0.5rem; align-items: center;">
+              <div class="script-badges" style="display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start;">
                 <span 
                   v-if="selectedScript.path !== 'internal'" 
                   class="script-badge" 
@@ -421,14 +465,21 @@ function formatTime(timestamp: number) {
                   onmouseout="this.style.opacity='0.7'; this.style.borderColor='var(--color-border)'"
                 >
                   <FolderSearch class="h-3 w-3 inline-block mr-1" style="vertical-align: text-bottom;" />
-                  {{ selectedScript.path.replace('/' + selectedScript.name, '') }}
+                  {{ selectedScript.name === 'bundle:install-to-project' ? dir : selectedScript.path.replace('/' + selectedScript.name, '') }}
                 </span>
-                <span class="script-badge">{{ selectedScript.name }}</span>
+
+                <div v-if="selectedScript.name === 'bundle:install-to-project'" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 0.75rem;">
+                  <label v-for="p in selectedScript.path.split('|||')" :key="p" class="script-badge" style="display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; user-select: none; font-family: monospace;">
+                    <input type="checkbox" :value="p" v-model="bundleSelection" style="accent-color: var(--color-primary); width: 14px; height: 14px; margin: 0; cursor: pointer;" />
+                    {{ p.replace(dir + '/', '') }}
+                  </label>
+                </div>
+                <span v-else class="script-badge">{{ selectedScript.name }}</span>
               </div>
             </div>
 
             <div class="form-container">
-            <template v-if="selectedScript.name === 'install-to-project.sh'">
+            <template v-if="selectedScript.name === 'bundle:install-to-project'">
               <div class="form-field">
                 <label>第一步：配置目标工作空间</label>
                 <div class="flex items-center gap-2">
@@ -484,7 +535,7 @@ function formatTime(timestamp: number) {
                   >
                     <span class="skill-icon">🤝</span>
                     <div class="skill-info">
-                      <div class="skill-title">交易平台</div>
+                      <div class="skill-title">供应链（B2B）</div>
                       <div class="skill-desc">B2B 交易平台业务模板</div>
                     </div>
                   </div>
@@ -503,7 +554,7 @@ function formatTime(timestamp: number) {
               <Button size="lg" :disabled="isRunning" @click="() => runScript()" class="w-auto px-8 font-semibold">
                 <Play v-if="!isRunning" class="h-5 w-5 mr-2" aria-hidden="true" />
                 <Loader2 v-else class="h-5 w-5 mr-2 animate-spin" aria-hidden="true" />
-                {{ isRunning ? '正在处理中...' : (selectedScript.name === 'install-to-project.sh' ? '立刻安装技能' : '立刻开始执行') }}
+                {{ isRunning ? '正在处理中...' : (selectedScript.name === 'bundle:install-to-project' ? '立刻安装 AI 技能' : '立刻开始执行') }}
               </Button>
             </div>
             </div>
@@ -813,14 +864,12 @@ function formatTime(timestamp: number) {
   flex: 1;
   overflow-y: auto;
   padding: 3rem 4rem;
-  display: flex;
-  justify-content: center;
 }
 
 /* Onboarding State */
 .onboarding-state {
   max-width: 560px;
-  margin-top: 6rem;
+  margin: 6rem auto 0 auto;
   text-align: center;
 }
 
@@ -916,6 +965,7 @@ function formatTime(timestamp: number) {
 .task-workspace {
   width: 100%;
   max-width: 1400px;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(400px, 3fr) minmax(300px, 2fr);
   gap: 3rem;
@@ -932,6 +982,8 @@ function formatTime(timestamp: number) {
 .workspace-left {
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 0;
 }
 
 .workspace-right {
