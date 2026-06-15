@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
-mod memo_commands;
+
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -180,58 +180,12 @@ fn save_yaml_file(
 }
 
 pub fn run() {
-    let memo_state =
-        memo_commands::create_memo_state().expect("failed to initialize RustTool memo state");
-
     tauri::Builder::default()
-        .manage(memo_state)
         .invoke_handler(tauri::generate_handler![
             convert_vless_to_mihomo,
             save_yaml_file,
             get_vless_tool_settings,
-            save_vless_tool_settings,
-            memo_commands::memo_unlock,
-            memo_commands::memo_lock,
-            memo_commands::memo_status,
-            memo_commands::memo_data_dir,
-            memo_commands::memo_update_settings,
-            memo_commands::memo_test_connection,
-            memo_commands::memo_list_documents,
-            memo_commands::memo_get_document,
-            memo_commands::memo_audit_scan,
-            memo_commands::memo_audit_update_finding_status,
-            memo_commands::memo_audit_fix_preview,
-            memo_commands::memo_audit_redact,
-            memo_commands::memo_document_risk_diff,
-            memo_commands::memo_governance_summary,
-            memo_commands::memo_governance_cases,
-            memo_commands::memo_governance_events,
-            memo_commands::memo_governance_update_case_status,
-            memo_commands::memo_governance_accept_case,
-            memo_commands::memo_assets_list,
-            memo_commands::memo_assets_detail,
-            memo_commands::memo_assets_graph,
-            memo_commands::memo_generate_security_report,
-            memo_commands::memo_safe_share_export,
-            memo_commands::memo_standards_list,
-            memo_commands::memo_standards_checklist,
-            memo_commands::memo_standards_update_checklist_status,
-            memo_commands::memo_list_secrets,
-            memo_commands::memo_reveal_secret,
-            memo_commands::memo_change_master_password,
-            memo_commands::memo_save_document,
-            memo_commands::memo_draft_document,
-            memo_commands::memo_delete_document,
-            memo_commands::memo_query,
-            memo_commands::memo_chat,
-            memo_commands::memo_backup,
-            memo_commands::memo_restore,
-            memo_commands::memo_translate_key,
-            memo_commands::memo_migrate_data_dir,
-            memo_commands::memo_get_tree_state,
-            memo_commands::memo_set_tree_state,
-            memo_commands::memo_rename_folder,
-            memo_commands::memo_delete_folder
+            save_vless_tool_settings
         ])
         .run(tauri::generate_context!())
         .expect("failed to run RustTool desktop app");

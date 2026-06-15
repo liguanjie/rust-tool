@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { BookOpen, Cable, Brain, KeyRound } from '@lucide/vue'
+import { BookOpen, Cable } from '@lucide/vue'
 
 export interface ToolItem {
   id: string
@@ -27,20 +27,6 @@ export const useToolsStore = defineStore('tools', () => {
           path: '/toolbox/vless-to-mihomo',
           description: '将 3x-ui VLESS 链接转换为 Clash Party/Mihomo YAML',
           icon: Cable,
-        },
-        {
-          id: 'ai-memo',
-          name: 'AI 安全文档',
-          path: '/tools/ai-memo',
-          description: '本地 Markdown 文档库、secret 脱敏与 AI 检索问答',
-          icon: Brain,
-        },
-        {
-          id: 'secret-vault',
-          name: '密码库',
-          path: '/tools/secrets',
-          description: '查看本地保密库中的 secret 索引并临时解密复制',
-          icon: KeyRound,
         },
         {
           id: 'api-docs',
