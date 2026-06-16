@@ -25,8 +25,17 @@ export const router = createRouter({
       component: () => import('../pages/Codex.vue'),
     },
     {
+      path: '/toolbox/osv-scanner',
+      name: 'osv-scanner',
+      component: () => import('../pages/OsvScanner.vue'),
+    },
+    {
       path: '/tools/vless-to-mihomo',
       redirect: '/toolbox/vless-to-mihomo',
+    },
+    {
+      path: '/tools/osv-scanner',
+      redirect: '/toolbox/osv-scanner',
     },
     {
       path: '/tools/api-docs',

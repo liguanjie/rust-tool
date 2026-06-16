@@ -26,7 +26,8 @@ tauri = "2.11.2"
 tauri-build = "2.4.2"
 thiserror = "1"
 tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "signal"] }
-tower = "0.5"
+toml_edit = "0.25"
+tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { BookOpen, Cable, Terminal } from '@lucide/vue'
+import { BookOpen, Cable, Shield, Terminal } from '@lucide/vue'
 
 export interface ToolItem {
   id: string
@@ -34,6 +34,13 @@ export const useToolsStore = defineStore('tools', () => {
           path: '/tools/api-docs',
           description: '查看 RustTool REST API',
           icon: BookOpen,
+        },
+        {
+          id: 'osv-scanner',
+          name: 'OSV 漏洞管理',
+          path: '/toolbox/osv-scanner',
+          description: '预览并执行本地依赖漏洞扫描',
+          icon: Shield,
         },
       ],
     },

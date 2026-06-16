@@ -12,6 +12,15 @@ pub use clash_party::{
     ClashPartyProxyGroup, ClashPartySubscription, ClashPartySwitchResult, ClashProfileIndex,
     ClashProfileItem,
 };
+pub use tools::osv_scanner::{
+    apply_fix, build_export_command, build_scan_command, check_osv_scanner_installed,
+    export_report, ignore_vulnerability, scan_project, OsvCommandEditableOptions,
+    OsvCommandExecutionRecord, OsvCommandKind, OsvCommandPreview, OsvCommandStatus,
+    OsvFixResult, OsvIgnoreRequest, OsvIgnoreResult, OsvInstallStatus, OsvPackageInfo,
+    OsvReportExportCommandRequest, OsvReportExportRequest, OsvReportExportResult,
+    OsvReportFormat, OsvScanCommandRequest, OsvScanOptions, OsvScanRequest, OsvScanResult,
+    OsvScanSummary, OsvScannerError, OsvSeverity, OsvSeverityCounts, OsvVulnerabilityFinding,
+};
 pub use tools::vless_to_mihomo::{
     convert_vless_to_yaml, ConvertError, ConvertOptions, OutputMode, TemplateMode,
     TransitGroupType, TransitProviderOptions, TransitProxyOptions,

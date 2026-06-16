@@ -898,6 +898,203 @@ button:disabled {
     box-shadow: var(--shadow-pill-good) !important;
   }
 
+  .osv-layout {
+    @apply grid gap-5;
+  }
+
+  .osv-status-panel,
+  .osv-panel-heading,
+  .osv-inline-controls {
+    @apply flex flex-wrap items-center gap-3;
+  }
+
+  .osv-status-panel {
+    @apply justify-between;
+  }
+
+  .osv-status-main {
+    @apply flex min-w-0 items-center gap-3;
+  }
+
+  .osv-status-main strong,
+  .osv-panel-heading strong,
+  .osv-project-row strong,
+  .osv-vulnerability-row strong,
+  .osv-history-row strong {
+    color: var(--text-title);
+  }
+
+  .osv-status-main small,
+  .osv-project-row small,
+  .osv-vulnerability-row small,
+  .osv-history-row small {
+    color: var(--text-muted);
+    @apply block text-xs leading-5;
+  }
+
+  .osv-score {
+    @apply grid place-items-center rounded-lg border px-4 py-2;
+    background: var(--bg-input);
+    border-color: var(--border-card);
+  }
+
+  .osv-score span {
+    color: var(--text-title);
+    @apply text-2xl font-black leading-none;
+  }
+
+  .osv-score small {
+    color: var(--text-muted);
+    @apply mt-1 text-xs font-semibold;
+  }
+
+  .osv-inline-controls {
+    @apply min-w-0;
+  }
+
+  .osv-inline-controls > input,
+  .osv-inline-controls > :where(.relative, .inline-flex, button) {
+    @apply shrink-0;
+  }
+
+  .osv-inline-controls > input,
+  .osv-inline-controls > .text-input {
+    @apply min-w-[260px] flex-1;
+  }
+
+  .osv-project-list,
+  .osv-vulnerability-list,
+  .osv-history-list {
+    @apply grid gap-2.5;
+  }
+
+  .osv-project-row,
+  .osv-history-row {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-base);
+    @apply flex w-full min-w-0 items-center justify-between gap-3 rounded-lg p-3 text-left transition;
+  }
+
+  .osv-project-row:hover,
+  .osv-project-row--active {
+    @apply border-emerald-500/30;
+  }
+
+  .osv-project-row > span:first-child,
+  .osv-history-row > div {
+    @apply min-w-0 flex-1;
+  }
+
+  .osv-project-row small,
+  .osv-history-row code,
+  .osv-command-box code {
+    @apply break-all;
+  }
+
+  .osv-command-box {
+    background: var(--bg-input);
+    border: 1px solid var(--border-input);
+    color: var(--text-input-color);
+    @apply flex min-w-0 items-start justify-between gap-3 rounded-lg p-3 text-xs leading-6;
+  }
+
+  .status-banner {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    color: var(--text-base);
+    @apply rounded-lg px-4 py-3 text-sm font-semibold;
+  }
+
+  .status-banner--error {
+    @apply border-red-500/30 text-red-300;
+  }
+
+  .osv-vulnerability-row {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-base);
+    @apply grid gap-2 rounded-lg p-3;
+  }
+
+  .osv-vulnerability-row header,
+  .osv-ignore-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .osv-vulnerability-row p {
+    color: var(--text-subtitle);
+    @apply m-0 text-sm leading-6;
+  }
+
+  .osv-ignore-row {
+    @apply mt-1;
+  }
+
+  .osv-ignore-row input {
+    @apply min-w-[220px] flex-1;
+  }
+
+  .osv-severity {
+    @apply inline-flex min-h-[24px] items-center rounded-full border px-2 text-xs font-black uppercase;
+  }
+
+  .osv-severity--critical {
+    @apply border-red-500/30 bg-red-500/10 text-red-300;
+  }
+
+  .osv-severity--high {
+    @apply border-orange-500/30 bg-orange-500/10 text-orange-300;
+  }
+
+  .osv-severity--medium {
+    @apply border-amber-500/30 bg-amber-500/10 text-amber-300;
+  }
+
+  .osv-severity--low {
+    @apply border-emerald-500/30 bg-emerald-500/10 text-emerald-300;
+  }
+
+  .osv-severity--unknown {
+    @apply border-slate-500/30 bg-slate-500/10 text-slate-300;
+  }
+
+  @media (max-width: 720px) {
+    .osv-status-panel,
+    .osv-panel-heading,
+    .osv-inline-controls,
+    .osv-ignore-row {
+      @apply items-stretch;
+    }
+
+    .osv-status-panel > *,
+    .osv-panel-heading > *,
+    .osv-inline-controls > *,
+    .osv-inline-controls > input,
+    .osv-inline-controls > .text-input,
+    .osv-inline-controls > :where(.relative, .inline-flex, button),
+    .osv-ignore-row > * {
+      @apply min-w-0 w-full;
+    }
+
+    .osv-project-row,
+    .osv-history-row {
+      @apply grid grid-cols-1 items-start;
+    }
+
+    .osv-command-box {
+      @apply grid grid-cols-1;
+    }
+
+    .osv-command-box button {
+      @apply justify-self-end;
+    }
+
+    .osv-score {
+      @apply w-full;
+    }
+  }
+
   .status-pill--warn {
     background: var(--bg-pill-warn) !important;
     border-color: var(--border-pill-warn) !important;

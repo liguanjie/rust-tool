@@ -1,12 +1,18 @@
 use rust_tool_core::{
-    convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
-    TransitProviderOptions, TransitProxyOptions,
+    build_export_command, build_scan_command, check_osv_scanner_installed, convert_vless_to_yaml,
+    export_report, ignore_vulnerability, scan_project, ConvertOptions, OsvCommandExecutionRecord,
+    OsvCommandPreview, OsvIgnoreRequest, OsvIgnoreResult, OsvInstallStatus,
+    OsvReportExportCommandRequest, OsvReportExportRequest, OsvReportExportResult,
+    OsvScanCommandRequest, OsvScanRequest, OsvScanResult, OutputMode, TemplateMode,
+    TransitGroupType, TransitProviderOptions, TransitProxyOptions,
 };
 use rust_tool_core::workbench::{execute_script, list_scripts, ExecutionResult, ScriptInfo};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
+
+const OSV_COMMAND_HISTORY_LIMIT: usize = 50;
 
 #[tauri::command]
 fn get_workbench_scripts(dir: String) -> Result<Vec<ScriptInfo>, String> {
@@ -118,8 +124,36 @@ impl Default for VlessToolSettings {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
+struct OsvProjectSettings {
+    name: String,
+    path: String,
+    last_scanned: Option<String>,
+    health_score: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+struct OsvScannerSettings {
+    projects: Vec<OsvProjectSettings>,
+    auto_scan_schedule: String,
+    command_history: Vec<OsvCommandExecutionRecord>,
+}
+
+impl Default for OsvScannerSettings {
+    fn default() -> Self {
+        Self {
+            projects: Vec::new(),
+            auto_scan_schedule: "none".to_string(),
+            command_history: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
 struct DesktopSettings {
     vless_to_mihomo: VlessToolSettings,
+    osv_scanner: OsvScannerSettings,
 }
 
 #[tauri::command]
@@ -166,6 +200,63 @@ fn save_vless_tool_settings(
 }
 
 #[tauri::command]
+fn get_osv_settings(app: tauri::AppHandle) -> Result<OsvScannerSettings, String> {
+    Ok(read_desktop_settings(&app)?.osv_scanner)
+}
+
+#[tauri::command]
+fn save_osv_settings(
+    app: tauri::AppHandle,
+    mut settings: OsvScannerSettings,
+) -> Result<OsvScannerSettings, String> {
+    trim_osv_command_history(&mut settings.command_history);
+    let mut desktop_settings = read_desktop_settings(&app)?;
+    desktop_settings.osv_scanner = settings.clone();
+    write_desktop_settings(&app, &desktop_settings)?;
+
+    Ok(settings)
+}
+
+#[tauri::command]
+fn check_osv_installed() -> Result<OsvInstallStatus, String> {
+    check_osv_scanner_installed().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn preview_osv_scan_command(
+    request: OsvScanCommandRequest,
+) -> Result<OsvCommandPreview, String> {
+    build_scan_command(request).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn scan_osv_project(request: OsvScanRequest) -> Result<OsvScanResult, String> {
+    scan_project(request).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn preview_osv_report_export_command(
+    request: OsvReportExportCommandRequest,
+) -> Result<OsvCommandPreview, String> {
+    build_export_command(request).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn export_osv_report(request: OsvReportExportRequest) -> Result<OsvReportExportResult, String> {
+    export_report(request).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn ignore_osv_vulnerability(request: OsvIgnoreRequest) -> Result<OsvIgnoreResult, String> {
+    ignore_vulnerability(
+        &request.project_path,
+        &request.vulnerability_id,
+        &request.reason,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn save_yaml_file(
     app: tauri::AppHandle,
     filename: String,
@@ -196,6 +287,14 @@ pub fn run() {
             save_yaml_file,
             get_vless_tool_settings,
             save_vless_tool_settings,
+            get_osv_settings,
+            save_osv_settings,
+            check_osv_installed,
+            preview_osv_scan_command,
+            scan_osv_project,
+            preview_osv_report_export_command,
+            export_osv_report,
+            ignore_osv_vulnerability,
             get_workbench_scripts,
             run_workbench_script
         ])
@@ -264,6 +363,13 @@ fn write_desktop_settings(
     let json = serde_json::to_string_pretty(settings)
         .map_err(|error| format!("序列化桌面配置失败: {error}"))?;
     fs::write(path, json).map_err(|error| format!("保存桌面配置失败: {error}"))
+}
+
+fn trim_osv_command_history(history: &mut Vec<OsvCommandExecutionRecord>) {
+    if history.len() > OSV_COMMAND_HISTORY_LIMIT {
+        let keep_from = history.len() - OSV_COMMAND_HISTORY_LIMIT;
+        history.drain(0..keep_from);
+    }
 }
 
 fn sanitize_yaml_filename(filename: &str) -> String {

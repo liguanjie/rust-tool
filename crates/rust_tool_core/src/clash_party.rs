@@ -734,7 +734,7 @@ fn repair_utf8_mojibake(value: &str) -> Option<String> {
     }
     let bytes: Vec<u8> = value
         .chars()
-        .map(|character| u32::from(character))
+        .map(u32::from)
         .collect::<Vec<_>>()
         .into_iter()
         .map(u8::try_from)

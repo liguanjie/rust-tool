@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cable, ChevronRight, Terminal } from '@lucide/vue'
+import { Cable, ChevronRight, Shield, Terminal } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import ToolShell from '../components/ToolShell.vue'
 </script>
@@ -33,6 +33,21 @@ import ToolShell from '../components/ToolShell.vue'
         <span class="api-entry-meta">
           <span class="status-pill status-pill--muted">本地工具</span>
           <small>支持参数输入与执行记录</small>
+        </span>
+        <ChevronRight class="h-5 w-5 api-entry-arrow" aria-hidden="true" />
+      </RouterLink>
+
+      <RouterLink class="api-entry-card" to="/toolbox/osv-scanner">
+        <span class="service-icon">
+          <Shield class="h-5 w-5" aria-hidden="true" />
+        </span>
+        <span class="api-entry-copy">
+          <strong>OSV 漏洞管理</strong>
+          <small>预览命令、扫描依赖漏洞并导出 JSON/HTML 报告</small>
+        </span>
+        <span class="api-entry-meta">
+          <span class="status-pill status-pill--muted">安全扫描</span>
+          <small>支持命令审计与忽略规则</small>
         </span>
         <ChevronRight class="h-5 w-5 api-entry-arrow" aria-hidden="true" />
       </RouterLink>
