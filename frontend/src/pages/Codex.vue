@@ -418,7 +418,7 @@ function taskCardClass(script: ScriptInfo) {
 <template>
   <div style="padding: 24px; max-width: 1200px; margin: 0 auto;">
     <a-page-header
-      title="Codex 引擎"
+      title="AI 技能"
       sub-title="集中管理本地脚本、执行参数和可追溯历史。"
       style="padding-left: 0; padding-right: 0;"
     >

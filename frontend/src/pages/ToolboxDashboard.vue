@@ -9,7 +9,7 @@ const router = useRouter()
 const apps = [
   {
     id: 'codex',
-    title: 'Codex AI 引擎',
+    title: 'AI 技能',
     description: '集中管理本地执行脚本和自动化 AI 技能，驱动底层项目构建。',
     icon: Terminal,
     color: '#1890ff',
@@ -38,10 +38,10 @@ const apps = [
   <div style="padding: 32px; max-width: 1200px; margin: 0 auto;">
     <div style="margin-bottom: 32px;">
       <h1 :style="{ fontSize: '28px', fontWeight: 'bold', color: token.colorTextHeading, marginBottom: '8px' }">
-        应用大盘
+        工作台
       </h1>
       <p :style="{ fontSize: '16px', color: token.colorTextSecondary, margin: 0 }">
-        探索并使用本地工具链，提升开发与运维效率。
+        面向本地开发、安全审计和自动化运维的桌面工具站。
       </p>
     </div>
 

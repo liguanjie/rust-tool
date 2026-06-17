@@ -52,7 +52,7 @@ export const useToolsStore = defineStore('tools', () => {
     {
       id: 'osv-scanner',
       name: 'OSV 漏洞管理',
-      path: '/toolbox/osv-scanner',
+      path: '/osv-scanner',
       description: '预览并执行本地依赖漏洞扫描',
       badge: '供应链安全',
       summary: '诊断包源、预览命令、导出报告',
