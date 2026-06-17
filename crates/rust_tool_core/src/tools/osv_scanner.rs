@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,8 @@ const MAX_REASON_LENGTH: usize = 512;
 const MAX_VULNERABILITY_ID_LENGTH: usize = 128;
 const MAX_ADVANCED_ARGS: usize = 16;
 const MAX_REPEATABLE_ARGS: usize = 32;
+const MAX_DIAGNOSTIC_ENTRIES: usize = 4_000;
+const MAX_DIAGNOSTIC_SOURCES: usize = 64;
 
 #[derive(Debug, Error)]
 pub enum OsvScannerError {
@@ -126,6 +129,14 @@ pub struct OsvScanRequest {
     #[serde(default = "OsvScanOptions::default_source_scan")]
     pub options: OsvScanOptions,
     pub command: OsvCommandPreview,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OsvProjectDiagnosticRequest {
+    pub project_path: String,
+    #[serde(default = "OsvScanOptions::default_source_scan")]
+    pub options: OsvScanOptions,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -286,6 +297,43 @@ pub struct OsvScanResult {
     pub command: OsvCommandExecutionRecord,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OsvDiagnosticLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OsvDiagnosticMessage {
+    pub level: OsvDiagnosticLevel,
+    pub code: String,
+    pub message: String,
+    pub suggestion: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OsvPackageSource {
+    pub path: String,
+    pub kind: String,
+    pub ecosystem: String,
+    pub explicit: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OsvProjectDiagnostic {
+    pub project_path: String,
+    pub package_sources: Vec<OsvPackageSource>,
+    pub messages: Vec<OsvDiagnosticMessage>,
+    pub can_scan: bool,
+    pub scanned_entries: usize,
+    pub truncated: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OsvReportExportResult {
@@ -316,6 +364,13 @@ pub struct OsvFixResult {
 struct PreparedProject {
     path: PathBuf,
     display_path: String,
+}
+
+#[derive(Debug)]
+struct PackageSourceDetection {
+    package_sources: Vec<OsvPackageSource>,
+    scanned_entries: usize,
+    truncated: bool,
 }
 
 pub fn check_osv_scanner_installed() -> Result<OsvInstallStatus, OsvScannerError> {
@@ -364,8 +419,69 @@ pub fn build_scan_command(
         project,
         argv,
         request.options,
-        vec!["scan".to_string(), "source".to_string(), "--format json".to_string()],
+        vec![
+            "scan".to_string(),
+            "source".to_string(),
+            "--format json".to_string(),
+        ],
     ))
+}
+
+pub fn diagnose_project(
+    request: OsvProjectDiagnosticRequest,
+) -> Result<OsvProjectDiagnostic, OsvScannerError> {
+    let project = prepare_project_path(&request.project_path)?;
+    let mut messages = Vec::new();
+    let mut detected = detect_package_sources(&project.path, request.options.recursive);
+
+    append_explicit_lockfile_diagnostics(
+        &project.path,
+        &request.options.lockfiles,
+        &mut detected.package_sources,
+        &mut messages,
+    );
+    append_config_diagnostics(&project.path, &request.options.config_path, &mut messages);
+    append_mode_diagnostics(&request.options, &mut messages);
+
+    sort_and_dedup_package_sources(&mut detected.package_sources);
+    if detected.package_sources.is_empty() {
+        if request.options.allow_no_lockfiles {
+            messages.push(diagnostic_message(
+                OsvDiagnosticLevel::Info,
+                "no_package_sources_allowed",
+                "未发现常见依赖包源，当前已允许无锁文件扫描。",
+                Some("扫描可能返回空结果。"),
+            ));
+        } else {
+            messages.push(diagnostic_message(
+                OsvDiagnosticLevel::Warning,
+                "no_package_sources",
+                "未发现常见依赖包源。",
+                Some("请确认项目包含锁文件，或在高级参数中指定 lockfile / 开启 --allow-no-lockfiles。"),
+            ));
+        }
+    }
+    if detected.truncated {
+        messages.push(diagnostic_message(
+            OsvDiagnosticLevel::Warning,
+            "diagnostic_truncated",
+            "诊断已达到扫描上限。",
+            Some("如包源位于很深的目录，请在高级参数中显式指定 lockfile。"),
+        ));
+    }
+
+    let can_scan = !messages
+        .iter()
+        .any(|message| message.level == OsvDiagnosticLevel::Error);
+
+    Ok(OsvProjectDiagnostic {
+        project_path: project.display_path,
+        package_sources: detected.package_sources,
+        messages,
+        can_scan,
+        scanned_entries: detected.scanned_entries,
+        truncated: detected.truncated,
+    })
 }
 
 pub fn scan_project(request: OsvScanRequest) -> Result<OsvScanResult, OsvScannerError> {
@@ -440,9 +556,10 @@ pub fn export_report(
     }
     if !execution.success {
         return Err(OsvScannerError::ExportFailed(
-            execution.stderr_excerpt().unwrap_or_else(|| {
-                "osv-scanner 导出命令执行失败，未返回可读错误。".to_string()
-            }),
+            execution
+                .stderr_excerpt()
+                .map(|stderr| explain_osv_failure(&stderr))
+                .unwrap_or_else(|| "osv-scanner 导出命令执行失败，未返回可读错误。".to_string()),
         ));
     }
 
@@ -526,6 +643,254 @@ pub fn apply_fix(_path: &str) -> Result<OsvFixResult, OsvScannerError> {
     Err(OsvScannerError::CommandRejected(
         "一键修复属于第二阶段能力，当前版本尚未启用。".to_string(),
     ))
+}
+
+fn detect_package_sources(project_path: &Path, recursive: bool) -> PackageSourceDetection {
+    let mut queue = VecDeque::from([project_path.to_path_buf()]);
+    let mut sources = Vec::new();
+    let mut scanned_entries = 0;
+    let mut truncated = false;
+
+    while let Some(dir) = queue.pop_front() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            if scanned_entries >= MAX_DIAGNOSTIC_ENTRIES || sources.len() >= MAX_DIAGNOSTIC_SOURCES
+            {
+                truncated = true;
+                break;
+            }
+            scanned_entries += 1;
+
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                if recursive && should_enter_diagnostic_dir(&entry.file_name()) {
+                    queue.push_back(path);
+                }
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let Some(file_name) = path.file_name().and_then(OsStr::to_str) else {
+                continue;
+            };
+            if let Some((kind, ecosystem)) = package_source_metadata(file_name) {
+                sources.push(OsvPackageSource {
+                    path: display_project_relative_path(project_path, &path),
+                    kind: kind.to_string(),
+                    ecosystem: ecosystem.to_string(),
+                    explicit: false,
+                });
+            }
+        }
+
+        if truncated {
+            break;
+        }
+    }
+
+    PackageSourceDetection {
+        package_sources: sources,
+        scanned_entries,
+        truncated,
+    }
+}
+
+fn append_explicit_lockfile_diagnostics(
+    project_path: &Path,
+    lockfiles: &[String],
+    sources: &mut Vec<OsvPackageSource>,
+    messages: &mut Vec<OsvDiagnosticMessage>,
+) {
+    for lockfile in lockfiles {
+        let trimmed = lockfile.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.chars().any(char::is_control)
+            || has_shell_control(trimmed)
+            || looks_like_env_assignment(trimmed)
+        {
+            messages.push(diagnostic_message(
+                OsvDiagnosticLevel::Error,
+                "invalid_lockfile_path",
+                "指定的 lockfile 路径包含非法字符。",
+                Some("请删除 shell 片段、环境变量赋值或控制字符。"),
+            ));
+            continue;
+        }
+
+        let path = project_value_path(project_path, trimmed);
+        if !path.is_file() {
+            messages.push(diagnostic_message(
+                OsvDiagnosticLevel::Error,
+                "lockfile_not_found",
+                "指定的 lockfile 不存在。",
+                Some("请检查路径，或删除该 lockfile 参数后重新预览命令。"),
+            ));
+            continue;
+        }
+
+        let (kind, ecosystem) = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .and_then(package_source_metadata)
+            .unwrap_or(("指定 lockfile", "unknown"));
+        sources.push(OsvPackageSource {
+            path: display_project_relative_path(project_path, &path),
+            kind: kind.to_string(),
+            ecosystem: ecosystem.to_string(),
+            explicit: true,
+        });
+    }
+}
+
+fn append_config_diagnostics(
+    project_path: &Path,
+    config_path: &Option<String>,
+    messages: &mut Vec<OsvDiagnosticMessage>,
+) {
+    let Some(config_path) = optional_trimmed(config_path) else {
+        return;
+    };
+    if config_path.chars().any(char::is_control)
+        || has_shell_control(config_path)
+        || looks_like_env_assignment(config_path)
+    {
+        messages.push(diagnostic_message(
+            OsvDiagnosticLevel::Error,
+            "invalid_config_path",
+            "配置文件路径包含非法字符。",
+            Some("请使用普通文件路径，不要包含 shell 片段或环境变量赋值。"),
+        ));
+        return;
+    }
+
+    let path = project_value_path(project_path, config_path);
+    if !path.is_file() {
+        messages.push(diagnostic_message(
+            OsvDiagnosticLevel::Error,
+            "config_file_not_found",
+            "配置文件不存在。",
+            Some("请检查 osv-scanner.toml 路径，或清空配置文件输入框。"),
+        ));
+    }
+}
+
+fn append_mode_diagnostics(options: &OsvScanOptions, messages: &mut Vec<OsvDiagnosticMessage>) {
+    if options.offline {
+        messages.push(diagnostic_message(
+            OsvDiagnosticLevel::Info,
+            "offline_mode",
+            "已启用离线模式。",
+            Some("扫描不会访问网络，依赖元数据和漏洞数据需要本地可用。"),
+        ));
+    }
+    if options.offline_vulnerabilities {
+        messages.push(diagnostic_message(
+            OsvDiagnosticLevel::Info,
+            "offline_vulnerabilities",
+            "已启用离线漏洞库。",
+            Some("本机需要预先下载 OSV 离线数据库。"),
+        ));
+    }
+    if options.no_resolve {
+        messages.push(diagnostic_message(
+            OsvDiagnosticLevel::Info,
+            "no_resolve",
+            "已禁用传递依赖解析。",
+            Some("扫描速度可能更快，但覆盖范围会变窄。"),
+        ));
+    }
+}
+
+fn sort_and_dedup_package_sources(sources: &mut Vec<OsvPackageSource>) {
+    sources.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| right.explicit.cmp(&left.explicit))
+    });
+    sources.dedup_by(|left, right| left.path == right.path);
+}
+
+fn diagnostic_message(
+    level: OsvDiagnosticLevel,
+    code: &str,
+    message: &str,
+    suggestion: Option<&str>,
+) -> OsvDiagnosticMessage {
+    OsvDiagnosticMessage {
+        level,
+        code: code.to_string(),
+        message: message.to_string(),
+        suggestion: suggestion.map(ToString::to_string),
+    }
+}
+
+fn should_enter_diagnostic_dir(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    !matches!(
+        name,
+        ".git"
+            | ".hg"
+            | ".svn"
+            | ".next"
+            | ".nuxt"
+            | ".turbo"
+            | "node_modules"
+            | "target"
+            | "dist"
+            | "build"
+            | "coverage"
+            | "vendor"
+    )
+}
+
+fn package_source_metadata(file_name: &str) -> Option<(&'static str, &'static str)> {
+    match file_name {
+        "Cargo.lock" => Some(("Cargo.lock", "Rust")),
+        "package-lock.json" => Some(("package-lock.json", "npm")),
+        "npm-shrinkwrap.json" => Some(("npm-shrinkwrap.json", "npm")),
+        "pnpm-lock.yaml" => Some(("pnpm-lock.yaml", "pnpm")),
+        "yarn.lock" => Some(("yarn.lock", "Yarn")),
+        "bun.lockb" => Some(("bun.lockb", "Bun")),
+        "go.sum" => Some(("go.sum", "Go")),
+        "Gemfile.lock" => Some(("Gemfile.lock", "Ruby")),
+        "composer.lock" => Some(("composer.lock", "Composer")),
+        "poetry.lock" => Some(("poetry.lock", "Python")),
+        "Pipfile.lock" => Some(("Pipfile.lock", "Python")),
+        "uv.lock" => Some(("uv.lock", "Python")),
+        "pubspec.lock" => Some(("pubspec.lock", "Dart")),
+        "Podfile.lock" => Some(("Podfile.lock", "CocoaPods")),
+        "Package.resolved" => Some(("Package.resolved", "Swift")),
+        "mix.lock" => Some(("mix.lock", "Elixir")),
+        _ => None,
+    }
+}
+
+fn project_value_path(project_path: &Path, value: &str) -> PathBuf {
+    let path = PathBuf::from(value);
+    if path.is_absolute() {
+        path
+    } else {
+        project_path.join(path)
+    }
+}
+
+fn display_project_relative_path(project_path: &Path, path: &Path) -> String {
+    path.strip_prefix(project_path)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 fn command_preview(
@@ -763,8 +1128,37 @@ fn require_json_stdout(execution: &CommandExecution) -> Result<&[u8], OsvScanner
     Err(OsvScannerError::ScanFailed(
         execution
             .stderr_excerpt()
+            .map(|stderr| explain_osv_failure(&stderr))
             .unwrap_or_else(|| fallback.to_string()),
     ))
+}
+
+fn explain_osv_failure(stderr: &str) -> String {
+    let stderr = stderr.trim();
+    let lower = stderr.to_ascii_lowercase();
+    let guidance = if lower.contains("no package sources found") {
+        "未发现可扫描的依赖包源。请确认项目包含锁文件，或在高级参数中指定 lockfile / 开启 --allow-no-lockfiles。"
+    } else if lower.contains("api.osv.dev")
+        || lower.contains("no such host")
+        || lower.contains("querybatch")
+        || lower.contains("request failed")
+        || lower.contains("max retries exceeded")
+    {
+        "无法连接 OSV API。请检查网络或 DNS；如需离线扫描，请先准备本地数据库并启用 --offline-vulnerabilities。"
+    } else if lower.contains("no offline version")
+        || lower.contains("unable to fetch osv database")
+        || lower.contains("could not load db")
+    {
+        "本机没有可用的 OSV 离线数据库。请先下载离线数据库，或关闭离线漏洞库参数后重新预览命令。"
+    } else {
+        "osv-scanner 执行失败。"
+    };
+
+    if stderr.is_empty() {
+        guidance.to_string()
+    } else {
+        format!("{guidance} 原始信息：{}", truncate_chars(stderr, 600))
+    }
 }
 
 fn parse_osv_report(stdout: &[u8]) -> Result<Vec<OsvVulnerabilityFinding>, OsvScannerError> {
@@ -1183,12 +1577,12 @@ fn validate_export_output_path(
             "导出文件已存在，请选择新的文件名。".to_string(),
         ));
     }
-    let file_name = path.file_name().ok_or_else(|| {
-        OsvScannerError::ExportFailed("导出路径必须包含文件名。".to_string())
-    })?;
-    let parent = path.parent().ok_or_else(|| {
-        OsvScannerError::ExportFailed("导出路径必须包含父目录。".to_string())
-    })?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| OsvScannerError::ExportFailed("导出路径必须包含文件名。".to_string()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| OsvScannerError::ExportFailed("导出路径必须包含父目录。".to_string()))?;
     if !parent.is_dir() {
         return Err(OsvScannerError::ExportFailed(
             "导出目录不存在。".to_string(),
@@ -1204,9 +1598,9 @@ fn validate_export_output_path(
         ));
     }
 
-    let parent = parent.canonicalize().map_err(|error| {
-        OsvScannerError::ExportFailed(format!("无法解析导出目录: {error}"))
-    })?;
+    let parent = parent
+        .canonicalize()
+        .map_err(|error| OsvScannerError::ExportFailed(format!("无法解析导出目录: {error}")))?;
     Ok(parent.join(file_name))
 }
 
@@ -1250,9 +1644,12 @@ fn validate_non_empty_cli_value<'a>(
 }
 
 fn has_shell_control(value: &str) -> bool {
-    value
-        .chars()
-        .any(|character| matches!(character, '|' | '&' | ';' | '<' | '>' | '`' | '$' | '(' | ')'))
+    value.chars().any(|character| {
+        matches!(
+            character,
+            '|' | '&' | ';' | '<' | '>' | '`' | '$' | '(' | ')'
+        )
+    })
 }
 
 fn looks_like_env_assignment(value: &str) -> bool {
@@ -1282,10 +1679,9 @@ fn display_command(working_dir: &str, argv: &[String]) -> String {
 }
 
 fn shell_quote(value: &str) -> String {
-    if value
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '/' | '.' | '_' | '-' | ':'))
-    {
+    if value.chars().all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '/' | '.' | '_' | '-' | ':')
+    }) {
         return value.to_string();
     }
     format!("'{}'", value.replace('\'', "'\\''"))
@@ -1324,10 +1720,9 @@ fn validate_vulnerability_id(id: &str) -> Result<String, OsvScannerError> {
             "漏洞 ID 过长。".to_string(),
         ));
     }
-    if !id
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ':'))
-    {
+    if !id.chars().all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ':')
+    }) {
         return Err(OsvScannerError::IgnoreUpdateFailed(
             "漏洞 ID 包含非法字符。".to_string(),
         ));
@@ -1409,6 +1804,51 @@ mod tests {
     }
 
     #[test]
+    fn diagnoses_common_package_sources() {
+        let root = unique_temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("Cargo.lock"), "").unwrap();
+
+        let diagnostic = diagnose_project(OsvProjectDiagnosticRequest {
+            project_path: root.display().to_string(),
+            options: OsvScanOptions::default_source_scan(),
+        })
+        .unwrap();
+
+        assert!(diagnostic.can_scan);
+        assert_eq!(diagnostic.package_sources.len(), 1);
+        assert_eq!(diagnostic.package_sources[0].path, "Cargo.lock");
+        assert!(!diagnostic
+            .messages
+            .iter()
+            .any(|message| message.code == "no_package_sources"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diagnoses_missing_explicit_lockfile_as_error() {
+        let root = unique_temp_dir();
+        fs::create_dir_all(&root).unwrap();
+
+        let diagnostic = diagnose_project(OsvProjectDiagnosticRequest {
+            project_path: root.display().to_string(),
+            options: OsvScanOptions {
+                lockfiles: vec!["missing.lock".to_string()],
+                ..OsvScanOptions::default_source_scan()
+            },
+        })
+        .unwrap();
+
+        assert!(!diagnostic.can_scan);
+        assert!(diagnostic.messages.iter().any(|message| {
+            message.level == OsvDiagnosticLevel::Error && message.code == "lockfile_not_found"
+        }));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn empty_scan_stdout_surfaces_stderr_as_scan_failure() {
         let project = std::env::current_dir().unwrap();
         let execution = CommandExecution {
@@ -1438,6 +1878,23 @@ mod tests {
             error,
             OsvScannerError::ScanFailed(message) if message.contains("No package sources found")
         ));
+    }
+
+    #[test]
+    fn explains_common_scanner_failures() {
+        let no_sources =
+            explain_osv_failure("No package sources found, --help for usage information.");
+        assert!(no_sources.contains("高级参数"));
+        assert!(no_sources.contains("--allow-no-lockfiles"));
+
+        let network = explain_osv_failure(
+            r#"request failed: Post "https://api.osv.dev/v1/querybatch": dial tcp: lookup api.osv.dev: no such host"#,
+        );
+        assert!(network.contains("网络"));
+        assert!(network.contains("DNS"));
+
+        let offline = explain_osv_failure("could not load db for npm ecosystem: no offline version of the OSV database is available");
+        assert!(offline.contains("离线数据库"));
     }
 
     #[test]

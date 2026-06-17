@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   checkOsvInstalled: vi.fn(),
   getOsvSettings: vi.fn(),
   saveOsvSettings: vi.fn(),
+  diagnoseOsvProject: vi.fn(),
   previewOsvScanCommand: vi.fn(),
   scanOsvProject: vi.fn(),
   previewOsvReportExportCommand: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../api/osvScanner', async (importOriginal) => {
     checkOsvInstalled: api.checkOsvInstalled,
     getOsvSettings: api.getOsvSettings,
     saveOsvSettings: api.saveOsvSettings,
+    diagnoseOsvProject: api.diagnoseOsvProject,
     previewOsvScanCommand: api.previewOsvScanCommand,
     scanOsvProject: api.scanOsvProject,
     previewOsvReportExportCommand: api.previewOsvReportExportCommand,
@@ -39,6 +41,7 @@ describe('useOsvScannerStore', () => {
       commandHistory: [],
     })
     api.saveOsvSettings.mockImplementation(async (settings) => settings)
+    api.diagnoseOsvProject.mockResolvedValue(projectDiagnostic())
     api.checkOsvInstalled.mockResolvedValue({
       installed: true,
       binaryPath: '/usr/local/bin/osv-scanner',
@@ -153,6 +156,28 @@ describe('useOsvScannerStore', () => {
     expect(api.previewOsvReportExportCommand).not.toHaveBeenCalled()
     expect(store.error).toBe('请先完成当前项目扫描后再导出报告')
   })
+
+  it('blocks preview when diagnosis has hard errors', async () => {
+    api.diagnoseOsvProject.mockResolvedValue({
+      ...projectDiagnostic(),
+      canScan: false,
+      messages: [{
+        level: 'error',
+        code: 'lockfile_not_found',
+        message: '指定的 lockfile 不存在。',
+        suggestion: '请检查路径。',
+      }],
+    })
+    const store = useOsvScannerStore()
+    await store.load()
+    await store.addProject('/tmp/example-project')
+
+    await store.previewScan()
+
+    expect(api.previewOsvScanCommand).not.toHaveBeenCalled()
+    expect(store.currentPreview).toBeNull()
+    expect(store.error).toContain('指定的 lockfile 不存在')
+  })
 })
 
 function scanPreview(): OsvCommandPreview {
@@ -199,5 +224,16 @@ function scanResult(): OsvScanResult {
       status: 'succeeded',
       summary: '未发现已知漏洞。',
     },
+  }
+}
+
+function projectDiagnostic() {
+  return {
+    projectPath: '/tmp/example-project',
+    packageSources: [{ path: 'Cargo.lock', kind: 'Cargo.lock', ecosystem: 'Rust', explicit: false }],
+    messages: [],
+    canScan: true,
+    scannedEntries: 1,
+    truncated: false,
   }
 }

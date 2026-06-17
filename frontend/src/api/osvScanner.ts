@@ -44,6 +44,8 @@ export interface OsvScanRequest extends OsvScanCommandRequest {
   command: OsvCommandPreview
 }
 
+export interface OsvProjectDiagnosticRequest extends OsvScanCommandRequest {}
+
 export interface OsvReportExportCommandRequest {
   projectPath: string
   options: OsvScanOptions
@@ -139,6 +141,31 @@ export interface OsvScanResult {
   vulnerabilities: OsvVulnerabilityFinding[]
   summary: OsvScanSummary
   command: OsvCommandExecutionRecord
+}
+
+export type OsvDiagnosticLevel = 'info' | 'warning' | 'error'
+
+export interface OsvDiagnosticMessage {
+  level: OsvDiagnosticLevel
+  code: string
+  message: string
+  suggestion?: string
+}
+
+export interface OsvPackageSource {
+  path: string
+  kind: string
+  ecosystem: string
+  explicit: boolean
+}
+
+export interface OsvProjectDiagnostic {
+  projectPath: string
+  packageSources: OsvPackageSource[]
+  messages: OsvDiagnosticMessage[]
+  canScan: boolean
+  scannedEntries: number
+  truncated: boolean
 }
 
 export interface OsvReportExportResult {
@@ -245,6 +272,17 @@ export async function previewOsvScanCommand(
   }
 
   return await fetchJson<OsvCommandPreview>('/api/tools/osv-scanner/scan/preview', request)
+}
+
+export async function diagnoseOsvProject(
+  request: OsvProjectDiagnosticRequest,
+): Promise<OsvProjectDiagnostic> {
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    return await tauriCore.invoke<OsvProjectDiagnostic>('diagnose_osv_project', { request })
+  }
+
+  return await fetchJson<OsvProjectDiagnostic>('/api/tools/osv-scanner/diagnose', request)
 }
 
 export async function scanOsvProject(request: OsvScanRequest): Promise<OsvScanResult> {

@@ -39,6 +39,10 @@ pub fn build_app_with_state(state: AppState) -> Router {
             "/api/tools/osv-scanner/scan/preview",
             post(osv_scanner::preview_scan),
         )
+        .route(
+            "/api/tools/osv-scanner/diagnose",
+            post(osv_scanner::diagnose),
+        )
         .route("/api/tools/osv-scanner/scan", post(osv_scanner::scan))
         .route(
             "/api/tools/osv-scanner/export/preview",
@@ -169,6 +173,36 @@ mod tests {
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(error_code(&value), Some("invalid_project_path"));
+    }
+
+    #[tokio::test]
+    async fn osv_diagnose_route_returns_package_sources() {
+        let root = unique_temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("package-lock.json"), "{}").unwrap();
+
+        let (status, value) = post_osv_json(
+            "/api/tools/osv-scanner/diagnose",
+            json!({
+                "projectPath": root.display().to_string(),
+                "options": {
+                    "recursive": false
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(value.get("canScan").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            value
+                .get("packageSources")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1)
+        );
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]

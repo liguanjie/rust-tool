@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   checkOsvInstalled,
   defaultOsvScanOptions,
+  diagnoseOsvProject,
   previewOsvScanCommand,
   saveOsvSettings,
   suggestOsvReportPath,
@@ -83,6 +84,38 @@ describe('osvScanner API adapter', () => {
     )
 
     await expect(checkOsvInstalled()).rejects.toThrow('项目路径无效')
+  })
+
+  it('calls the Web diagnose endpoint with scan options', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          projectPath: '/tmp/project',
+          packageSources: [{ path: 'Cargo.lock', kind: 'Cargo.lock', ecosystem: 'Rust', explicit: false }],
+          messages: [],
+          canScan: true,
+          scannedEntries: 1,
+          truncated: false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await diagnoseOsvProject({
+      projectPath: '/tmp/project',
+      options: defaultOsvScanOptions(),
+    })
+
+    expect(result.packageSources[0].path).toBe('Cargo.lock')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tools/osv-scanner/diagnose',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: expect.stringContaining('"projectPath":"/tmp/project"'),
+      }),
+    )
   })
 
   it('trims command history before saving Web settings', async () => {

@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   checkOsvInstalled,
   defaultOsvScanOptions,
+  diagnoseOsvProject,
   exportOsvReport,
   getOsvSettings,
   ignoreOsvVulnerability,
@@ -14,6 +15,7 @@ import {
   type OsvCommandExecutionRecord,
   type OsvCommandPreview,
   type OsvInstallStatus,
+  type OsvProjectDiagnostic,
   type OsvProjectSettings,
   type OsvReportFormat,
   type OsvScanOptions,
@@ -38,6 +40,8 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
   const currentPreview = ref<OsvCommandPreview | null>(null)
   const currentExportPreview = ref<OsvCommandPreview | null>(null)
   const latestResult = ref<OsvScanResult | null>(null)
+  const diagnostic = ref<OsvProjectDiagnostic | null>(null)
+  const diagnosing = ref(false)
   const options = ref<OsvScanOptions>(defaultOsvScanOptions())
 
   const activeProject = computed(() =>
@@ -65,6 +69,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       autoScanSchedule.value = settings.autoScanSchedule
       commandHistory.value = settings.commandHistory
       await refreshInstallStatus()
+      if (activeProjectPath.value) await diagnoseActiveProject()
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '加载 OSV 配置失败'
     } finally {
@@ -107,6 +112,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       invalidateCommandPreviews()
       latestResult.value = null
       await persistSettings()
+      await diagnoseActiveProject(trimmed)
     }
   }
 
@@ -116,17 +122,44 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       activeProjectPath.value = projects.value[0]?.path ?? ''
       invalidateCommandPreviews()
       latestResult.value = null
+      diagnostic.value = null
     }
     await persistSettings()
+    if (activeProjectPath.value) await diagnoseActiveProject()
   }
 
   function selectProject(path: string) {
     const changed = activeProjectPath.value !== path
     activeProjectPath.value = path
     invalidateCommandPreviews()
-    if (changed) latestResult.value = null
+    if (changed) {
+      latestResult.value = null
+      diagnostic.value = null
+      void diagnoseActiveProject(path)
+    }
     notice.value = ''
     error.value = ''
+  }
+
+  async function diagnoseActiveProject(path = activeProjectPath.value) {
+    error.value = ''
+    if (!path) {
+      diagnostic.value = null
+      return
+    }
+
+    diagnosing.value = true
+    try {
+      diagnostic.value = await diagnoseOsvProject({
+        projectPath: path,
+        options: options.value,
+      })
+    } catch (caught) {
+      diagnostic.value = null
+      error.value = caught instanceof Error ? caught.message : '扫描诊断失败'
+    } finally {
+      diagnosing.value = false
+    }
   }
 
   async function previewScan(path = activeProjectPath.value) {
@@ -138,6 +171,13 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     }
 
     try {
+      await diagnoseActiveProject(path)
+      if (diagnostic.value && !diagnostic.value.canScan) {
+        currentPreview.value = null
+        const blocking = diagnostic.value.messages.find((message) => message.level === 'error')
+        error.value = [blocking?.message, blocking?.suggestion].filter(Boolean).join(' ')
+        return
+      }
       currentPreview.value = await previewOsvScanCommand({
         projectPath: path,
         options: options.value,
@@ -279,6 +319,10 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     invalidateExportPreview()
   }
 
+  function clearDiagnostic() {
+    diagnostic.value = null
+  }
+
   function updateProjectAfterScan(path: string, healthScore: number) {
     const project = projects.value.find((item) => item.path === path)
     if (!project) return
@@ -303,6 +347,8 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     currentPreview,
     currentExportPreview,
     latestResult,
+    diagnostic,
+    diagnosing,
     vulnerabilities,
     options,
     globalHealthScore,
@@ -311,6 +357,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     addProject,
     removeProject,
     selectProject,
+    diagnoseActiveProject,
     previewScan,
     runScan,
     previewExport,
@@ -320,6 +367,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     invalidateScanPreview,
     invalidateExportPreview,
     invalidateCommandPreviews,
+    clearDiagnostic,
   }
 })
 

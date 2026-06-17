@@ -1,7 +1,8 @@
 use rust_tool_core::{
     build_export_command, build_scan_command, check_osv_scanner_installed, convert_vless_to_yaml,
-    export_report, ignore_vulnerability, scan_project, ConvertOptions, OsvCommandExecutionRecord,
-    OsvCommandPreview, OsvIgnoreRequest, OsvIgnoreResult, OsvInstallStatus,
+    diagnose_project, export_report, ignore_vulnerability, scan_project, ConvertOptions,
+    OsvCommandExecutionRecord, OsvCommandPreview, OsvIgnoreRequest, OsvIgnoreResult,
+    OsvInstallStatus, OsvProjectDiagnostic, OsvProjectDiagnosticRequest,
     OsvReportExportCommandRequest, OsvReportExportRequest, OsvReportExportResult,
     OsvScanCommandRequest, OsvScanRequest, OsvScanResult, OutputMode, TemplateMode,
     TransitGroupType, TransitProviderOptions, TransitProxyOptions,
@@ -230,6 +231,13 @@ fn preview_osv_scan_command(
 }
 
 #[tauri::command]
+fn diagnose_osv_project(
+    request: OsvProjectDiagnosticRequest,
+) -> Result<OsvProjectDiagnostic, String> {
+    diagnose_project(request).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn scan_osv_project(request: OsvScanRequest) -> Result<OsvScanResult, String> {
     scan_project(request).map_err(|error| error.to_string())
 }
@@ -291,6 +299,7 @@ pub fn run() {
             save_osv_settings,
             check_osv_installed,
             preview_osv_scan_command,
+            diagnose_osv_project,
             scan_osv_project,
             preview_osv_report_export_command,
             export_osv_report,

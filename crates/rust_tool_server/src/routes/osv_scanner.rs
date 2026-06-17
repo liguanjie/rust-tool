@@ -1,10 +1,10 @@
 use axum::{http::StatusCode, Json};
 use rust_tool_core::{
-    build_export_command, build_scan_command, check_osv_scanner_installed, export_report,
-    ignore_vulnerability, scan_project, OsvCommandPreview, OsvIgnoreRequest, OsvIgnoreResult,
-    OsvInstallStatus, OsvReportExportCommandRequest, OsvReportExportRequest,
-    OsvReportExportResult, OsvScanCommandRequest, OsvScanRequest, OsvScanResult,
-    OsvScannerError,
+    build_export_command, build_scan_command, check_osv_scanner_installed, diagnose_project,
+    export_report, ignore_vulnerability, scan_project, OsvCommandPreview, OsvIgnoreRequest,
+    OsvIgnoreResult, OsvInstallStatus, OsvProjectDiagnostic, OsvProjectDiagnosticRequest,
+    OsvReportExportCommandRequest, OsvReportExportRequest, OsvReportExportResult,
+    OsvScanCommandRequest, OsvScanRequest, OsvScanResult, OsvScannerError,
 };
 use serde::Serialize;
 
@@ -29,6 +29,14 @@ pub async fn preview_scan(
     Json(request): Json<OsvScanCommandRequest>,
 ) -> Result<Json<OsvCommandPreview>, (StatusCode, Json<ErrorResponse>)> {
     build_scan_command(request)
+        .map(Json)
+        .map_err(osv_error_response)
+}
+
+pub async fn diagnose(
+    Json(request): Json<OsvProjectDiagnosticRequest>,
+) -> Result<Json<OsvProjectDiagnostic>, (StatusCode, Json<ErrorResponse>)> {
+    diagnose_project(request)
         .map(Json)
         .map_err(osv_error_response)
 }

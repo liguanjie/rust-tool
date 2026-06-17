@@ -986,6 +986,98 @@ button:disabled {
     @apply grid gap-3;
   }
 
+  .osv-source-list {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .osv-source-chip {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-base);
+    @apply inline-flex min-w-0 max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-xs;
+  }
+
+  .osv-source-chip strong {
+    color: var(--text-title);
+    @apply shrink-0 font-black;
+  }
+
+  .osv-source-chip small {
+    color: var(--text-muted);
+    @apply min-w-0 truncate;
+  }
+
+  .osv-diagnostic-list {
+    @apply grid gap-2;
+  }
+
+  .osv-diagnostic-item {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-base);
+    @apply grid grid-cols-[auto_1fr] gap-3 rounded-lg p-3 text-sm;
+  }
+
+  .osv-diagnostic-item > span {
+    @apply inline-flex h-6 items-center rounded-full border px-2 text-xs font-black;
+  }
+
+  .osv-diagnostic-item strong {
+    color: var(--text-title);
+    @apply block leading-6;
+  }
+
+  .osv-diagnostic-item small {
+    color: var(--text-muted);
+    @apply block leading-5;
+  }
+
+  .osv-diagnostic-item--info > span {
+    @apply border-sky-500/30 bg-sky-500/10 text-sky-300;
+  }
+
+  .osv-diagnostic-item--warning > span {
+    @apply border-amber-500/30 bg-amber-500/10 text-amber-300;
+  }
+
+  .osv-diagnostic-item--error > span {
+    @apply border-red-500/30 bg-red-500/10 text-red-300;
+  }
+
+  .osv-advanced-toggle {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-base);
+    @apply flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-black transition;
+  }
+
+  .osv-advanced-toggle:hover {
+    @apply border-emerald-500/30;
+  }
+
+  .osv-advanced-toggle > span {
+    @apply inline-flex items-center gap-2;
+  }
+
+  .osv-advanced-toggle > svg {
+    @apply transition-transform;
+  }
+
+  .osv-advanced-toggle--open > svg {
+    @apply rotate-180;
+  }
+
+  .osv-advanced-grid {
+    @apply grid gap-3;
+  }
+
+  .osv-textarea {
+    background: var(--bg-input);
+    border-color: var(--border-input);
+    color: var(--text-input-color);
+    @apply min-h-[88px] resize-y;
+  }
+
   .osv-project-list,
   .osv-vulnerability-list,
   .osv-history-list {
@@ -1164,7 +1256,8 @@ button:disabled {
     }
 
     .osv-project-row,
-    .osv-history-row {
+    .osv-history-row,
+    .osv-diagnostic-item {
       @apply grid grid-cols-1 items-start;
     }
 
