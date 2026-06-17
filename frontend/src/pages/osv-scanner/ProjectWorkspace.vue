@@ -368,7 +368,10 @@ const activeCollapse = ref(['scope'])
   align-items: center;
   justify-content: center;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid var(--ant-color-border);
+  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 .btn-refresh:hover:not(:disabled) {
   border-color: var(--ant-color-primary);
@@ -399,6 +402,7 @@ const activeCollapse = ref(['scope'])
   justify-content: center;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 2px 6px rgba(24, 144, 255, 0.25);
+  cursor: pointer;
 }
 .btn-scan:hover:not(:disabled) {
   transform: translateY(-1px) scale(1.02);
@@ -408,9 +412,20 @@ const activeCollapse = ref(['scope'])
 .btn-scan:active:not(:disabled) {
   transform: translateY(0) scale(1);
 }
-.btn-scan:disabled {
+.btn-scan:disabled,
+.btn-scan[disabled],
+.btn-scan.ant-btn-disabled {
   background: var(--ant-color-bg-container-disabled) !important;
   color: var(--ant-color-text-disabled) !important;
-  box-shadow: none;
+  border: 1px solid var(--ant-color-border) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  filter: none !important;
+}
+.btn-scan:disabled *,
+.btn-scan[disabled] *,
+.btn-scan.ant-btn-disabled * {
+  color: var(--ant-color-text-disabled) !important;
 }
 </style>
