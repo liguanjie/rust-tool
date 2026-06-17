@@ -211,7 +211,21 @@ const activeCollapse = ref(['scope'])
 </script>
 
 <template>
-  <div class="flex flex-col w-full h-full p-6 overflow-auto" :style="{ background: token.colorBgLayout }">
+  <div 
+    class="flex flex-col w-full h-full p-6 overflow-auto" 
+    :style="{ 
+      background: token.colorBgLayout,
+      '--primary-color': token.colorPrimary,
+      '--primary-hover-color': token.colorPrimaryHover,
+      '--primary-bg-color': token.colorPrimaryBg,
+      '--border-color': token.colorBorder,
+      '--border-secondary-color': token.colorBorderSecondary,
+      '--text-color': token.colorText,
+      '--text-disabled-color': token.colorTextDisabled,
+      '--bg-disabled-color': token.colorBgContainerDisabled,
+      '--bg-container-color': token.colorBgContainer
+    }"
+  >
     <div class="w-full max-w-7xl mx-auto flex flex-col gap-6">
       <!-- Header -->
       <a-page-header
@@ -288,10 +302,10 @@ const activeCollapse = ref(['scope'])
                     hoverable
                     size="small"
                     @click="applyScanProfile(profile.id)"
-                    :style="{ borderColor: activeScanProfile === profile.id ? 'var(--ant-color-primary)' : undefined, background: activeScanProfile === profile.id ? 'var(--ant-color-primary-bg)' : undefined }"
+                    :style="{ borderColor: activeScanProfile === profile.id ? token.colorPrimary : undefined, background: activeScanProfile === profile.id ? token.colorPrimaryBg : undefined }"
                   >
                     <template #title>
-                      <span :style="{ color: activeScanProfile === profile.id ? 'var(--ant-color-primary)' : undefined }">{{ profile.name }}</span>
+                      <span :style="{ color: activeScanProfile === profile.id ? token.colorPrimary : undefined }">{{ profile.name }}</span>
                     </template>
                     <template #extra>
                       <a-tag color="blue" v-if="activeScanProfile === profile.id">{{ profile.label }}</a-tag>
@@ -368,15 +382,15 @@ const activeCollapse = ref(['scope'])
   align-items: center;
   justify-content: center;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
+  border: 1px solid var(--border-secondary-color);
+  background: var(--bg-container-color);
+  color: var(--text-color);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 .btn-refresh:hover:not(:disabled) {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: var(--primary-bg-color);
   transform: translateY(-1px);
 }
 .btn-refresh:active:not(:disabled) {
@@ -394,7 +408,7 @@ const activeCollapse = ref(['scope'])
   padding: 4px 16px;
   border-radius: 6px;
   font-weight: 600;
-  background: linear-gradient(135deg, var(--ant-color-primary) 0%, #36cfc9 100%) !important;
+  background: linear-gradient(135deg, var(--primary-color) 0%, #36cfc9 100%) !important;
   border: none !important;
   color: #fff !important;
   display: inline-flex;
@@ -415,9 +429,9 @@ const activeCollapse = ref(['scope'])
 .btn-scan:disabled,
 .btn-scan[disabled],
 .btn-scan.ant-btn-disabled {
-  background: var(--ant-color-bg-container-disabled) !important;
-  color: var(--ant-color-text-disabled) !important;
-  border: 1px solid var(--ant-color-border) !important;
+  background: var(--bg-disabled-color) !important;
+  color: var(--text-disabled-color) !important;
+  border: 1px solid var(--border-color) !important;
   box-shadow: none !important;
   cursor: not-allowed !important;
   transform: none !important;
@@ -426,6 +440,6 @@ const activeCollapse = ref(['scope'])
 .btn-scan:disabled *,
 .btn-scan[disabled] *,
 .btn-scan.ant-btn-disabled * {
-  color: var(--ant-color-text-disabled) !important;
+  color: var(--text-disabled-color) !important;
 }
 </style>
