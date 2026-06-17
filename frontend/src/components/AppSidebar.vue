@@ -1,85 +1,61 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
-import { Moon, PanelLeftClose, PanelLeftOpen } from '@lucide/vue'
+import { ref, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useToolsStore } from '../stores/tools'
 import { useThemeStore } from '../stores/theme'
 
 const toolsStore = useToolsStore()
 const themeStore = useThemeStore()
+const router = useRouter()
 const route = useRoute()
 
-const activeTool = computed(() =>
-  toolsStore.tools.find((tool) => route.path === tool.path || route.path.startsWith(`${tool.path}/`)),
+const selectedKeys = ref<string[]>([])
+
+watch(
+  () => route.path,
+  () => {
+    const activeTool = toolsStore.tools.find(
+      (tool) => route.path === tool.path || route.path.startsWith(`${tool.path}/`)
+    )
+    if (activeTool) {
+      selectedKeys.value = [activeTool.id]
+    }
+  },
+  { immediate: true }
 )
+
+const onMenuClick = ({ key }: { key: string }) => {
+  const tool = toolsStore.tools.find(t => t.id === key)
+  if (tool) {
+    router.push(tool.path)
+  }
+}
 </script>
 
 <template>
-  <aside class="app-sidebar" :class="{ 'app-sidebar--collapsed': themeStore.isSidebarCollapsed }">
-    <div class="flex items-center" :class="themeStore.isSidebarCollapsed ? 'justify-center' : 'justify-between gap-3'">
-      <div v-show="!themeStore.isSidebarCollapsed" class="flex items-center gap-3">
-        <span class="logo-box">
-          RT
-        </span>
-        <div>
-          <div class="flex items-baseline gap-1.5">
-            <h1 class="sidebar-title">RustTool</h1>
-            <span class="text-[9px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1 rounded">v1.2.0</span>
-          </div>
-          <p class="sidebar-subtitle">本地工具站</p>
-        </div>
-      </div>
-      
-      <button 
-        @click="themeStore.toggleSidebar" 
-        class="p-1.5 hover:bg-emerald-500/10 rounded-lg text-emerald-500 transition-colors flex items-center justify-center border border-transparent hover:border-emerald-500/20"
-        :title="themeStore.isSidebarCollapsed ? '展开导航' : '收起导航'"
-        type="button"
-      >
-        <component :is="themeStore.isSidebarCollapsed ? PanelLeftOpen : PanelLeftClose" class="h-4 w-4" />
-      </button>
+  <a-layout-sider 
+    v-model:collapsed="themeStore.isSidebarCollapsed" 
+    collapsible 
+    :theme="themeStore.isDarkMode ? 'dark' : 'light'"
+    :style="{ borderRight: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0' }"
+  >
+    <div :style="{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px', borderBottom: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0' }">
+      <span v-if="!themeStore.isSidebarCollapsed">RustTool</span>
+      <span v-else>RT</span>
     </div>
-
-    <div v-show="!themeStore.isSidebarCollapsed" class="sidebar-context">
-      <span>当前区域</span>
-      <strong>{{ activeTool?.name || '工具箱' }}</strong>
-    </div>
-
-    <nav class="mt-5 flex-1 grid gap-5 content-start" aria-label="工具导航">
-      <section v-for="group in toolsStore.groups" :key="group.id" class="nav-group">
-        <h2 v-show="!themeStore.isSidebarCollapsed">{{ group.name }}</h2>
-        <div class="grid gap-2">
-          <RouterLink
-            v-for="tool in group.items"
-            :key="tool.id"
-            :to="tool.path"
-            class="sidebar-item"
-            active-class="sidebar-item--active"
-            :class="{ 
-              'sidebar-item--active': route.path === tool.path || route.path.startsWith(`${tool.path}/`),
-              'sidebar-item--collapsed': themeStore.isSidebarCollapsed
-            }"
-            :title="tool.name"
-          >
-            <component :is="tool.icon" class="sidebar-item-icon" aria-hidden="true" />
-            <span v-show="!themeStore.isSidebarCollapsed" class="sidebar-item-copy">
-              <strong>{{ tool.name }}</strong>
-              <small>{{ tool.badge }}</small>
-            </span>
-          </RouterLink>
-        </div>
-      </section>
-    </nav>
-
-    <div class="theme-popover-container">
-      <div
-        class="theme-trigger-btn theme-trigger-btn--locked"
-        :class="{ 'theme-trigger-btn--collapsed': themeStore.isSidebarCollapsed }"
-        title="极客暗黑"
-      >
-        <Moon class="h-4 w-4" aria-hidden="true" />
-        <span v-show="!themeStore.isSidebarCollapsed">极客暗黑</span>
-      </div>
-    </div>
-  </aside>
+    
+    <a-menu
+      v-model:selectedKeys="selectedKeys"
+      mode="inline"
+      :style="{ borderRight: 0 }"
+      @click="onMenuClick"
+    >
+      <a-menu-item v-for="tool in toolsStore.tools" :key="tool.id">
+        <template #icon>
+          <component :is="tool.icon" style="width: 16px; height: 16px;" />
+        </template>
+        {{ tool.name }}
+      </a-menu-item>
+    </a-menu>
+  </a-layout-sider>
 </template>

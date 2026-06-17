@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import ApiDocs from '../pages/ApiDocs.vue'
 import Toolbox from '../pages/Toolbox.vue'
 
 export const router = createRouter({
@@ -26,8 +25,19 @@ export const router = createRouter({
     },
     {
       path: '/toolbox/osv-scanner',
-      name: 'osv-scanner',
-      component: () => import('../pages/OsvScanner.vue'),
+      component: () => import('../pages/osv-scanner/OsvLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'osv-scanner-dashboard',
+          component: () => import('../pages/osv-scanner/Dashboard.vue'),
+        },
+        {
+          path: 'project/:id',
+          name: 'osv-scanner-project',
+          component: () => import('../pages/osv-scanner/ProjectWorkspace.vue'),
+        }
+      ]
     },
     {
       path: '/tools/vless-to-mihomo',
@@ -38,9 +48,8 @@ export const router = createRouter({
       redirect: '/toolbox/osv-scanner',
     },
     {
-      path: '/tools/api-docs',
-      name: 'api-docs',
-      component: ApiDocs,
+      path: '/:catchAll(.*)',
+      redirect: '/',
     },
   ],
 })

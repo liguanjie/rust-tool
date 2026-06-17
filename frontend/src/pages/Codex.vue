@@ -24,19 +24,10 @@ import {
   Wrench,
   XCircle,
 } from '@lucide/vue'
-import ToolShell from '../components/ToolShell.vue'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import { useRoute, useRouter } from 'vue-router'
+import { message, theme } from 'ant-design-vue'
+
+const { token } = theme.useToken()
 
 const VlessToMihomo = defineAsyncComponent(() => import('./VlessToMihomo.vue'))
 
@@ -438,344 +429,210 @@ function taskCardClass(script: ScriptInfo) {
 </script>
 
 <template>
-  <ToolShell
-    title="Codex 工作台"
-    description="集中管理本地脚本、内置工具、执行参数和可追溯历史。"
-    eyebrow="自动化"
-    fluid
-  >
-    <div class="codex-workbench">
-      <section class="input-panel codex-status-panel">
-        <div class="codex-status-main">
-          <span class="service-icon">
-            <Terminal class="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div>
-            <span class="field-label">执行中心</span>
-            <strong>{{ selectedMeta?.title || '选择一个任务开始' }}</strong>
-            <small>{{ selectedPathLabel }}</small>
-          </div>
-        </div>
-        <dl class="codex-status-metrics">
-          <div>
-            <dt>{{ totalTaskCount }}</dt>
-            <dd>可用任务</dd>
-          </div>
-          <div>
-            <dt>{{ executionHistory.length }}</dt>
-            <dd>执行记录</dd>
-          </div>
-          <div>
-            <dt>{{ failedHistoryCount }}</dt>
-            <dd>失败记录</dd>
-          </div>
-          <span :class="runStateClass">{{ runStateLabel }}</span>
-        </dl>
-      </section>
+  <div style="padding: 24px; max-width: 1200px; margin: 0 auto;">
+    <a-page-header
+      title="Codex 工作台"
+      sub-title="集中管理本地脚本、内置工具、执行参数和可追溯历史。"
+      style="padding-left: 0; padding-right: 0;"
+    >
+      <template #tags>
+        <a-tag color="blue">自动化</a-tag>
+      </template>
+    </a-page-header>
 
-      <section class="codex-layout">
-        <aside class="input-panel codex-task-panel">
-          <div class="codex-panel-heading">
-            <div>
-              <span class="field-label">任务目录</span>
-              <strong>本地脚本与内置工具</strong>
-            </div>
-            <Button type="button" variant="outline" size="sm" @click="pickDirectory('dir')">
-              <FolderSearch class="mr-2 h-4 w-4" aria-hidden="true" />
-              目录
-            </Button>
-          </div>
+    <a-row :gutter="16" style="margin-bottom: 24px;">
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="可用任务" :value="totalTaskCount" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="执行记录" :value="executionHistory.length" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="失败记录" :value="failedHistoryCount" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="执行状态" :value="runStateLabel" />
+        </a-card>
+      </a-col>
+    </a-row>
 
-          <label class="codex-search-field" for="codex-task-search">
-            <Search class="h-4 w-4" aria-hidden="true" />
-            <Input id="codex-task-search" v-model="searchQuery" type="text" placeholder="搜索任务或脚本" />
-          </label>
-
-          <div class="codex-source-path">
-            <FolderOpen class="h-4 w-4" aria-hidden="true" />
-            <span>{{ dir }}</span>
-          </div>
-
-          <section class="codex-task-group">
-            <div class="codex-task-group-header">
-              <span>AI 技能</span>
-              <span class="status-pill status-pill--muted">{{ filteredLocalScripts.length }}</span>
-            </div>
-            <div v-if="filteredLocalScripts.length" class="codex-task-list">
-              <button
-                v-for="script in filteredLocalScripts"
-                :key="script.name"
-                type="button"
-                :class="taskCardClass(script)"
-                @click="selectScript(script)"
-              >
-                <span class="codex-task-icon">
-                  <component :is="getScriptMeta(script.name).icon" class="h-4 w-4" aria-hidden="true" />
-                </span>
-                <span>
-                  <strong>{{ getScriptMeta(script.name).title }}</strong>
-                  <small>{{ getScriptMeta(script.name).desc }}</small>
-                </span>
-              </button>
-            </div>
-            <p v-else class="field-hint">没有找到匹配的 AI 技能。</p>
-          </section>
-
-          <section v-if="filteredInternalScripts.length" class="codex-task-group">
-            <div class="codex-task-group-header">
-              <span>内置工具</span>
-              <span class="status-pill status-pill--muted">{{ filteredInternalScripts.length }}</span>
-            </div>
-            <div class="codex-task-list">
-              <button
-                v-for="script in filteredInternalScripts"
-                :key="script.name"
-                type="button"
-                :class="taskCardClass(script)"
-                @click="selectScript(script)"
-              >
-                <span class="codex-task-icon">
-                  <component :is="getScriptMeta(script.name).icon" class="h-4 w-4" aria-hidden="true" />
-                </span>
-                <span>
-                  <strong>{{ getScriptMeta(script.name).title }}</strong>
-                  <small>{{ getScriptMeta(script.name).desc }}</small>
-                </span>
-              </button>
-            </div>
-          </section>
-        </aside>
-
-        <main class="codex-main-panel">
-          <template v-if="selectedScript && selectedScript.name === '@tool:vless'">
-            <section class="input-panel codex-embedded-tool-note">
-              <div>
-                <span class="field-label">内置工具</span>
-                <strong>VLESS 转 Mihomo 已有独立工作台</strong>
-                <small>你可以在这里继续使用，也可以打开独立工具页获得完整页面空间。</small>
-              </div>
-              <RouterLink class="secondary-button" to="/toolbox/vless-to-mihomo">打开独立工具页</RouterLink>
-            </section>
-            <VlessToMihomo />
+    <a-row :gutter="24">
+      <a-col :span="8">
+        <a-card title="任务目录" size="small" style="margin-bottom: 24px;">
+          <template #extra>
+            <a-button type="link" size="small" @click="pickDirectory('dir')">选择目录</a-button>
           </template>
-
-          <template v-else-if="!selectedScript">
-            <section class="input-panel codex-empty-state">
-              <span class="service-icon">
-                <Sparkles class="h-5 w-5" aria-hidden="true" />
-              </span>
-              <div>
-                <span class="field-label">待选择</span>
-                <h3>先选任务，再调参数，最后执行</h3>
-                <p>左侧是可执行能力目录；右侧会根据任务类型切换参数表单，并保留每一次执行记录。</p>
-              </div>
-              <div class="codex-empty-grid">
-                <span>
-                  <Terminal class="h-4 w-4" aria-hidden="true" />
-                  本地脚本
-                </span>
-                <span>
-                  <History class="h-4 w-4" aria-hidden="true" />
-                  历史追溯
-                </span>
-                <span>
-                  <Settings2 class="h-4 w-4" aria-hidden="true" />
-                  参数化执行
-                </span>
-              </div>
-            </section>
-          </template>
-
-          <template v-else>
-            <section class="input-panel codex-run-panel">
-              <div class="codex-panel-heading">
-                <div>
-                  <span class="field-label">任务配置</span>
-                  <strong>{{ selectedMeta?.title }}</strong>
-                  <small>{{ selectedMeta?.desc }}</small>
-                </div>
-                <span :class="runStateClass">{{ runStateLabel }}</span>
-              </div>
-
-              <div class="codex-script-meta">
-                <span>
-                  <Settings2 class="h-4 w-4" aria-hidden="true" />
-                  {{ selectedMeta?.badge }}
-                </span>
-                <button v-if="selectedScript.path !== 'internal'" type="button" @click="pickDirectory('dir')">
-                  <FolderSearch class="h-4 w-4" aria-hidden="true" />
-                  {{ selectedPathLabel }}
-                </button>
-              </div>
-
-              <template v-if="selectedScript.name === 'bundle:install-to-project'">
-                <section class="config-section">
-                  <label class="field-control" for="codex-project-dir">
-                    <span class="field-label">目标工作空间</span>
-                    <div class="codex-inline-control">
-                      <Input
-                        id="codex-project-dir"
-                        v-model="projectDir"
-                        type="text"
-                        placeholder="/Users/ben/my-new-project"
-                      />
-                      <Button type="button" variant="outline" @click="pickDirectory('projectDir')">
-                        选择目录
-                      </Button>
-                    </div>
-                    <small class="field-hint">技能会写入这个项目或目录，请先确认路径。</small>
-                  </label>
-                </section>
-
-                <section class="config-section">
-                  <div class="codex-panel-heading">
-                    <div>
-                      <span class="field-label">项目类型</span>
-                      <strong>选择注入的规范模板</strong>
-                    </div>
-                  </div>
-                  <div class="codex-skill-grid">
-                    <button
-                      v-for="option in projectSkillOptions"
-                      :key="option.value"
-                      type="button"
-                      class="codex-skill-card"
-                      :class="{ 'codex-skill-card--active': projectSkill === option.value }"
-                      @click="projectSkill = option.value"
-                    >
-                      <component :is="option.icon" class="h-4 w-4" aria-hidden="true" />
-                      <span>
-                        <strong>{{ option.title }}</strong>
-                        <small>{{ option.desc }}</small>
-                      </span>
-                    </button>
-                  </div>
-                </section>
-
-                <section class="config-section">
-                  <div class="codex-panel-heading">
-                    <div>
-                      <span class="field-label">安装模块</span>
-                      <strong>将要执行的技能脚本</strong>
-                    </div>
-                    <span class="status-pill status-pill--muted">{{ bundleSelection.length }}</span>
-                  </div>
-                  <div class="codex-bundle-list">
-                    <label
-                      v-for="path in selectedScript.path.split('|||')"
-                      :key="path"
-                      class="codex-bundle-option"
-                    >
-                      <input v-model="bundleSelection" type="checkbox" :value="path" />
-                      <span>{{ path.replace(`${dir}/`, '') }}</span>
-                    </label>
-                  </div>
-                </section>
+          <div style="margin-bottom: 16px;">
+            <a-input v-model:value="searchQuery" placeholder="搜索任务或脚本">
+              <template #prefix><Search class="h-4 w-4" :style="{ color: token.colorTextTertiary }"/></template>
+            </a-input>
+          </div>
+          <div style="margin-bottom: 8px; color: gray; font-size: 12px; word-break: break-all;">
+            <FolderOpen class="h-4 w-4" style="display:inline-block; vertical-align:text-bottom; margin-right:4px;" />
+            {{ dir }}
+          </div>
+          
+          <div v-if="filteredLocalScripts.length" style="margin-top: 16px;">
+            <div style="font-weight: bold; margin-bottom: 8px;">AI 技能</div>
+            <a-list :data-source="filteredLocalScripts" size="small" bordered>
+              <template #renderItem="{ item }">
+                <a-list-item @click="selectScript(item)" :style="{ cursor: 'pointer', background: selectedScript?.name === item.name ? token.controlItemBgActive : 'transparent' }">
+                  <a-list-item-meta :description="getScriptMeta(item.name).desc">
+                    <template #title>
+                      {{ getScriptMeta(item.name).title }}
+                    </template>
+                    <template #avatar>
+                      <component :is="getScriptMeta(item.name).icon" class="h-5 w-5" />
+                    </template>
+                  </a-list-item-meta>
+                </a-list-item>
               </template>
+            </a-list>
+          </div>
 
-              <template v-else>
-                <section class="config-section">
-                  <label class="field-control" for="codex-script-args">
-                    <span class="field-label">执行参数</span>
-                    <Input
-                      id="codex-script-args"
-                      v-model="scriptArgs"
-                      type="text"
-                      placeholder="按脚本约定输入参数，以空格分隔"
-                    />
-                    <small class="field-hint">执行前会保留参数到历史记录，方便复用。</small>
-                  </label>
-                </section>
+          <div v-if="filteredInternalScripts.length" style="margin-top: 16px;">
+            <div style="font-weight: bold; margin-bottom: 8px;">内置工具</div>
+            <a-list :data-source="filteredInternalScripts" size="small" bordered>
+              <template #renderItem="{ item }">
+                <a-list-item @click="selectScript(item)" :style="{ cursor: 'pointer', background: selectedScript?.name === item.name ? token.controlItemBgActive : 'transparent' }">
+                  <a-list-item-meta :description="getScriptMeta(item.name).desc">
+                    <template #title>
+                      {{ getScriptMeta(item.name).title }}
+                    </template>
+                    <template #avatar>
+                      <component :is="getScriptMeta(item.name).icon" class="h-5 w-5" />
+                    </template>
+                  </a-list-item-meta>
+                </a-list-item>
               </template>
+            </a-list>
+          </div>
+        </a-card>
+      </a-col>
 
-              <div class="codex-run-actions">
-                <Button size="lg" type="button" :disabled="isRunning" @click="() => runScript()">
-                  <Loader2 v-if="isRunning" class="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
-                  <Play v-else class="mr-2 h-5 w-5" aria-hidden="true" />
-                  {{ runButtonLabel }}
-                </Button>
-              </div>
+      <a-col :span="16">
+        <template v-if="selectedScript && selectedScript.name === '@tool:vless'">
+           <a-alert
+              message="VLESS 转 Mihomo 已有独立工作台"
+              description="你可以在这里继续使用，也可以打开独立工具页获得完整页面空间。"
+              type="info"
+              show-icon
+              style="margin-bottom: 16px;"
+            >
+              <template #action>
+                 <a-button type="primary" size="small" @click="$router.push('/toolbox/vless-to-mihomo')">去独立工具页</a-button>
+              </template>
+            </a-alert>
+            <div :style="{ background: token.colorBgContainer, padding: '16px', borderRadius: '8px', border: `1px solid ${token.colorBorderSecondary}` }">
+               <VlessToMihomo />
+            </div>
+        </template>
+        <template v-else-if="!selectedScript">
+          <a-card>
+            <a-empty description="先选任务，再调参数，最后执行" />
+          </a-card>
+        </template>
+        <template v-else>
+          <a-card title="任务配置" style="margin-bottom: 24px;">
+            <template #extra>
+              <a-tag :color="isRunning ? 'orange' : 'green'">{{ runStateLabel }}</a-tag>
+            </template>
+            <div style="margin-bottom: 16px;">
+              <a-tag color="purple">{{ selectedMeta?.badge }}</a-tag>
+              <span style="color: gray; font-size: 13px;">{{ selectedPathLabel }}</span>
+            </div>
 
-              <p v-if="errorMsg" class="error-message">{{ errorMsg }}</p>
-            </section>
+            <template v-if="selectedScript.name === 'bundle:install-to-project'">
+               <a-form layout="vertical">
+                 <a-form-item label="目标工作空间" extra="技能会写入这个项目或目录，请先确认路径。">
+                   <a-input-search v-model:value="projectDir" placeholder="/Users/ben/my-new-project" @search="pickDirectory('projectDir')" enter-button="选择目录" />
+                 </a-form-item>
+                 <a-form-item label="项目类型">
+                    <a-row :gutter="16">
+                      <a-col :span="12" v-for="option in projectSkillOptions" :key="option.value" style="margin-bottom: 16px;">
+                        <a-card size="small" hoverable @click="projectSkill = option.value" :style="{ borderColor: projectSkill === option.value ? token.colorPrimary : undefined }">
+                          <a-card-meta :title="option.title" :description="option.desc">
+                            <template #avatar><component :is="option.icon" class="h-5 w-5" /></template>
+                          </a-card-meta>
+                        </a-card>
+                      </a-col>
+                    </a-row>
+                 </a-form-item>
+                 <a-form-item label="安装模块">
+                    <a-checkbox-group v-model:value="bundleSelection" style="width: 100%">
+                      <a-row>
+                        <a-col :span="24" v-for="path in selectedScript.path.split('|||')" :key="path" style="margin-bottom: 8px;">
+                          <a-checkbox :value="path">{{ path.replace(`${dir}/`, '') }}</a-checkbox>
+                        </a-col>
+                      </a-row>
+                    </a-checkbox-group>
+                 </a-form-item>
+               </a-form>
+            </template>
+            <template v-else>
+               <a-form layout="vertical">
+                 <a-form-item label="执行参数" extra="执行前会保留参数到历史记录，方便复用。">
+                   <a-input v-model:value="scriptArgs" placeholder="按脚本约定输入参数，以空格分隔" />
+                 </a-form-item>
+               </a-form>
+            </template>
+            
+            <a-button type="primary" size="large" :loading="isRunning" @click="runScript()">
+              {{ runButtonLabel }}
+            </a-button>
+            <div v-if="errorMsg" style="color: red; margin-top: 16px;">{{ errorMsg }}</div>
+          </a-card>
 
-            <section class="input-panel codex-history-panel">
-              <div class="codex-panel-heading">
-                <div>
-                  <span class="field-label">执行记录</span>
-                  <strong>{{ latestHistory ? getScriptMeta(latestHistory.scriptName).title : '暂无记录' }}</strong>
-                  <small>{{ successHistoryCount }} 成功 / {{ failedHistoryCount }} 失败</small>
-                </div>
-                <Dialog v-if="executionHistory.length > 0">
-                  <DialogTrigger as-child>
-                    <Button type="button" variant="ghost" size="sm">
-                      <Trash2 class="mr-2 h-4 w-4" aria-hidden="true" />
-                      清空
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent class="sm:max-w-md shadow-2xl shadow-black">
-                    <DialogHeader>
-                      <DialogTitle>确认清空执行记录？</DialogTitle>
-                      <DialogDescription>此操作将永久删除所有执行历史记录，无法撤销。</DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter class="sm:justify-end gap-2 sm:space-x-2 mt-4">
-                      <DialogClose as-child>
-                        <Button variant="outline">取消</Button>
-                      </DialogClose>
-                      <DialogClose as-child>
-                        <Button variant="destructive" @click="clearHistory">确认清空</Button>
-                      </DialogClose>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <label v-if="executionHistory.length" class="codex-search-field" for="codex-history-search">
-                <Search class="h-4 w-4" aria-hidden="true" />
-                <Input
-                  id="codex-history-search"
-                  v-model="historySearchQuery"
-                  type="text"
-                  placeholder="搜索参数、输出或脚本"
-                />
-              </label>
-
-              <div v-if="executionHistory.length" class="codex-history-list">
-                <article v-if="filteredHistory.length === 0" class="codex-history-empty">
-                  没有找到匹配的记录
-                </article>
-                <article v-for="record in filteredHistory" :key="record.id" class="codex-history-row">
-                  <header>
-                    <span :class="record.success ? 'status-pill status-pill--good' : 'status-pill status-pill--danger'">
-                      <CheckCircle2 v-if="record.success" class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                      <XCircle v-else class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                      {{ record.success ? '成功' : '失败' }}
-                    </span>
-                    <strong>{{ getScriptMeta(record.scriptName).title }}</strong>
-                    <small>{{ formatTime(record.timestamp) }} · exit {{ record.exit_code }}</small>
-                    <Button type="button" variant="outline" size="sm" :disabled="isRunning" @click="rerunHistory(record)">
-                      <Copy class="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-                      复用
-                    </Button>
-                  </header>
-                  <div v-if="record.args" class="codex-history-args">
-                    <span>参数</span>
-                    <code>{{ record.args }}</code>
+          <a-card title="执行记录">
+            <template #extra>
+              <a-popconfirm title="确认清空执行记录？" @confirm="clearHistory" ok-text="确认清空" ok-type="danger">
+                 <a-button type="link" danger size="small">清空</a-button>
+              </a-popconfirm>
+            </template>
+            <div style="margin-bottom: 16px;">
+              <a-input v-model:value="historySearchQuery" placeholder="搜索参数、输出或脚本">
+                 <template #prefix><Search class="h-4 w-4" :style="{ color: token.colorTextTertiary }"/></template>
+              </a-input>
+            </div>
+            <a-list :data-source="filteredHistory" size="small" item-layout="vertical" bordered>
+              <template #renderItem="{ item: record }">
+                <a-list-item>
+                  <template #extra>
+                    <a-button type="link" size="small" @click="rerunHistory(record)">复用参数</a-button>
+                  </template>
+                  <a-list-item-meta>
+                    <template #title>
+                       <a-tag :color="record.success ? 'success' : 'error'">{{ record.success ? '成功' : '失败' }}</a-tag>
+                       {{ getScriptMeta(record.scriptName).title }}
+                    </template>
+                    <template #description>
+                      {{ formatTime(record.timestamp) }} · exit {{ record.exit_code }}
+                    </template>
+                  </a-list-item-meta>
+                  <div v-if="record.args" style="margin-bottom: 8px;">
+                    <a-typography-text type="secondary">参数: </a-typography-text>
+                    <a-typography-text code>{{ record.args }}</a-typography-text>
                   </div>
-                  <div v-if="record.stdout || record.stderr" class="codex-terminal-block">
-                    <pre v-if="record.stdout">{{ record.stdout }}</pre>
-                    <pre v-if="record.stderr" class="codex-terminal-error">{{ record.stderr }}</pre>
+                  <div v-if="record.stdout || record.stderr" style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">
+                    <pre v-if="record.stdout" style="margin: 0; font-family: monospace; white-space: pre-wrap;">{{ record.stdout }}</pre>
+                    <pre v-if="record.stderr" style="margin: 0; font-family: monospace; color: #f48771; white-space: pre-wrap;">{{ record.stderr }}</pre>
                   </div>
-                </article>
-              </div>
-              <div v-else class="codex-history-empty">
-                <Circle class="h-6 w-6" aria-hidden="true" />
-                <span>暂无执行记录</span>
-              </div>
-            </section>
-          </template>
-        </main>
-      </section>
-    </div>
-  </ToolShell>
+                </a-list-item>
+              </template>
+              <template #empty>
+                <a-empty description="暂无执行记录" />
+              </template>
+            </a-list>
+          </a-card>
+        </template>
+      </a-col>
+    </a-row>
+  </div>
 </template>

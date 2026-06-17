@@ -16,11 +16,7 @@ import type {
   VlessTransitGroupType,
 } from '../api/tools'
 import ResultPanel from '../components/ResultPanel.vue'
-import ToolShell from '../components/ToolShell.vue'
 import { useVlessToMihomoStore } from '../stores/vlessToMihomo'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 
 const tool = useVlessToMihomoStore()
 
@@ -134,295 +130,218 @@ function optionClass(active: boolean) {
 </script>
 
 <template>
-  <ToolShell
-    title="VLESS 转 Mihomo"
-    description="把 3x-ui 节点转换成可导入、可审计、可复用的本地 Mihomo 配置。"
-    eyebrow="网络配置"
-    fluid
-  >
-    <div class="vless-workbench">
-      <section class="input-panel vless-status-panel">
-        <div class="vless-status-main">
-          <span class="service-icon">
-            <Cable class="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div>
-            <span class="field-label">转换状态</span>
-            <strong>{{ resultStatus }}</strong>
-            <small>{{ tool.nodeAddress || '等待 VLESS 链接' }}</small>
-          </div>
-        </div>
-        <dl class="vless-status-metrics">
-          <div>
-            <dt>{{ linkCount }}</dt>
-            <dd>链接</dd>
-          </div>
-          <div>
-            <dt>{{ outputModeLabel }}</dt>
-            <dd>输出</dd>
-          </div>
-          <div>
-            <dt>{{ transitStatus }}</dt>
-            <dd>中转</dd>
-          </div>
-          <span :class="resultStatusClass">{{ resultStatus }}</span>
-        </dl>
-      </section>
+  <div style="padding: 24px; max-width: 1200px; margin: 0 auto;">
+    <a-page-header
+      title="VLESS 转 Mihomo"
+      sub-title="把 3x-ui 节点转换成可导入、可审计、可复用的本地 Mihomo 配置。"
+      style="padding-left: 0; padding-right: 0;"
+    >
+      <template #tags>
+        <a-tag color="blue">网络配置</a-tag>
+      </template>
+    </a-page-header>
 
-      <section class="tool-grid vless-grid">
-        <div class="input-panel vless-config-panel">
-          <section class="config-section">
-            <div class="vless-section-heading">
-              <div>
-                <span class="field-label">源链接</span>
-                <strong>VLESS 输入</strong>
-              </div>
-              <span class="status-pill status-pill--muted">{{ linkCount }} 个链接</span>
-            </div>
-            <Textarea
-              id="vless-input"
-              v-model="tool.input"
-              class="vless-link-input"
-              spellcheck="false"
-              placeholder="每行一个 vless:// 链接"
-            />
-            <div class="vless-mini-facts">
-              <span>
-                <CheckCircle2 class="h-4 w-4" aria-hidden="true" />
-                {{ tool.nodeAddress || '等待解析节点地址' }}
-              </span>
-              <span>
-                <FileCode2 class="h-4 w-4" aria-hidden="true" />
-                {{ tool.downloadFilename }}
-              </span>
-            </div>
-          </section>
+    <a-row :gutter="16" style="margin-bottom: 24px;">
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="转换状态" :value="resultStatus" />
+          <div style="margin-top: 8px;">
+            <a-tag :color="tool.yaml ? 'success' : tool.loading ? 'warning' : 'default'">
+               {{ tool.nodeAddress || '等待 VLESS 链接' }}
+            </a-tag>
+          </div>
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="源链接数" :value="linkCount" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="输出模式" :value="outputModeLabel" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="中转状态" :value="transitStatus" />
+        </a-card>
+      </a-col>
+    </a-row>
 
-          <section class="config-section">
-            <div class="vless-section-heading">
-              <div>
-                <span class="field-label">输出策略</span>
-                <strong>配置形态</strong>
-              </div>
-              <span class="status-pill status-pill--muted">{{ outputModeLabel }}</span>
-            </div>
-            <label class="field-control" for="download-name">
-              <span class="field-label">文件名 / 节点名</span>
-              <Input
-                id="download-name"
-                :model-value="tool.downloadName"
-                type="text"
-                placeholder="mihomo"
-                @update:model-value="(val) => tool.updateDownloadName(val as string)"
+    <a-row :gutter="24">
+      <a-col :span="14">
+        <a-card title="配置参数" style="margin-bottom: 24px;">
+          <a-form layout="vertical">
+            <a-form-item label="源链接 (VLESS 输入)">
+              <template #extra>
+                 <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                    <span style="color: gray;">{{ linkCount }} 个链接</span>
+                    <span>
+                      <CheckCircle2 class="h-3 w-3 inline" /> {{ tool.nodeAddress || '等待解析节点地址' }}
+                      <a-divider type="vertical" />
+                      <FileCode2 class="h-3 w-3 inline" /> {{ tool.downloadFilename }}
+                    </span>
+                 </div>
+              </template>
+              <a-textarea
+                v-model:value="tool.input"
+                :rows="4"
+                placeholder="每行一个 vless:// 链接"
+                style="font-family: monospace;"
               />
-            </label>
+            </a-form-item>
 
-            <div class="vless-choice-grid" role="radiogroup" aria-label="输出格式">
-              <label
-                v-for="mode in outputModes"
-                :key="mode.value"
-                :class="optionClass(tool.mode === mode.value)"
-              >
-                <input v-model="tool.mode" type="radio" :value="mode.value" />
-                <span>
-                  <strong>{{ mode.title }}</strong>
-                  <small>{{ mode.description }}</small>
-                </span>
-              </label>
-            </div>
-          </section>
-
-          <section v-if="tool.mode === 'full_config'" class="config-section">
-            <div class="vless-section-heading">
-              <div>
-                <span class="field-label">规则模板</span>
-                <strong>路由基线</strong>
+            <a-form-item label="输出策略 (配置形态)">
+              <a-radio-group v-model:value="tool.mode" button-style="solid">
+                <a-radio-button v-for="mode in outputModes" :key="mode.value" :value="mode.value">
+                  {{ mode.title }}
+                </a-radio-button>
+              </a-radio-group>
+              <div style="margin-top: 8px; color: gray; font-size: 12px;">
+                 {{ outputModes.find(m => m.value === tool.mode)?.description }}
               </div>
-              <Route class="vless-heading-icon h-4 w-4" aria-hidden="true" />
-            </div>
-            <div class="vless-choice-grid vless-choice-grid--three" role="radiogroup" aria-label="配置模板">
-              <label
-                v-for="template in templateModes"
-                :key="template.value"
-                :class="optionClass(tool.template === template.value)"
-              >
-                <input v-model="tool.template" type="radio" :value="template.value" />
-                <span>
-                  <strong>{{ template.title }}</strong>
-                  <small>{{ template.description }}</small>
-                </span>
-              </label>
-            </div>
-          </section>
+            </a-form-item>
 
-          <section v-if="tool.mode === 'full_config'" class="config-section">
-            <div class="vless-section-heading">
-              <div>
-                <span class="field-label">直连域名</span>
-                <strong>绕过代理</strong>
-              </div>
-              <span class="status-pill status-pill--muted">{{ directDomainCount }} 条</span>
-            </div>
-            <textarea
-              id="direct-domains"
-              v-model="tool.directDomains"
-              class="direct-domain-input"
-              spellcheck="false"
-              placeholder="github.com&#10;example.com"
-            />
-          </section>
+            <a-form-item label="文件名 / 节点名">
+              <a-input
+                :value="tool.downloadName"
+                @update:value="(val: string) => tool.updateDownloadName(val)"
+                placeholder="mihomo"
+              />
+            </a-form-item>
 
-          <section class="transit-section" aria-labelledby="transit-provider-title">
-            <div class="vless-section-heading">
-              <div>
-                <span class="field-label">中转链路</span>
-                <strong id="transit-provider-title">Proxy Provider</strong>
-              </div>
-              <span :class="tool.transitEnabled ? 'status-pill status-pill--good' : 'status-pill status-pill--muted'">
-                {{ transitStatus }}
-              </span>
-            </div>
+            <template v-if="tool.mode === 'full_config'">
+              <a-form-item label="规则模板 (路由基线)">
+                <a-radio-group v-model:value="tool.template" button-style="solid">
+                  <a-radio-button v-for="template in templateModes" :key="template.value" :value="template.value">
+                    {{ template.title }}
+                  </a-radio-button>
+                </a-radio-group>
+                <div style="margin-top: 8px; color: gray; font-size: 12px;">
+                   {{ templateModes.find(t => t.value === tool.template)?.description }}
+                </div>
+              </a-form-item>
 
-            <label class="toggle-option toggle-option--card">
-              <input v-model="tool.transitEnabled" type="checkbox" />
-              <span>
-                <strong>启用中转</strong>
-                <small>通过 dialer-proxy 将终端节点接入指定中转组。</small>
-              </span>
-            </label>
-
-            <div v-if="tool.transitEnabled" class="transit-fields">
-              <div class="transit-chain" aria-label="中转链路">
-                <strong>链路</strong>
-                <span>设备</span>
-                <span>中转节点</span>
-                <span>3x-ui 节点</span>
-                <span>目标站点</span>
-              </div>
-
-              <label class="field-control" for="transit-provider-url">
-                <span class="field-label">中转订阅地址</span>
-                <textarea
-                  id="transit-provider-url"
-                  v-model="tool.transitProviderUrl"
-                  class="direct-domain-input transit-provider-url-input"
-                  spellcheck="false"
-                  placeholder="https://example.com/sub-1.yaml&#10;https://example.com/sub-2.yaml"
+              <a-form-item label="直连域名 (绕过代理)">
+                <template #extra>
+                  <span style="color: gray;">{{ directDomainCount }} 条</span>
+                </template>
+                <a-textarea
+                  v-model:value="tool.directDomains"
+                  :rows="3"
+                  placeholder="github.com&#10;example.com"
+                  style="font-family: monospace;"
                 />
-              </label>
+              </a-form-item>
+            </template>
+          </a-form>
+        </a-card>
 
-              <div class="transit-two-col">
-                <label class="field-control" for="transit-provider-name">
-                  <span class="field-label">Provider 名称</span>
-                  <input
-                    id="transit-provider-name"
-                    v-model="tool.transitProviderName"
-                    class="text-input"
-                    type="text"
-                    placeholder="transit"
-                  />
-                </label>
+        <a-card title="中转链路 (Proxy Provider)" style="margin-bottom: 24px;">
+           <template #extra>
+              <a-switch v-model:checked="tool.transitEnabled" />
+           </template>
 
-                <label class="field-control" for="transit-group-name">
-                  <span class="field-label">中转组名</span>
-                  <input
-                    id="transit-group-name"
-                    v-model="tool.transitGroupName"
-                    class="text-input"
-                    type="text"
-                    placeholder="中转节点组"
-                  />
-                </label>
-              </div>
+           <div v-if="tool.transitEnabled">
+              <p style="color: gray; margin-bottom: 16px;">通过 dialer-proxy 将终端节点接入指定中转组。</p>
+              <a-form layout="vertical">
+                 <a-form-item label="中转订阅地址">
+                   <a-textarea
+                     v-model:value="tool.transitProviderUrl"
+                     :rows="2"
+                     placeholder="https://example.com/sub-1.yaml&#10;https://example.com/sub-2.yaml"
+                     style="font-family: monospace;"
+                   />
+                 </a-form-item>
 
-              <label class="field-control" for="transit-provider-path">
-                <span class="field-label">Provider 缓存路径</span>
-                <input
-                  id="transit-provider-path"
-                  v-model="tool.transitProviderPath"
-                  class="text-input"
-                  type="text"
-                  placeholder="./proxy_providers/transit.yaml"
-                />
-              </label>
+                 <a-row :gutter="16">
+                    <a-col :span="12">
+                      <a-form-item label="Provider 名称">
+                        <a-input v-model:value="tool.transitProviderName" placeholder="transit" />
+                      </a-form-item>
+                    </a-col>
+                    <a-col :span="12">
+                      <a-form-item label="中转组名">
+                        <a-input v-model:value="tool.transitGroupName" placeholder="中转节点组" />
+                      </a-form-item>
+                    </a-col>
+                 </a-row>
 
-              <label class="field-control" for="transit-bypass-domains">
-                <span class="field-label">仅走中转域名</span>
-                <textarea
-                  id="transit-bypass-domains"
-                  v-model="tool.transitBypassDomains"
-                  class="direct-domain-input"
-                  spellcheck="false"
-                  placeholder="youtube.com&#10;netflix.com"
-                />
-                <small class="field-hint">{{ transitBypassCount }} 条中转直达规则</small>
-              </label>
+                 <a-form-item label="Provider 缓存路径">
+                   <a-input v-model:value="tool.transitProviderPath" placeholder="./proxy_providers/transit.yaml" />
+                 </a-form-item>
 
-              <div class="vless-choice-grid vless-choice-grid--three" role="radiogroup" aria-label="中转组类型">
-                <label
-                  v-for="mode in transitModes"
-                  :key="mode.value"
-                  :class="optionClass(tool.transitGroupType === mode.value)"
-                >
-                  <input v-model="tool.transitGroupType" type="radio" :value="mode.value" />
-                  <span>
-                    <strong>{{ mode.title }}</strong>
-                    <small>{{ mode.description }}</small>
-                  </span>
-                </label>
-              </div>
-            </div>
-          </section>
+                 <a-form-item label="仅走中转域名">
+                   <template #extra>
+                     <span style="color: gray;">{{ transitBypassCount }} 条中转直达规则</span>
+                   </template>
+                   <a-textarea
+                     v-model:value="tool.transitBypassDomains"
+                     :rows="2"
+                     placeholder="youtube.com&#10;netflix.com"
+                     style="font-family: monospace;"
+                   />
+                 </a-form-item>
 
-          <div class="vless-primary-action">
-            <Button class="w-full" size="lg" type="button" :disabled="!tool.canConvert" @click="tool.convert">
-              <Loader2 v-if="tool.loading" class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-              <Download v-else class="mr-2 h-4 w-4" aria-hidden="true" />
-              {{ convertButtonLabel }}
-            </Button>
-            <small v-if="tool.savingSettings">正在保存配置</small>
+                 <a-form-item label="中转组类型">
+                   <a-radio-group v-model:value="tool.transitGroupType" button-style="solid">
+                     <a-radio-button v-for="mode in transitModes" :key="mode.value" :value="mode.value">
+                       {{ mode.title }}
+                     </a-radio-button>
+                   </a-radio-group>
+                   <div style="margin-top: 8px; color: gray; font-size: 12px;">
+                      {{ transitModes.find(m => m.value === tool.transitGroupType)?.description }}
+                   </div>
+                 </a-form-item>
+              </a-form>
+           </div>
+           <div v-else style="color: gray; text-align: center; padding: 24px;">
+              中转功能未启用
+           </div>
+        </a-card>
+
+        <div style="margin-bottom: 24px;">
+           <a-button type="primary" block size="large" :disabled="!tool.canConvert" @click="tool.convert">
+             <Loader2 v-if="tool.loading" class="mr-2 h-4 w-4 animate-spin" style="display: inline-block" />
+             <Download v-else class="mr-2 h-4 w-4" style="display: inline-block" />
+             {{ convertButtonLabel }}
+           </a-button>
+           <div v-if="tool.savingSettings" style="text-align: center; margin-top: 8px; color: gray;">
+             <small>正在保存配置</small>
+           </div>
+           <a-alert v-if="tool.error" type="error" :message="tool.error" show-icon style="margin-top: 16px;" />
+        </div>
+      </a-col>
+
+      <a-col :span="10">
+        <a-card title="导入目标: Clash Party / Mihomo" size="small" style="margin-bottom: 24px;">
+          <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+            <a-tag color="blue">
+              <Network class="h-3 w-3 inline" /> 本地 YAML
+            </a-tag>
+            <a-tag>
+              <FileCode2 class="h-3 w-3 inline" /> {{ tool.downloadFilename }}
+            </a-tag>
           </div>
+          <div style="display: flex; gap: 16px;">
+            <a href="https://clashparty.org/" target="_blank" style="color: #1677ff; text-decoration: none;">
+              Clash Party <ExternalLink class="h-3 w-3 inline" />
+            </a>
+            <a href="https://github.com/mihomo-party-org/clash-party" target="_blank" style="color: #1677ff; text-decoration: none;">
+              GitHub <ExternalLink class="h-3 w-3 inline" />
+            </a>
+          </div>
+        </a-card>
 
-          <p v-if="tool.error" class="error-message">{{ tool.error }}</p>
-        </div>
-
-        <div class="result-column vless-result-column">
-          <section class="guide-panel vless-import-panel" aria-labelledby="clash-party-resources">
-            <div>
-              <span class="field-label">导入目标</span>
-              <h3 id="clash-party-resources">Clash Party / Mihomo</h3>
-            </div>
-            <div class="vless-import-facts">
-              <span>
-                <Network class="h-4 w-4" aria-hidden="true" />
-                本地 YAML
-              </span>
-              <span>
-                <FileCode2 class="h-4 w-4" aria-hidden="true" />
-                {{ tool.downloadFilename }}
-              </span>
-            </div>
-            <div class="guide-links">
-              <a href="https://clashparty.org/" target="_blank" rel="noreferrer">
-                <span>Clash Party</span>
-                <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
-              </a>
-              <a href="https://github.com/mihomo-party-org/clash-party" target="_blank" rel="noreferrer">
-                <span>GitHub</span>
-                <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
-              </a>
-            </div>
-          </section>
-
-          <ResultPanel
-            :yaml="tool.yaml"
-            :copied="tool.copied"
-            :filename="tool.downloadFilename"
-            :node-address="tool.nodeAddress"
-            @copied="tool.markCopied"
-          />
-        </div>
-      </section>
-    </div>
-  </ToolShell>
+        <ResultPanel
+          :yaml="tool.yaml"
+          :copied="tool.copied"
+          :filename="tool.downloadFilename"
+          :node-address="tool.nodeAddress"
+          @copied="tool.markCopied"
+        />
+      </a-col>
+    </a-row>
+  </div>
 </template>

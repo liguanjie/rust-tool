@@ -1,61 +1,52 @@
 <script setup lang="ts">
-import { ChevronRight } from '@lucide/vue'
+import { ChevronRight } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
-import ToolShell from '../components/ToolShell.vue'
 import { useToolsStore } from '../stores/tools'
 
 const toolsStore = useToolsStore()
 </script>
 
 <template>
-  <ToolShell
-    title="RustTool"
-    description="面向本地开发、安全审计和自动化运维的桌面工具站。"
-    eyebrow="工作台"
-    fluid
-  >
-    <section class="toolbox-overview">
-      <div class="toolbox-overview-main">
-        <span class="eyebrow">工具矩阵</span>
-        <h3>把高频本地任务收在一个工作台里</h3>
-      </div>
-      <dl class="toolbox-overview-stats">
-        <div>
-          <dt>{{ toolsStore.tools.length }}</dt>
-          <dd>工具</dd>
-        </div>
-        <div>
-          <dt>0</dt>
-          <dd>云依赖</dd>
-        </div>
-        <div>
-          <dt>Web/Tauri</dt>
-          <dd>同源界面</dd>
-        </div>
-      </dl>
-    </section>
+  <div style="padding: 24px; max-width: 1200px; margin: 0 auto;">
+    <a-page-header
+      title="RustTool"
+      sub-title="面向本地开发、安全审计和自动化运维的桌面工具站。"
+      style="padding-left: 0; padding-right: 0;"
+    >
+      <template #tags>
+        <a-tag color="blue">工作台</a-tag>
+      </template>
+    </a-page-header>
 
-    <section class="toolbox-card-grid" aria-label="工具入口">
-      <RouterLink
-        v-for="tool in toolsStore.tools"
-        :key="tool.id"
-        class="toolbox-card"
-        :class="`toolbox-card--${tool.accent}`"
-        :to="tool.path"
-      >
-        <span class="service-icon toolbox-card-icon">
-          <component :is="tool.icon" class="h-5 w-5" aria-hidden="true" />
-        </span>
-        <span class="toolbox-card-copy">
-          <span class="status-pill status-pill--muted">{{ tool.badge }}</span>
-          <strong>{{ tool.name }}</strong>
-          <small>{{ tool.summary }}</small>
-        </span>
-        <span class="toolbox-card-signals">
-          <small v-for="signal in tool.signals" :key="signal">{{ signal }}</small>
-        </span>
-        <ChevronRight class="h-5 w-5 api-entry-arrow" aria-hidden="true" />
-      </RouterLink>
-    </section>
-  </ToolShell>
+    <a-card style="margin-bottom: 24px;">
+      <a-row :gutter="16">
+        <a-col :span="12">
+          <a-statistic title="工具总数" :value="toolsStore.tools.length" />
+        </a-col>
+        <a-col :span="12">
+          <a-statistic title="云依赖" :value="0" />
+        </a-col>
+      </a-row>
+    </a-card>
+
+    <a-row :gutter="[16, 16]">
+      <a-col :xs="24" :sm="12" :md="8" :lg="6" v-for="tool in toolsStore.tools" :key="tool.id">
+        <RouterLink :to="tool.path" style="text-decoration: none;">
+          <a-card hoverable style="height: 100%;">
+            <a-card-meta :title="tool.name" :description="tool.summary">
+              <template #avatar>
+                <component :is="tool.icon" style="width: 24px; height: 24px; color: #1890ff;" />
+              </template>
+            </a-card-meta>
+            <div style="margin-top: 16px;">
+              <a-tag color="cyan">{{ tool.badge }}</a-tag>
+            </div>
+            <div style="margin-top: 8px;">
+              <a-tag v-for="signal in tool.signals" :key="signal" style="margin-bottom: 4px;">{{ signal }}</a-tag>
+            </div>
+          </a-card>
+        </RouterLink>
+      </a-col>
+    </a-row>
+  </div>
 </template>
