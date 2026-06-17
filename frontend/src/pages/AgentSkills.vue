@@ -427,28 +427,6 @@ function taskCardClass(script: ScriptInfo) {
       </template>
     </a-page-header>
 
-    <a-row :gutter="16" style="margin-bottom: 24px;">
-      <a-col :span="6">
-        <a-card>
-          <a-statistic title="可用任务" :value="totalTaskCount" />
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card>
-          <a-statistic title="执行记录" :value="executionHistory.length" />
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card>
-          <a-statistic title="失败记录" :value="failedHistoryCount" />
-        </a-card>
-      </a-col>
-      <a-col :span="6">
-        <a-card>
-          <a-statistic title="执行状态" :value="runStateLabel" />
-        </a-card>
-      </a-col>
-    </a-row>
 
     <a-row :gutter="24">
       <a-col :span="8">
