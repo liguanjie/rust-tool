@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Shield, FolderPlus, Trash2, RefreshCw, Activity, Layers, Clock } from 'lucide-vue-next'
 import { useOsvScannerStore } from '../../stores/osvScanner'
@@ -59,18 +59,32 @@ onMounted(() => {
   void osv.load()
 })
 
+const showWebAddModal = ref(false)
+const webProjectPath = ref('')
+
 async function chooseDirectory() {
   const tauriCore = await import('@tauri-apps/api/core').catch(() => null)
-  if (!tauriCore?.isTauri()) return
-
-  const dialog = await import('@tauri-apps/plugin-dialog')
-  const selected = await dialog.open({
-    directory: true,
-    multiple: false,
-  })
-  if (typeof selected === 'string') {
-    await osv.addProject(selected)
+  if (tauriCore && tauriCore.isTauri()) {
+    const dialog = await import('@tauri-apps/plugin-dialog')
+    const selected = await dialog.open({
+      directory: true,
+      multiple: false,
+    })
+    if (typeof selected === 'string') {
+      await osv.addProject(selected)
+    }
+  } else {
+    webProjectPath.value = ''
+    showWebAddModal.value = true
   }
+}
+
+async function handleWebAddProject() {
+  const path = webProjectPath.value.trim()
+  if (!path) return
+  await osv.addProject(path)
+  showWebAddModal.value = false
+  webProjectPath.value = ''
 }
 
 function goToProject(path: string) {
@@ -87,58 +101,50 @@ function goToProject(path: string) {
       style="padding-left: 0; padding-right: 0;"
     >
       <template #tags>
-        <a-tag color="blue">供应链安全</a-tag>
+        <a-tag color="blue">项目安全</a-tag>
       </template>
     </a-page-header>
 
     <div class="mt-4">
-      <a-row :gutter="[16, 16]">
-        <a-col :xs="24" :sm="12" :lg="6">
-          <a-card size="small" :bordered="false">
-            <a-statistic title="服务状态" :value="osv.installStatus?.installed ? '已就绪' : '等待检测'">
-              <template #prefix><Shield class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
-            </a-statistic>
-            <div class="text-xs text-gray-500 mt-2 truncate" :title="installVersionLine">
-              {{ installVersionLine }}
-            </div>
-          </a-card>
-        </a-col>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+        <a-card size="small" :bordered="false">
+          <a-statistic title="服务状态" :value="osv.installStatus?.installed ? '已就绪' : '等待检测'">
+            <template #prefix><Shield class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
+          </a-statistic>
+          <div class="text-xs text-gray-500 mt-2 truncate" :title="installVersionLine">
+            {{ installVersionLine }}
+          </div>
+        </a-card>
 
-        <a-col :xs="24" :sm="12" :lg="6">
-          <a-card size="small" :bordered="false">
-            <a-statistic title="全局健康分" :value="osv.globalHealthScore ?? '--'">
-              <template #prefix><Activity class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
-            </a-statistic>
-            <div class="mt-2">
-              <a-tag :color="globalHealthColor">{{ globalHealthLabel }}</a-tag>
-            </div>
-          </a-card>
-        </a-col>
+        <a-card size="small" :bordered="false">
+          <a-statistic title="全局健康分" :value="osv.globalHealthScore ?? '--'">
+            <template #prefix><Activity class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
+          </a-statistic>
+          <div class="mt-2">
+            <a-tag :color="globalHealthColor">{{ globalHealthLabel }}</a-tag>
+          </div>
+        </a-card>
 
-        <a-col :xs="24" :sm="12" :lg="6">
-          <a-card size="small" :bordered="false">
-            <a-statistic title="监控项目" :value="osv.projects.length">
-              <template #prefix><Layers class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
-              <template #suffix><span class="text-xs">个</span></template>
-            </a-statistic>
-            <div class="text-xs text-gray-500 mt-2">有效路径</div>
-          </a-card>
-        </a-col>
+        <a-card size="small" :bordered="false">
+          <a-statistic title="监控项目" :value="osv.projects.length">
+            <template #prefix><Layers class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
+            <template #suffix><span class="text-xs">个</span></template>
+          </a-statistic>
+          <div class="text-xs text-gray-500 mt-2">有效路径</div>
+        </a-card>
 
-        <a-col :xs="24" :sm="12" :lg="6">
-          <a-card size="small" :bordered="false">
-            <a-statistic title="最近扫描" :value="latestScanLabel" valueStyle="font-size: 16px;">
-              <template #prefix><Clock class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
-            </a-statistic>
-            <div class="mt-2">
-              <a-button type="link" size="small" @click="osv.refreshInstallStatus" style="padding: 0;">
-                <template #icon><RefreshCw class="w-3 h-3 mr-1 inline-block align-text-bottom" /></template>
-                刷新状态
-              </a-button>
-            </div>
-          </a-card>
-        </a-col>
-      </a-row>
+        <a-card size="small" :bordered="false">
+          <a-statistic title="最近扫描" :value="latestScanLabel" :valueStyle="latestScanLabel === '未扫描' ? {} : { fontSize: '16px' }">
+            <template #prefix><Clock class="w-4 h-4 mr-2 opacity-60 inline-block align-text-bottom" /></template>
+          </a-statistic>
+          <div class="mt-2">
+            <a-button type="link" size="small" @click="osv.refreshInstallStatus" style="padding: 0;">
+              <template #icon><RefreshCw class="w-3 h-3 mr-1 inline-block align-text-bottom" /></template>
+              刷新状态
+            </a-button>
+          </div>
+        </a-card>
+      </div>
 
       <a-card class="mt-6" title="受监控的项目" :bordered="false">
         <template #extra>
@@ -177,5 +183,25 @@ function goToProject(path: string) {
         </a-table>
       </a-card>
     </div>
+
+    <a-modal
+      v-model:open="showWebAddModal"
+      title="手动添加监控项目"
+      @ok="handleWebAddProject"
+      okText="确认"
+      cancelText="取消"
+    >
+      <div style="padding: 12px 0;">
+        <p class="text-sm text-gray-500 mb-4">
+          由于浏览器安全沙箱限制，Web 模式下无法直接打开系统目录选择器。请手动输入或粘贴项目在您电脑上的<b>绝对路径</b>（例如：/Users/username/projects/my-project）。
+        </p>
+        <a-input
+          v-model:value="webProjectPath"
+          placeholder="请输入项目的绝对路径"
+          allow-clear
+          @pressEnter="handleWebAddProject"
+        />
+      </div>
+    </a-modal>
   </div>
 </template>

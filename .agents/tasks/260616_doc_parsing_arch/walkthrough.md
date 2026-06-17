@@ -43,6 +43,8 @@
 - 补充解析参数控制原则：接口参数、模板配置和系统配置负责底层解析行为；LLM 只负责推理、校验、解释和提出重跑建议。
 - 补充软件安装准备清单：明确 Python 依赖、PaddleOCR 扩展、OpenCV headless、LibreOffice、PostgreSQL、Redis、对象存储、Tesseract 等安装决策。
 - 根据 PaddleOCR 官方中文 README 校准选型：`PP-OCRv6` 作为默认 OCR，`PP-StructureV3` 作为坐标级结构解析，`PaddleOCR-VL-1.6` 作为高复杂文档理解增强能力。
+- 补充当前 Rust/Tauri 项目的工程集成最佳实践：文档解析能力以独立 Python Parser Worker 接入，服务端使用独立进程 / 容器，桌面端使用 Tauri sidecar。
+- 补充打包边界：不嵌入 Python 解释器，不要求用户手动安装 Python；Worker 与 Rust 通过 JSON 和文件引用通信，`Canonical JSON` 是唯一可信交付物。
 - 表格独立进入 Table Store，避免大表直接塞入 LLM 上下文。
 - RAG 切块基于语义元素，保留 `orig_block_ids` 以支持引用溯源。
 - LLM Agent 通过表格查询、原文定位、检索、规则校验等工具完成业务推理。
@@ -56,6 +58,7 @@
 | 原组件定位保留 | 通过 |
 | 生产级闭环覆盖 | 通过 |
 | 供应链落地方案补充 | 通过 |
+| Rust/Tauri + Python Worker 集成策略 | 通过 |
 | 任务目录文件清单检查 | 通过 |
 
 ## 风险与注意事项

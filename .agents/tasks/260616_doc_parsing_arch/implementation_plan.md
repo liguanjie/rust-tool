@@ -3,7 +3,7 @@
 ## 需求与决策
 
 - 需求描述：根据前序背景讨论与业界最佳实践，更新办公文档智能解析系统的架构设计文档。
-- 设计决策：将原“MarkItDown + PaddleOCR + Pandas + gpt-5.5”四层草案升级为生产级 Document AI Pipeline，突出页级/区域级路由、结构化中间表示、表格专用链路、置信度与人审闭环、可评测可溯源。
+- 设计决策：将原“MarkItDown + PaddleOCR + Pandas + gpt-5.5”四层草案升级为生产级 Document AI Pipeline，突出页级/区域级路由、结构化中间表示、表格专用链路、置信度与人审闭环、可评测可溯源；当前 Rust/Tauri 项目采用独立 Python Parser Worker，服务端独立进程/容器部署，桌面端通过 Tauri sidecar 打包。
 - 用户确认项：用户已确认需要采用更贴近业界最佳实践的架构方向，并要求更新架构文档。
 
 ## 架构 / 流程示意
@@ -36,6 +36,7 @@ flowchart TD
 | 2 | `.agents/tasks/260616_doc_parsing_arch/task.md` | NEW | 记录任务执行清单 |
 | 3 | `.agents/tasks/260616_doc_parsing_arch/architecture_design.md` | MODIFY | 重写为生产级 Document AI Pipeline 架构 |
 | 4 | `.agents/tasks/260616_doc_parsing_arch/walkthrough.md` | NEW | 完成后记录变更、验证和风险 |
+| 5 | `.agents/tasks/260616_doc_parsing_arch/solution_proposal.md` | MODIFY | 补充 Rust/Tauri 与 Python Parser Worker 集成、打包和部署最佳实践 |
 
 ## 精确改动内容
 
@@ -71,6 +72,20 @@ flowchart TD
 + 路由策略、解析器选择、表格链路、RAG 切块、评测闭环、安全边界
 ```
 
+### 改动 4：补充当前项目工程集成策略
+
+文件：`.agents/tasks/260616_doc_parsing_arch/solution_proposal.md`
+
+位置：新增 `Rust/Tauri 与 Python Worker 集成最佳实践`
+
+```diff
++ Rust 保持 API、任务编排、强类型模型和质量门禁
++ Python Parser Worker 承载文档解析生态依赖
++ 服务端使用独立进程 / 容器部署
++ 桌面端使用 Tauri sidecar 打包
++ Rust / Python 之间只传 JSON 和文件引用
+```
+
 ## 前置确认步骤
 
 - [x] 阅读项目背景文档。
@@ -84,6 +99,7 @@ flowchart TD
 2. 不删除用户已有任务文档。
 3. 不把 Markdown 继续描述为唯一主数据模型。
 4. 架构方案必须保留成本控制、离线/本地化和 LLM 可消费性目标。
+5. 不把 Python 解释器嵌入 Rust 主进程，不要求终端用户手动安装 Python。
 
 ## 编码规范约束
 
@@ -110,6 +126,7 @@ flowchart TD
 | 架构主线 | 正向 | 是否体现生产级 Document AI Pipeline | 通过 |
 | 原目标保留 | 回归 | 是否保留 MarkItDown、PaddleOCR、Pandas、LLM 的定位 | 通过 |
 | 复杂文档 | 边界 | 是否覆盖混合 PDF、复杂表格、低置信 OCR、跨页表格 | 通过 |
+| 当前项目落地 | 边界 | 是否说明 Rust/Tauri 与 Python Worker 的集成和打包方式 | 通过 |
 
 ## 执行顺序
 

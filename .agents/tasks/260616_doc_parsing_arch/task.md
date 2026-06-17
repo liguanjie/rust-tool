@@ -21,6 +21,8 @@
 - [x] 补充解析参数通过接口 / 配置控制，LLM 不直接控制底层解析参数
 - [x] 补充软件安装准备清单和必装 / 可选 / 暂不需要项
 - [x] 按官方 README 校准 PaddleOCR 选型：PP-OCRv6 / PP-StructureV3 / PaddleOCR-VL-1.6 分层使用
+- [x] 补充 Rust/Tauri 项目接入 Python Parser Worker 的最佳实践
+- [x] 补充服务端独立进程 / 容器与桌面端 Tauri sidecar 打包策略
 
 ## 阶段3：验证与收尾
 
@@ -38,5 +40,7 @@
 - 最新决策：OCR、表格策略、图片预处理、DuckDB 等解析参数通过接口参数、模板配置和系统配置控制，LLM 仅做推理、校验、解释和重跑建议。
 - 最新补充：已在 `solution_proposal.md` 增加软件安装准备章节，区分必装、按需安装、暂不需要和注意事项。
 - 最新决策：PaddleOCR 版本基线锁定 `paddleocr==3.7.0`；默认 OCR 用 `PP-OCRv6`，复杂视觉结构用 `PP-StructureV3`，高复杂文档理解按需启用 `PaddleOCR-VL-1.6`。
+- 最新决策：当前 Rust/Tauri 项目不嵌入 Python 解释器；新增独立 Python Parser Worker，服务端以独立进程 / 容器部署，桌面端通过 Tauri sidecar 随应用分发。
+- 最新补充：Python Worker 与 Rust 之间通过 JSON 请求 / 响应和文件引用交互，`Canonical JSON` 作为唯一可信交付物。
 - 因未修改代码，`code_audit_report.md` 不作为必需交付物；如后续进入代码实现阶段再补充。
 - 上方“代码审计报告”项按“不适用”处理，已在说明中记录。
