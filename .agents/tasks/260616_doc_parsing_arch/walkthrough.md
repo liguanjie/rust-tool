@@ -42,6 +42,7 @@
 - 补充 Word、PDF、Excel 内嵌表格和复杂格式处理：抽取嵌套表格、合并单元格、文本框、批注、脚注、公式、隐藏行列、透视表等结构，并进入 Table Parser / Structure Normalizer。
 - 补充解析参数控制原则：接口参数、模板配置和系统配置负责底层解析行为；LLM 只负责推理、校验、解释和提出重跑建议。
 - 补充软件安装准备清单：明确 Python 依赖、PaddleOCR 扩展、OpenCV headless、LibreOffice、PostgreSQL、Redis、对象存储、Tesseract 等安装决策。
+- 根据 PaddleOCR 官方中文 README 校准选型：`PP-OCRv6` 作为默认 OCR，`PP-StructureV3` 作为坐标级结构解析，`PaddleOCR-VL-1.6` 作为高复杂文档理解增强能力。
 - 表格独立进入 Table Store，避免大表直接塞入 LLM 上下文。
 - RAG 切块基于语义元素，保留 `orig_block_ids` 以支持引用溯源。
 - LLM Agent 通过表格查询、原文定位、检索、规则校验等工具完成业务推理。

@@ -19,9 +19,9 @@ export const router = createRouter({
       component: () => import('../pages/VlessToMihomo.vue'),
     },
     {
-      path: '/toolbox/codex',
-      name: 'codex',
-      component: () => import('../pages/Codex.vue'),
+      path: '/agent-skills',
+      name: 'agent-skills',
+      component: () => import('../pages/AgentSkills.vue'),
     },
     {
       path: '/osv-scanner',

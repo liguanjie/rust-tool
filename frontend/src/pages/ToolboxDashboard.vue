@@ -8,12 +8,12 @@ const router = useRouter()
 
 const apps = [
   {
-    id: 'codex',
+    id: 'agent-skills',
     title: 'AI 技能',
     description: '集中管理本地执行脚本和自动化 AI 技能，驱动底层项目构建。',
     icon: Terminal,
     color: '#1890ff',
-    route: '/toolbox/codex',
+    route: '/agent-skills',
   },
   {
     id: 'vless',

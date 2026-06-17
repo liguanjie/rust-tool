@@ -28,10 +28,10 @@ export const useToolsStore = defineStore('tools', () => {
       icon: LayoutDashboard,
     },
     {
-      id: 'codex',
+      id: 'agent-skills',
       name: 'AI 技能',
-      path: '/toolbox/codex',
-      description: '管理并运行 Codex 本地自动化脚本与工具',
+      path: '/agent-skills',
+      description: '管理并运行 本地自动化脚本与技能',
       badge: '自动化',
       summary: '脚本编排、参数输入、执行记录',
       signals: ['本地执行', '记录追溯', '参数化'],
