@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import type { Component } from 'vue'
-import { BookOpen, Cable, Shield, Terminal } from '@lucide/vue'
+import { BookOpen, Cable, Shield, Terminal, LayoutDashboard } from 'lucide-vue-next'
 
 export interface ToolItem {
   id: string
@@ -17,8 +17,19 @@ export interface ToolItem {
 export const useToolsStore = defineStore('tools', () => {
   const tools: ToolItem[] = [
     {
-      id: 'codex',
+      id: 'dashboard',
       name: '工作台',
+      path: '/dashboard',
+      description: '全局工具集合与应用入口',
+      badge: '聚合',
+      summary: '聚合应用大盘',
+      signals: [],
+      accent: 'emerald',
+      icon: LayoutDashboard,
+    },
+    {
+      id: 'codex',
+      name: 'AI 技能',
       path: '/toolbox/codex',
       description: '管理并运行 Codex 本地自动化脚本与工具',
       badge: '自动化',

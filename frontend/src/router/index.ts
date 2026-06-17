@@ -2,29 +2,37 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Toolbox from '../pages/Toolbox.vue'
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      redirect: '/toolbox/codex',
+      redirect: '/dashboard',
+    },
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('../pages/ToolboxDashboard.vue'),
     },
     {
       path: '/toolbox',
       name: 'toolbox',
       component: Toolbox,
+      redirect: '/dashboard',
+      children: [
+        {
+          path: 'vless-to-mihomo',
+          name: 'vless-to-mihomo',
+          component: () => import('../pages/VlessToMihomo.vue'),
+        },
+        {
+          path: 'codex',
+          name: 'codex',
+          component: () => import('../pages/Codex.vue'),
+        },
+      ]
     },
     {
-      path: '/toolbox/vless-to-mihomo',
-      name: 'vless-to-mihomo',
-      component: () => import('../pages/VlessToMihomo.vue'),
-    },
-    {
-      path: '/toolbox/codex',
-      name: 'codex',
-      component: () => import('../pages/Codex.vue'),
-    },
-    {
-      path: '/toolbox/osv-scanner',
+      path: '/osv-scanner',
       component: () => import('../pages/osv-scanner/OsvLayout.vue'),
       children: [
         {
@@ -45,7 +53,7 @@ export const router = createRouter({
     },
     {
       path: '/tools/osv-scanner',
-      redirect: '/toolbox/osv-scanner',
+      redirect: '/osv-scanner',
     },
     {
       path: '/:catchAll(.*)',
