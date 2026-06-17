@@ -1,3 +1,5 @@
+import { readJsonResponse } from './http'
+
 export type VlessOutputMode = 'full_config' | 'proxy_only'
 export type VlessTemplateMode = 'minimal' | 'standard' | 'full_rules'
 export type VlessTransitGroupType = 'select' | 'url_test' | 'fallback'
@@ -30,13 +32,6 @@ export interface ConvertVlessRequest {
 
 export interface ConvertVlessResponse {
   yaml: string
-}
-
-export interface ApiErrorResponse {
-  error?: {
-    code?: string
-    message?: string
-  }
 }
 
 export interface VlessToolSettings {
@@ -92,18 +87,7 @@ export async function convertVlessToMihomo(
     body: JSON.stringify(payload),
   })
 
-  if (!response.ok) {
-    let message = '转换失败'
-    try {
-      const data = (await response.json()) as ApiErrorResponse
-      message = data.error?.message || message
-    } catch {
-      message = await response.text()
-    }
-    throw new Error(message)
-  }
-
-  return (await response.json()) as ConvertVlessResponse
+  return await readJsonResponse<ConvertVlessResponse>(response, '转换失败')
 }
 
 export async function getVlessToolSettings(): Promise<VlessToolSettings> {

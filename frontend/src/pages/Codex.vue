@@ -1,17 +1,41 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed, defineAsyncComponent } from 'vue'
-import { Folder, Play, Search, Trash2, Package, Terminal, Box, Wrench, Settings2, Sparkles, CheckCircle2, Cable, FolderSearch, Loader2, Copy } from '@lucide/vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import type { Component } from 'vue'
+import { RouterLink } from 'vue-router'
+import {
+  Box,
+  Cable,
+  CheckCircle2,
+  Circle,
+  Copy,
+  FolderOpen,
+  FolderSearch,
+  History,
+  Layers3,
+  Loader2,
+  Package,
+  Play,
+  RotateCcw,
+  Search,
+  Settings2,
+  Sparkles,
+  Terminal,
+  Trash2,
+  Wrench,
+  XCircle,
+} from '@lucide/vue'
+import ToolShell from '../components/ToolShell.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogClose
 } from '@/components/ui/dialog'
 
 const VlessToMihomo = defineAsyncComponent(() => import('./VlessToMihomo.vue'))
@@ -39,26 +63,66 @@ interface HistoryRecord {
   stderr: string
 }
 
-// 产品化的文案字典映射 (前端美化)
-const SCRIPT_DICT: Record<string, { title: string, desc: string, icon: any }> = {
+interface ScriptMeta {
+  title: string
+  desc: string
+  icon: Component
+  badge: string
+}
+
+const SCRIPT_DICT: Record<string, ScriptMeta> = {
   'bundle:install-to-project': {
     title: 'AI 技能安装向导',
-    desc: '一键为目标项目注入底层框架规范与核心自动化能力 (包含所有子引擎)。',
-    icon: Package
+    desc: '为目标项目注入团队规范与核心自动化能力。',
+    icon: Package,
+    badge: '批量安装',
   },
   '@tool:vless': {
     title: 'VLESS 转 Mihomo',
-    desc: '将 3x-ui VLESS 链接转换为 Clash Party/Mihomo YAML',
-    icon: Cable
-  }
+    desc: '将 3x-ui VLESS 链接转换为 Clash Party/Mihomo YAML。',
+    icon: Cable,
+    badge: '内置工具',
+  },
 }
 
-// 默认兜底映射
-function getScriptMeta(scriptName: string) {
+const projectSkillOptions: Array<{
+  value: string
+  title: string
+  desc: string
+  icon: Component
+}> = [
+  {
+    value: 'general',
+    title: '黄金手册',
+    desc: '通用团队编码规范',
+    icon: CheckCircle2,
+  },
+  {
+    value: 'scm',
+    title: '供应链 SCM',
+    desc: '供应链管理业务模板',
+    icon: Package,
+  },
+  {
+    value: 'scf',
+    title: '金融 SCF',
+    desc: '供应链金融业务模板',
+    icon: Box,
+  },
+  {
+    value: 'b2b',
+    title: '供应链 B2B',
+    desc: 'B2B 交易平台业务模板',
+    icon: Layers3,
+  },
+]
+
+function getScriptMeta(scriptName: string): ScriptMeta {
   return SCRIPT_DICT[scriptName] || {
     title: scriptName,
     desc: '系统级自动化执行脚本。',
-    icon: Wrench
+    icon: Wrench,
+    badge: '本地脚本',
   }
 }
 
@@ -66,6 +130,14 @@ const dir = ref('/Users/ben/work/99_codex')
 const scripts = ref<ScriptInfo[]>([])
 const selectedScript = ref<ScriptInfo | null>(null)
 const bundleSelection = ref<string[]>([])
+const searchQuery = ref('')
+const scriptArgs = ref('')
+const projectDir = ref('')
+const projectSkill = ref('general')
+const isRunning = ref(false)
+const errorMsg = ref('')
+const executionHistory = ref<HistoryRecord[]>([])
+const historySearchQuery = ref('')
 
 watch(selectedScript, (newVal) => {
   if (newVal && newVal.name === 'bundle:install-to-project') {
@@ -74,46 +146,67 @@ watch(selectedScript, (newVal) => {
     bundleSelection.value = []
   }
 })
-const searchQuery = ref('')
 
 const filteredScripts = computed(() => {
   if (!searchQuery.value) return scripts.value
   const lowerQ = searchQuery.value.toLowerCase()
-  return scripts.value.filter(s => {
-    const meta = getScriptMeta(s.name)
-    return s.name.toLowerCase().includes(lowerQ) || meta.title.toLowerCase().includes(lowerQ)
+  return scripts.value.filter((script) => {
+    const meta = getScriptMeta(script.name)
+    return script.name.toLowerCase().includes(lowerQ) || meta.title.toLowerCase().includes(lowerQ)
   })
 })
 
-const filteredLocalScripts = computed(() => {
-  return filteredScripts.value.filter(s => s.path !== 'internal')
-})
+const filteredLocalScripts = computed(() =>
+  filteredScripts.value.filter((script) => script.path !== 'internal'),
+)
 
-const filteredInternalScripts = computed(() => {
-  return filteredScripts.value.filter(s => s.path === 'internal')
-})
-
-const scriptArgs = ref('')
-const projectDir = ref('')
-const projectSkill = ref('general')
-
-const isRunning = ref(false)
-const errorMsg = ref('')
-
-const executionHistory = ref<HistoryRecord[]>([])
-const historySearchQuery = ref('')
+const filteredInternalScripts = computed(() =>
+  filteredScripts.value.filter((script) => script.path === 'internal'),
+)
 
 const filteredHistory = computed(() => {
   if (!historySearchQuery.value) return executionHistory.value
   const lowerQ = historySearchQuery.value.toLowerCase()
-  return executionHistory.value.filter(record => {
+  return executionHistory.value.filter((record) => {
     const meta = getScriptMeta(record.scriptName)
-    return record.scriptName.toLowerCase().includes(lowerQ) ||
-           meta.title.toLowerCase().includes(lowerQ) ||
-           record.args.toLowerCase().includes(lowerQ) ||
-           record.stdout.toLowerCase().includes(lowerQ) ||
-           record.stderr.toLowerCase().includes(lowerQ)
+    return (
+      record.scriptName.toLowerCase().includes(lowerQ) ||
+      meta.title.toLowerCase().includes(lowerQ) ||
+      record.args.toLowerCase().includes(lowerQ) ||
+      record.stdout.toLowerCase().includes(lowerQ) ||
+      record.stderr.toLowerCase().includes(lowerQ)
+    )
   })
+})
+
+const selectedMeta = computed(() =>
+  selectedScript.value ? getScriptMeta(selectedScript.value.name) : null,
+)
+
+const totalTaskCount = computed(() => scripts.value.length)
+const successHistoryCount = computed(() => executionHistory.value.filter((record) => record.success).length)
+const failedHistoryCount = computed(() => executionHistory.value.filter((record) => !record.success).length)
+const latestHistory = computed(() => executionHistory.value[0] ?? null)
+const selectedPathLabel = computed(() => {
+  if (!selectedScript.value) return '未选择任务'
+  if (selectedScript.value.path === 'internal') return '内置工具'
+  if (selectedScript.value.name === 'bundle:install-to-project') return dir.value
+  return selectedScript.value.path.replace(`/${selectedScript.value.name}`, '')
+})
+const runButtonLabel = computed(() => {
+  if (isRunning.value) return '执行中'
+  if (selectedScript.value?.name === 'bundle:install-to-project') return '安装 AI 技能'
+  return '执行任务'
+})
+const runStateLabel = computed(() => {
+  if (isRunning.value) return '运行中'
+  if (!selectedScript.value) return '待选择'
+  return '已就绪'
+})
+const runStateClass = computed(() => {
+  if (isRunning.value) return 'status-pill status-pill--warn'
+  if (selectedScript.value) return 'status-pill status-pill--good'
+  return 'status-pill status-pill--muted'
 })
 
 onMounted(() => {
@@ -121,16 +214,20 @@ onMounted(() => {
   if (savedHistory) {
     try {
       executionHistory.value = JSON.parse(savedHistory)
-    } catch (e) {
-      console.error('历史解析失败', e)
+    } catch (error) {
+      console.error('历史解析失败', error)
     }
   }
-  fetchScripts()
+  void fetchScripts()
 })
 
-watch(executionHistory, (newHistory) => {
-  localStorage.setItem('rusttool:codex:history', JSON.stringify(newHistory))
-}, { deep: true })
+watch(
+  executionHistory,
+  (newHistory) => {
+    localStorage.setItem('rusttool:codex:history', JSON.stringify(newHistory))
+  },
+  { deep: true },
+)
 
 async function pickDirectory(targetRef: 'dir' | 'projectDir') {
   try {
@@ -142,16 +239,16 @@ async function pickDirectory(targetRef: 'dir' | 'projectDir') {
       if (selected && typeof selected === 'string') {
         if (targetRef === 'dir') {
           dir.value = selected
-          fetchScripts()
+          void fetchScripts()
         }
         if (targetRef === 'projectDir') projectDir.value = selected
       }
     } else {
-      alert('目录浏览功能仅在桌面客户端可用，请手动输入路径。')
+      errorMsg.value = '目录浏览功能仅在桌面客户端可用，请手动输入路径。'
     }
-  } catch (err: any) {
-    console.error(err)
-    alert(`无法打开文件夹选择器: ${err.message || String(err)}`)
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught)
+    errorMsg.value = `无法打开文件夹选择器：${message}`
   }
 }
 
@@ -173,14 +270,14 @@ async function fetchScripts() {
       }
     }
 
-    const installScripts = backendScripts.filter(s => s.name.endsWith('install-to-project.sh'))
-    const normalScripts = backendScripts.filter(s => !s.name.endsWith('install-to-project.sh'))
-
+    const installScripts = backendScripts.filter((script) => script.name.endsWith('install-to-project.sh'))
+    const normalScripts = backendScripts.filter((script) => !script.name.endsWith('install-to-project.sh'))
     const merged = [...normalScripts, { name: '@tool:vless', path: 'internal' }]
+
     if (installScripts.length > 0) {
-      merged.push({ 
-        name: 'bundle:install-to-project', 
-        path: installScripts.map(s => s.path).join('|||')
+      merged.push({
+        name: 'bundle:install-to-project',
+        path: installScripts.map((script) => script.path).join('|||'),
       })
     }
 
@@ -190,19 +287,20 @@ async function fetchScripts() {
       return a.name.localeCompare(b.name)
     })
     scripts.value = merged
-  } catch (err: any) {
-    errorMsg.value = err.message
-    scripts.value = []
+  } catch (caught) {
+    errorMsg.value = caught instanceof Error ? caught.message : '获取脚本列表失败'
+    scripts.value = [{ name: '@tool:vless', path: 'internal' }]
   }
 }
 
 function selectScript(script: ScriptInfo) {
   selectedScript.value = script
   scriptArgs.value = ''
+  errorMsg.value = ''
 }
 
 async function rerunHistory(record: HistoryRecord) {
-  const targetScript = scripts.value.find(s => s.name === record.scriptName)
+  const targetScript = scripts.value.find((script) => script.name === record.scriptName)
   if (targetScript) {
     selectedScript.value = targetScript
     if (targetScript.name === 'bundle:install-to-project') {
@@ -212,16 +310,15 @@ async function rerunHistory(record: HistoryRecord) {
     } else {
       scriptArgs.value = record.args
     }
-    
-    // 平滑滚动到顶部，方便用户查看和编辑
-    const mainScroll = document.querySelector('.main-content-scroll')
+
+    const mainScroll = document.querySelector('.codex-main-panel')
     if (mainScroll) {
       mainScroll.scrollTo({ top: 0, behavior: 'smooth' })
     } else {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   } else {
-    alert('未找到对应的脚本文件，可能已被删除或目录已更改。')
+    errorMsg.value = '未找到对应的脚本文件，可能已被删除或目录已更改。'
   }
 }
 
@@ -234,49 +331,48 @@ async function runScript(forceArgs?: string) {
   if (selectedScript.value.name === 'bundle:install-to-project') {
     finalArgs = `${projectDir.value} ${projectSkill.value}`.trim()
   }
-  
+
   if (typeof forceArgs === 'string') {
     finalArgs = forceArgs
   }
 
   try {
     const tauriCore = await import('@tauri-apps/api/core').catch(() => null)
-    let resData: ExecutionResult = { stdout: '', stderr: '', exit_code: 0, success: true }
-
+    const resData: ExecutionResult = { stdout: '', stderr: '', exit_code: 0, success: true }
     const isBundle = selectedScript.value.name === 'bundle:install-to-project'
     const pathsToRun = isBundle ? bundleSelection.value : [selectedScript.value.path]
 
     if (pathsToRun.length === 0) {
-      alert("请至少选择一个技能执行！")
+      errorMsg.value = '请至少选择一个技能执行。'
       return
     }
 
-    for (const p of pathsToRun) {
+    for (const path of pathsToRun) {
       let currentRes: ExecutionResult | null = null
-      
+
       if (isBundle) {
         let engineName = '系统模块'
-        if (p.includes('antigravity/')) engineName = '🤖 Antigravity 核心引擎'
-        else if (p.includes('codex/')) engineName = '📚 Codex 底层规范'
-        resData.stdout += `\n\n✨ [阶段] 开始注入: ${engineName}\n--------------------------------------------------\n`
+        if (path.includes('antigravity/')) engineName = 'Antigravity 核心引擎'
+        else if (path.includes('codex/')) engineName = 'Codex 底层规范'
+        resData.stdout += `\n\n[阶段] 开始注入：${engineName}\n--------------------------------------------------\n`
       }
 
       if (tauriCore && tauriCore.isTauri()) {
         const { invoke } = tauriCore
         currentRes = await invoke<ExecutionResult>('run_workbench_script', {
-          path: p,
-          args: finalArgs
+          path,
+          args: finalArgs,
         })
       } else {
         const res = await fetch('/api/workbench/scripts/execute', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            path: p,
-            args: finalArgs
-          })
+            path,
+            args: finalArgs,
+          }),
         })
         const json = await res.json()
         if (json.success) {
@@ -292,33 +388,28 @@ async function runScript(forceArgs?: string) {
         resData.stderr += currentRes.stderr
         resData.exit_code = currentRes.exit_code
         resData.success = currentRes.success
-        if (!currentRes.success) {
-          break
-        }
+        if (!currentRes.success) break
       }
     }
 
-    if (resData) {
-      executionHistory.value = executionHistory.value.filter(
-        record => !(record.scriptName === selectedScript.value!.name && record.args === finalArgs)
-      )
-
-      executionHistory.value.unshift({
-        id: crypto.randomUUID(),
-        timestamp: Date.now(),
-        scriptName: selectedScript.value.name,
-        args: finalArgs,
-        exit_code: resData.exit_code,
-        success: resData.success,
-        stdout: resData.stdout,
-        stderr: resData.stderr
-      })
-      if (executionHistory.value.length > 50) {
-        executionHistory.value = executionHistory.value.slice(0, 50)
-      }
+    executionHistory.value = executionHistory.value.filter(
+      (record) => !(record.scriptName === selectedScript.value!.name && record.args === finalArgs),
+    )
+    executionHistory.value.unshift({
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      scriptName: selectedScript.value.name,
+      args: finalArgs,
+      exit_code: resData.exit_code,
+      success: resData.success,
+      stdout: resData.stdout,
+      stderr: resData.stderr,
+    })
+    if (executionHistory.value.length > 50) {
+      executionHistory.value = executionHistory.value.slice(0, 50)
     }
-  } catch (err: any) {
-    errorMsg.value = err.message
+  } catch (caught) {
+    errorMsg.value = caught instanceof Error ? caught.message : '执行失败'
   } finally {
     isRunning.value = false
   }
@@ -330,1047 +421,361 @@ function clearHistory() {
 
 function formatTime(timestamp: number) {
   return new Date(timestamp).toLocaleString('zh-CN', {
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   })
+}
+
+function taskCardClass(script: ScriptInfo) {
+  return {
+    'codex-task-card': true,
+    'codex-task-card--active': selectedScript.value?.name === script.name,
+  }
 }
 </script>
 
 <template>
-  <div class="saas-layout">
-    <!-- 左侧：任务中心 -->
-    <aside class="saas-sidebar">
-      <div class="sidebar-header">
-        <h1 class="app-title">工作台</h1>
-        <div class="relative w-full mt-4">
-          <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          <Input v-model="searchQuery" type="text" placeholder="寻找任务或功能..." class="w-full border-0 bg-[var(--bg-card)] focus-visible:ring-1 focus-visible:ring-emerald-500/50" style="padding-left: 2.5rem;" />
+  <ToolShell
+    title="Codex 工作台"
+    description="集中管理本地脚本、内置工具、执行参数和可追溯历史。"
+    eyebrow="自动化"
+    fluid
+  >
+    <div class="codex-workbench">
+      <section class="input-panel codex-status-panel">
+        <div class="codex-status-main">
+          <span class="service-icon">
+            <Terminal class="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <span class="field-label">执行中心</span>
+            <strong>{{ selectedMeta?.title || '选择一个任务开始' }}</strong>
+            <small>{{ selectedPathLabel }}</small>
+          </div>
         </div>
-      </div>
+        <dl class="codex-status-metrics">
+          <div>
+            <dt>{{ totalTaskCount }}</dt>
+            <dd>可用任务</dd>
+          </div>
+          <div>
+            <dt>{{ executionHistory.length }}</dt>
+            <dd>执行记录</dd>
+          </div>
+          <div>
+            <dt>{{ failedHistoryCount }}</dt>
+            <dd>失败记录</dd>
+          </div>
+          <span :class="runStateClass">{{ runStateLabel }}</span>
+        </dl>
+      </section>
 
-      <div class="task-list">
-        <div class="task-lists">
-          <div class="list-group">
-            <div class="list-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-              <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <h3 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-sub); margin: 0;">AI 技能</h3>
-                <span class="badge">{{ filteredLocalScripts.length }}</span>
-              </div>
-              <button class="btn-icon-small" @click="pickDirectory('dir')" title="配置本地技能目录">
-                <FolderSearch class="h-4 w-4 icon-subtle" />
+      <section class="codex-layout">
+        <aside class="input-panel codex-task-panel">
+          <div class="codex-panel-heading">
+            <div>
+              <span class="field-label">任务目录</span>
+              <strong>本地脚本与内置工具</strong>
+            </div>
+            <Button type="button" variant="outline" size="sm" @click="pickDirectory('dir')">
+              <FolderSearch class="mr-2 h-4 w-4" aria-hidden="true" />
+              目录
+            </Button>
+          </div>
+
+          <label class="codex-search-field" for="codex-task-search">
+            <Search class="h-4 w-4" aria-hidden="true" />
+            <Input id="codex-task-search" v-model="searchQuery" type="text" placeholder="搜索任务或脚本" />
+          </label>
+
+          <div class="codex-source-path">
+            <FolderOpen class="h-4 w-4" aria-hidden="true" />
+            <span>{{ dir }}</span>
+          </div>
+
+          <section class="codex-task-group">
+            <div class="codex-task-group-header">
+              <span>AI 技能</span>
+              <span class="status-pill status-pill--muted">{{ filteredLocalScripts.length }}</span>
+            </div>
+            <div v-if="filteredLocalScripts.length" class="codex-task-list">
+              <button
+                v-for="script in filteredLocalScripts"
+                :key="script.name"
+                type="button"
+                :class="taskCardClass(script)"
+                @click="selectScript(script)"
+              >
+                <span class="codex-task-icon">
+                  <component :is="getScriptMeta(script.name).icon" class="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span>
+                  <strong>{{ getScriptMeta(script.name).title }}</strong>
+                  <small>{{ getScriptMeta(script.name).desc }}</small>
+                </span>
               </button>
             </div>
+            <p v-else class="field-hint">没有找到匹配的 AI 技能。</p>
+          </section>
 
-            <div class="script-list">
-              <div 
-                v-for="s in filteredLocalScripts" 
-                :key="s.name"
-                class="task-card"
-                :class="{ active: selectedScript?.name === s.name }"
-                @click="selectScript(s)"
+          <section v-if="filteredInternalScripts.length" class="codex-task-group">
+            <div class="codex-task-group-header">
+              <span>内置工具</span>
+              <span class="status-pill status-pill--muted">{{ filteredInternalScripts.length }}</span>
+            </div>
+            <div class="codex-task-list">
+              <button
+                v-for="script in filteredInternalScripts"
+                :key="script.name"
+                type="button"
+                :class="taskCardClass(script)"
+                @click="selectScript(script)"
               >
-                <div class="task-icon-wrapper" :class="{ active: selectedScript?.name === s.name }">
-                  <component :is="getScriptMeta(s.name).icon" class="h-5 w-5" />
-                </div>
-                <div class="task-info">
-                  <h4>{{ getScriptMeta(s.name).title }}</h4>
-                  <p>{{ getScriptMeta(s.name).desc }}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="list-group" style="margin-top: 1.5rem;" v-if="filteredInternalScripts.length > 0">
-            <div class="list-header" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
-              <h3 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-sub); margin: 0;">内置工具</h3>
-              <span class="badge">{{ filteredInternalScripts.length }}</span>
-            </div>
-
-            <div class="script-list">
-              <div 
-                v-for="s in filteredInternalScripts" 
-                :key="s.name"
-                class="task-card"
-                :class="{ active: selectedScript?.name === s.name }"
-                @click="selectScript(s)"
-              >
-                <div class="task-icon-wrapper" :class="{ active: selectedScript?.name === s.name }">
-                  <component :is="getScriptMeta(s.name).icon" class="h-5 w-5" />
-                </div>
-                <div class="task-info">
-                  <h4>{{ getScriptMeta(s.name).title }}</h4>
-                  <p>{{ getScriptMeta(s.name).desc }}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="filteredLocalScripts.length === 0 && filteredInternalScripts.length === 0" class="empty-list">
-          没有找到匹配的任务
-        </div>
-      </div>
-    </aside>
-
-    <!-- 右侧：操作区 -->
-    <main class="saas-main">
-      <div v-if="selectedScript && selectedScript.name === '@tool:vless'" style="flex: 1; display: flex; flex-direction: column; overflow-y: auto;">
-        <VlessToMihomo />
-      </div>
-
-      <div v-else class="main-content-scroll">
-        
-        <!-- 空状态 (Onboarding) -->
-        <div v-if="!selectedScript" class="onboarding-state">
-          <div class="hero-icon-new">
-            <div class="icon-glow"></div>
-            <Sparkles class="h-10 w-10 text-emerald-400 relative z-10" />
-          </div>
-          <h2 class="bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">智能工作台</h2>
-          <p class="onboarding-desc">
-            选择左侧任务卡片，即可使用 AI 技能自动化执行任务，或使用内置工具进行管理配置。
-          </p>
-          <div class="features-grid-new">
-            <div class="feature-card-new">
-              <div class="feature-icon-new"><Terminal class="h-5 w-5 text-emerald-400" /></div>
-              <div class="feature-text-new">
-                <h3>AI 技能驱动</h3>
-                <p>挂载本地脚本，扩展核心自动化能力</p>
-              </div>
-            </div>
-            <div class="feature-card-new">
-              <div class="feature-icon-new"><Wrench class="h-5 w-5 text-emerald-400" /></div>
-              <div class="feature-text-new">
-                <h3>开箱即用工具</h3>
-                <p>集成常用网络代理与系统配置模块</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 任务操作台 -->
-        <div v-else class="task-workspace">
-          
-          <!-- 左半区：配置表单 -->
-          <div class="workspace-left">
-            <div class="workspace-header">
-              <h2>{{ getScriptMeta(selectedScript.name).title }}</h2>
-              <div class="script-badges" style="display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start;">
-                <span 
-                  v-if="selectedScript.path !== 'internal'" 
-                  class="script-badge" 
-                  style="opacity: 0.7; font-family: monospace; cursor: pointer; transition: all 0.2s;"
-                  title="点击重新选择技能目录"
-                  @click="pickDirectory('dir')"
-                  onmouseover="this.style.opacity='1'; this.style.borderColor='var(--color-primary)'"
-                  onmouseout="this.style.opacity='0.7'; this.style.borderColor='var(--color-border)'"
-                >
-                  <FolderSearch class="h-3 w-3 inline-block mr-1" style="vertical-align: text-bottom;" />
-                  {{ selectedScript.name === 'bundle:install-to-project' ? dir : selectedScript.path.replace('/' + selectedScript.name, '') }}
+                <span class="codex-task-icon">
+                  <component :is="getScriptMeta(script.name).icon" class="h-4 w-4" aria-hidden="true" />
                 </span>
-
-                <div v-if="selectedScript.name === 'bundle:install-to-project'" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 0.75rem;">
-                  <label v-for="p in selectedScript.path.split('|||')" :key="p" class="script-badge" style="display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; user-select: none; font-family: monospace;">
-                    <input type="checkbox" :value="p" v-model="bundleSelection" style="accent-color: var(--color-primary); width: 14px; height: 14px; margin: 0; cursor: pointer;" />
-                    {{ p.replace(dir + '/', '') }}
-                  </label>
-                </div>
-                <span v-else class="script-badge">{{ selectedScript.name }}</span>
-              </div>
+                <span>
+                  <strong>{{ getScriptMeta(script.name).title }}</strong>
+                  <small>{{ getScriptMeta(script.name).desc }}</small>
+                </span>
+              </button>
             </div>
+          </section>
+        </aside>
 
-            <div class="form-container">
-            <template v-if="selectedScript.name === 'bundle:install-to-project'">
-              <div class="form-field">
-                <label>第一步：配置目标工作空间</label>
-                <div class="flex items-center gap-2">
-                  <Input v-model="projectDir" type="text" placeholder="例如：/Users/ben/my-new-project" class="flex-1" />
-                  <Button variant="secondary" @click="pickDirectory('projectDir')">选择目录</Button>
-                </div>
-                <span class="field-hint">指定一个本地文件夹作为目标注入的工作空间位置</span>
-              </div>
-              
-              <div class="form-field">
-                <label>第二步：项目/目录类型</label>
-                <div class="skill-cards">
-                  <div 
-                    class="skill-card" 
-                    :class="{ active: projectSkill === 'general' }"
-                    @click="projectSkill = 'general'"
-                  >
-                    <span class="skill-icon">🟢</span>
-                    <div class="skill-info">
-                      <div class="skill-title">黄金手册</div>
-                      <div class="skill-desc">通用团队编码规范</div>
-                    </div>
-                  </div>
-
-                  <div 
-                    class="skill-card" 
-                    :class="{ active: projectSkill === 'scm' }"
-                    @click="projectSkill = 'scm'"
-                  >
-                    <span class="skill-icon">📦</span>
-                    <div class="skill-info">
-                      <div class="skill-title">供应链 (SCM)</div>
-                      <div class="skill-desc">供应链管理业务模板</div>
-                    </div>
-                  </div>
-
-                  <div 
-                    class="skill-card" 
-                    :class="{ active: projectSkill === 'scf' }"
-                    @click="projectSkill = 'scf'"
-                  >
-                    <span class="skill-icon">💰</span>
-                    <div class="skill-info">
-                      <div class="skill-title">金融 (SCF)</div>
-                      <div class="skill-desc">供应链金融业务模板</div>
-                    </div>
-                  </div>
-
-                  <div 
-                    class="skill-card" 
-                    :class="{ active: projectSkill === 'b2b' }"
-                    @click="projectSkill = 'b2b'"
-                  >
-                    <span class="skill-icon">🤝</span>
-                    <div class="skill-info">
-                      <div class="skill-title">供应链（B2B）</div>
-                      <div class="skill-desc">B2B 交易平台业务模板</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-            
-            <template v-else>
-              <div class="form-field">
-                <label>任务执行参数（可选）</label>
-                <Input v-model="scriptArgs" type="text" placeholder="输入参数，以空格分隔..." class="w-full" />
-              </div>
-            </template>
-
-            <div class="mt-6 flex justify-end">
-              <Button size="lg" :disabled="isRunning" @click="() => runScript()" class="w-auto px-8 font-semibold">
-                <Play v-if="!isRunning" class="h-5 w-5 mr-2" aria-hidden="true" />
-                <Loader2 v-else class="h-5 w-5 mr-2 animate-spin" aria-hidden="true" />
-                {{ isRunning ? '正在处理中...' : (selectedScript.name === 'bundle:install-to-project' ? '立刻安装 AI 技能' : '立刻开始执行') }}
-              </Button>
-            </div>
-            </div>
-          </div>
-
-          <!-- 右半区：历史记录 -->
-          <div class="workspace-right">
-            <div class="workspace-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <main class="codex-main-panel">
+          <template v-if="selectedScript && selectedScript.name === '@tool:vless'">
+            <section class="input-panel codex-embedded-tool-note">
               <div>
-                <h2>执行记录</h2>
-                <p class="script-badge">History / Logs</p>
+                <span class="field-label">内置工具</span>
+                <strong>VLESS 转 Mihomo 已有独立工作台</strong>
+                <small>你可以在这里继续使用，也可以打开独立工具页获得完整页面空间。</small>
               </div>
-              <Dialog v-if="executionHistory.length > 0">
-                <DialogTrigger asChild>
-                  <Button variant="ghost" class="text-destructive hover:text-destructive hover:bg-destructive/10" size="sm">清空</Button>
-                </DialogTrigger>
-                <DialogContent class="sm:max-w-md shadow-2xl shadow-black">
-                  <DialogHeader>
-                    <DialogTitle>确认清空执行记录？</DialogTitle>
-                    <DialogDescription>
-                      此操作将永久删除所有执行历史记录。无法撤销。
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter class="sm:justify-end gap-2 sm:space-x-2 mt-4">
-                    <DialogClose asChild>
-                      <Button variant="outline">取消</Button>
-                    </DialogClose>
-                    <DialogClose asChild>
-                      <Button variant="destructive" @click="clearHistory">确认清空</Button>
-                    </DialogClose>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
+              <RouterLink class="secondary-button" to="/toolbox/vless-to-mihomo">打开独立工具页</RouterLink>
+            </section>
+            <VlessToMihomo />
+          </template>
 
-            <div class="form-container history-container">
-              <template v-if="executionHistory.length > 0">
-
-              <div class="relative w-full mb-4">
-                <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <Input v-model="historySearchQuery" type="text" placeholder="搜索参数、输出或脚本..." class="w-full border-0 bg-[var(--bg-card)] focus-visible:ring-1 focus-visible:ring-emerald-500/50" style="padding-left: 2.5rem;" />
+          <template v-else-if="!selectedScript">
+            <section class="input-panel codex-empty-state">
+              <span class="service-icon">
+                <Sparkles class="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <span class="field-label">待选择</span>
+                <h3>先选任务，再调参数，最后执行</h3>
+                <p>左侧是可执行能力目录；右侧会根据任务类型切换参数表单，并保留每一次执行记录。</p>
               </div>
+              <div class="codex-empty-grid">
+                <span>
+                  <Terminal class="h-4 w-4" aria-hidden="true" />
+                  本地脚本
+                </span>
+                <span>
+                  <History class="h-4 w-4" aria-hidden="true" />
+                  历史追溯
+                </span>
+                <span>
+                  <Settings2 class="h-4 w-4" aria-hidden="true" />
+                  参数化执行
+                </span>
+              </div>
+            </section>
+          </template>
 
-              <div class="feed-list">
-                <div v-if="filteredHistory.length === 0" class="empty-list">
-                  没有找到匹配的记录
+          <template v-else>
+            <section class="input-panel codex-run-panel">
+              <div class="codex-panel-heading">
+                <div>
+                  <span class="field-label">任务配置</span>
+                  <strong>{{ selectedMeta?.title }}</strong>
+                  <small>{{ selectedMeta?.desc }}</small>
                 </div>
-                
-                <div v-for="record in filteredHistory" :key="record.id" class="feed-item">
-                  <div class="feed-item-top">
-                    <div class="feed-info">
-                      <span class="status-dot" :class="record.success ? 'bg-green' : 'bg-red'"></span>
-                      <span class="script-tag">{{ getScriptMeta(record.scriptName).title }}</span>
-                      <span class="time">{{ formatTime(record.timestamp) }}</span>
-                    </div>
-                    <div class="shrink-0 mt-1 sm:mt-0">
-                      <Button variant="secondary" size="sm" @click="rerunHistory(record)" :disabled="isRunning">
-                        <Copy class="h-3 w-3 mr-1" aria-hidden="true" /> 复用技能
+                <span :class="runStateClass">{{ runStateLabel }}</span>
+              </div>
+
+              <div class="codex-script-meta">
+                <span>
+                  <Settings2 class="h-4 w-4" aria-hidden="true" />
+                  {{ selectedMeta?.badge }}
+                </span>
+                <button v-if="selectedScript.path !== 'internal'" type="button" @click="pickDirectory('dir')">
+                  <FolderSearch class="h-4 w-4" aria-hidden="true" />
+                  {{ selectedPathLabel }}
+                </button>
+              </div>
+
+              <template v-if="selectedScript.name === 'bundle:install-to-project'">
+                <section class="config-section">
+                  <label class="field-control" for="codex-project-dir">
+                    <span class="field-label">目标工作空间</span>
+                    <div class="codex-inline-control">
+                      <Input
+                        id="codex-project-dir"
+                        v-model="projectDir"
+                        type="text"
+                        placeholder="/Users/ben/my-new-project"
+                      />
+                      <Button type="button" variant="outline" @click="pickDirectory('projectDir')">
+                        选择目录
                       </Button>
                     </div>
-                  </div>
-                  
-                  <div class="feed-args" v-if="record.args">
-                    <span class="shrink-0">参数：</span><code class="break-all">{{ record.args }}</code>
-                  </div>
+                    <small class="field-hint">技能会写入这个项目或目录，请先确认路径。</small>
+                  </label>
+                </section>
 
-                  <!-- 终端输出块 (折叠感) -->
-                  <div class="terminal-block" v-if="record.stdout || record.stderr">
-                    <pre v-if="record.stdout" class="stdout">{{ record.stdout }}</pre>
-                    <pre v-if="record.stderr" class="stderr">{{ record.stderr }}</pre>
+                <section class="config-section">
+                  <div class="codex-panel-heading">
+                    <div>
+                      <span class="field-label">项目类型</span>
+                      <strong>选择注入的规范模板</strong>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </template>
-            <template v-else>
-                <div class="empty-list" style="padding: 4rem 0; text-align: center; color: var(--color-text-muted);">
-                  <Box class="h-8 w-8 opacity-50" style="margin: 0 auto 0.5rem auto;" />
-                  <p>暂无执行记录</p>
-                </div>
+                  <div class="codex-skill-grid">
+                    <button
+                      v-for="option in projectSkillOptions"
+                      :key="option.value"
+                      type="button"
+                      class="codex-skill-card"
+                      :class="{ 'codex-skill-card--active': projectSkill === option.value }"
+                      @click="projectSkill = option.value"
+                    >
+                      <component :is="option.icon" class="h-4 w-4" aria-hidden="true" />
+                      <span>
+                        <strong>{{ option.title }}</strong>
+                        <small>{{ option.desc }}</small>
+                      </span>
+                    </button>
+                  </div>
+                </section>
+
+                <section class="config-section">
+                  <div class="codex-panel-heading">
+                    <div>
+                      <span class="field-label">安装模块</span>
+                      <strong>将要执行的技能脚本</strong>
+                    </div>
+                    <span class="status-pill status-pill--muted">{{ bundleSelection.length }}</span>
+                  </div>
+                  <div class="codex-bundle-list">
+                    <label
+                      v-for="path in selectedScript.path.split('|||')"
+                      :key="path"
+                      class="codex-bundle-option"
+                    >
+                      <input v-model="bundleSelection" type="checkbox" :value="path" />
+                      <span>{{ path.replace(`${dir}/`, '') }}</span>
+                    </label>
+                  </div>
+                </section>
               </template>
-            </div>
-          </div>
-          
-        </div>
-      </div>
-    </main>
-  </div>
+
+              <template v-else>
+                <section class="config-section">
+                  <label class="field-control" for="codex-script-args">
+                    <span class="field-label">执行参数</span>
+                    <Input
+                      id="codex-script-args"
+                      v-model="scriptArgs"
+                      type="text"
+                      placeholder="按脚本约定输入参数，以空格分隔"
+                    />
+                    <small class="field-hint">执行前会保留参数到历史记录，方便复用。</small>
+                  </label>
+                </section>
+              </template>
+
+              <div class="codex-run-actions">
+                <Button size="lg" type="button" :disabled="isRunning" @click="() => runScript()">
+                  <Loader2 v-if="isRunning" class="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+                  <Play v-else class="mr-2 h-5 w-5" aria-hidden="true" />
+                  {{ runButtonLabel }}
+                </Button>
+              </div>
+
+              <p v-if="errorMsg" class="error-message">{{ errorMsg }}</p>
+            </section>
+
+            <section class="input-panel codex-history-panel">
+              <div class="codex-panel-heading">
+                <div>
+                  <span class="field-label">执行记录</span>
+                  <strong>{{ latestHistory ? getScriptMeta(latestHistory.scriptName).title : '暂无记录' }}</strong>
+                  <small>{{ successHistoryCount }} 成功 / {{ failedHistoryCount }} 失败</small>
+                </div>
+                <Dialog v-if="executionHistory.length > 0">
+                  <DialogTrigger as-child>
+                    <Button type="button" variant="ghost" size="sm">
+                      <Trash2 class="mr-2 h-4 w-4" aria-hidden="true" />
+                      清空
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent class="sm:max-w-md shadow-2xl shadow-black">
+                    <DialogHeader>
+                      <DialogTitle>确认清空执行记录？</DialogTitle>
+                      <DialogDescription>此操作将永久删除所有执行历史记录，无法撤销。</DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter class="sm:justify-end gap-2 sm:space-x-2 mt-4">
+                      <DialogClose as-child>
+                        <Button variant="outline">取消</Button>
+                      </DialogClose>
+                      <DialogClose as-child>
+                        <Button variant="destructive" @click="clearHistory">确认清空</Button>
+                      </DialogClose>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              <label v-if="executionHistory.length" class="codex-search-field" for="codex-history-search">
+                <Search class="h-4 w-4" aria-hidden="true" />
+                <Input
+                  id="codex-history-search"
+                  v-model="historySearchQuery"
+                  type="text"
+                  placeholder="搜索参数、输出或脚本"
+                />
+              </label>
+
+              <div v-if="executionHistory.length" class="codex-history-list">
+                <article v-if="filteredHistory.length === 0" class="codex-history-empty">
+                  没有找到匹配的记录
+                </article>
+                <article v-for="record in filteredHistory" :key="record.id" class="codex-history-row">
+                  <header>
+                    <span :class="record.success ? 'status-pill status-pill--good' : 'status-pill status-pill--danger'">
+                      <CheckCircle2 v-if="record.success" class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                      <XCircle v-else class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                      {{ record.success ? '成功' : '失败' }}
+                    </span>
+                    <strong>{{ getScriptMeta(record.scriptName).title }}</strong>
+                    <small>{{ formatTime(record.timestamp) }} · exit {{ record.exit_code }}</small>
+                    <Button type="button" variant="outline" size="sm" :disabled="isRunning" @click="rerunHistory(record)">
+                      <Copy class="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+                      复用
+                    </Button>
+                  </header>
+                  <div v-if="record.args" class="codex-history-args">
+                    <span>参数</span>
+                    <code>{{ record.args }}</code>
+                  </div>
+                  <div v-if="record.stdout || record.stderr" class="codex-terminal-block">
+                    <pre v-if="record.stdout">{{ record.stdout }}</pre>
+                    <pre v-if="record.stderr" class="codex-terminal-error">{{ record.stderr }}</pre>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="codex-history-empty">
+                <Circle class="h-6 w-6" aria-hidden="true" />
+                <span>暂无执行记录</span>
+              </div>
+            </section>
+          </template>
+        </main>
+      </section>
+    </div>
+  </ToolShell>
 </template>
-
-<style scoped>
-/* 
-  Modern SaaS Aesthetic integrated with Global Cyberpunk Dark Theme
-*/
-
-* {
-  --shadow-card: var(--shadow-card, 0 8px 32px 0 rgba(0, 0, 0, 0.6));
-  --shadow-input: inset 0 2px 4px rgba(0, 0, 0, 0.2);
-  
-  --radius-lg: 16px;
-  --radius-md: 12px;
-  --radius-sm: 8px;
-}
-
-.saas-layout {
-  display: flex;
-  height: calc(100vh - 3rem);
-  background: var(--color-bg-main);
-  color: var(--color-text-main);
-  overflow: hidden;
-  transition: all 0.3s ease;
-}
-
-/* --- Sidebar --- */
-.saas-sidebar {
-  width: 280px;
-  background: var(--color-bg-sidebar);
-  border-right: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-}
-
-.sidebar-header {
-  padding: 1.5rem 0.75rem 1rem 0.75rem;
-}
-
-.app-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin: 0 0 1rem 0;
-  color: var(--color-text-main);
-  letter-spacing: -0.02em;
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
-  box-shadow: var(--shadow-input);
-  transition: border-color 0.2s;
-}
-
-.search-bar:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-}
-
-.search-bar input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  margin-left: 0.5rem;
-  font-size: 0.875rem;
-  color: var(--color-text-main);
-}
-
-.search-bar input::placeholder {
-  color: var(--color-text-muted);
-  opacity: 0.8;
-}
-
-.btn-icon-small {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  transition: all 0.2s ease;
-}
-
-.btn-icon-small:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary);
-}
-
-.icon-subtle {
-  color: var(--color-text-muted);
-}
-
-.task-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 0.75rem 1rem 0.75rem;
-}
-
-.list-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-sub);
-  margin: 0.5rem 0.5rem 0.75rem 0.5rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.badge {
-  background: var(--color-border);
-  padding: 0.1rem 0.5rem;
-  border-radius: 12px;
-  font-size: 0.7rem;
-  color: var(--color-text-sub);
-}
-
-.task-card {
-  display: flex;
-  align-items: flex-start;
-  padding: 1rem;
-  margin-bottom: 0.5rem;
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.task-card:hover {
-  background: var(--color-surface-hover);
-  border-color: var(--color-border);
-}
-
-.task-card.active {
-  background: var(--color-surface);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
-}
-
-.task-icon-wrapper {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  padding: 0.5rem;
-  border-radius: 10px;
-  color: var(--color-text-sub);
-  margin-right: 1rem;
-  transition: all 0.2s;
-}
-
-.task-icon-wrapper.active {
-  background: rgba(16, 185, 129, 0.05);
-  border-color: rgba(16, 185, 129, 0.2);
-  color: var(--color-primary);
-}
-
-.task-info h4 {
-  margin: 0 0 0.25rem 0;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--color-text-main);
-}
-
-.task-info p {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--color-text-sub);
-  line-height: 1.4;
-}
-
-.empty-list {
-  padding: 2rem;
-  text-align: center;
-  color: var(--color-text-muted);
-  font-size: 0.875rem;
-}
-
-.sidebar-footer {
-  padding: 1rem;
-  border-top: 1px solid var(--color-border);
-}
-
-.settings-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem;
-  background: transparent;
-  border: 1px dashed var(--color-border-hover);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-sub);
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.settings-btn:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text-main);
-  border-style: solid;
-}
-
-/* --- Main Content --- */
-.saas-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-
-.main-content-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 3rem 4rem;
-}
-
-/* Onboarding State */
-.onboarding-state {
-  max-width: 560px;
-  margin: 6rem auto 0 auto;
-  text-align: center;
-}
-
-.hero-icon-new {
-  position: relative;
-  width: 96px;
-  height: 96px;
-  margin: 0 auto 2rem auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 32px;
-  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
-}
-
-.icon-glow {
-  position: absolute;
-  inset: -1px;
-  border-radius: 32px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.4), transparent);
-  opacity: 0.5;
-  filter: blur(8px);
-  z-index: 0;
-}
-
-.onboarding-state h2 {
-  font-size: 2.25rem;
-  font-weight: 800;
-  margin-bottom: 1rem;
-  letter-spacing: -0.03em;
-}
-
-.onboarding-desc {
-  font-size: 1.0625rem;
-  color: var(--color-text-sub);
-  line-height: 1.6;
-  margin-bottom: 3rem;
-  max-width: 420px;
-  margin-inline: auto;
-}
-
-.features-grid-new {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
-}
-
-.feature-card-new {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  padding: 1.5rem;
-  border-radius: var(--radius-lg);
-  text-align: left;
-  transition: all 0.2s ease;
-}
-
-.feature-card-new:hover {
-  border-color: var(--color-primary);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px -8px rgba(16, 185, 129, 0.15);
-}
-
-.feature-icon-new {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: rgba(16, 185, 129, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.feature-text-new h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--color-text-main);
-  margin-bottom: 0.25rem;
-}
-
-.feature-text-new p {
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-  line-height: 1.4;
-}
-
-/* Task Workspace (Form Area) */
-.task-workspace {
-  width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: minmax(400px, 3fr) minmax(300px, 2fr);
-  gap: 3rem;
-  align-items: start;
-}
-
-@media (max-width: 1100px) {
-  .task-workspace {
-    grid-template-columns: 1fr;
-    gap: 2rem;
-  }
-}
-
-.workspace-left {
-  display: flex;
-  flex-direction: column;
-  position: sticky;
-  top: 0;
-}
-
-.workspace-right {
-  display: flex;
-  flex-direction: column;
-}
-
-.workspace-header {
-  margin-bottom: 2.5rem;
-}
-
-.workspace-header h2 {
-  font-size: 2rem;
-  font-weight: 700;
-  margin: 0 0 0.5rem 0;
-  letter-spacing: -0.02em;
-}
-
-.script-badge {
-  display: inline-block;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
-  padding: 0.25rem 0.75rem;
-  border-radius: 16px;
-  font-family: ui-monospace, monospace;
-  font-size: 0.75rem;
-  color: var(--color-text-sub);
-  margin: 0;
-}
-
-.form-container {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 2rem;
-  box-shadow: var(--shadow-card);
-  margin-bottom: 3rem;
-}
-
-.feed-item {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 1.25rem;
-  background: var(--color-bg-main);
-  transition: all 0.2s;
-}
-
-.history-container {
-  padding: 1.5rem;
-}
-
-.history-container .feed-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.form-field {
-  margin-bottom: 1.75rem;
-}
-
-.form-field label {
-  display: block;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-  color: var(--color-text-main);
-}
-
-.field-hint {
-  display: block;
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-  margin-top: 0.5rem;
-}
-
-.input-with-button {
-  display: flex;
-  gap: 0.5rem;
-}
-
-input {
-  background: var(--color-bg-main);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-main);
-  padding: 0.75rem 1rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9375rem;
-  outline: none;
-  transition: all 0.2s;
-  box-shadow: var(--shadow-input);
-}
-
-.input-with-button input {
-  flex: 1;
-}
-
-.full-width {
-  width: 100%;
-}
-
-input:focus, select:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-}
-
-.btn-outline {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-hover);
-  color: var(--color-text-main);
-  padding: 0 1rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.btn-outline:hover {
-  background: var(--color-surface-hover);
-}
-
-.skill-cards {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1rem;
-}
-
-.skill-card {
-  background: var(--color-bg-main);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 1rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.skill-card:hover {
-  background: var(--color-surface-hover);
-  border-color: var(--color-border-hover);
-}
-
-.skill-card.active {
-  background: rgba(16, 185, 129, 0.08);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
-}
-
-.skill-icon {
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-.skill-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.skill-title {
-  color: var(--color-text-main);
-  font-weight: 600;
-  font-size: 0.9375rem;
-}
-
-.skill-desc {
-  color: var(--color-text-sub);
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
-.action-row {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 1.5rem;
-}
-
-.btn-primary-action {
-  background: var(--color-primary);
-  color: #050a0f;
-  border: none;
-  padding: 0.625rem 1.5rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9375rem;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-}
-
-.btn-primary-action:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  transform: translateY(-1px);
-}
-
-.btn-primary-action:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.history-search {
-  display: flex;
-  align-items: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
-  box-shadow: var(--shadow-input);
-  margin-bottom: 1.25rem;
-  transition: border-color 0.2s;
-}
-
-.history-search:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-}
-
-.history-search input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  margin-left: 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--color-text-main);
-  padding: 0;
-  box-shadow: none;
-}
-
-.history-search input::placeholder {
-  color: var(--color-text-muted);
-}
-
-.spin-pulse {
-  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* --- History Feed --- */
-.history-feed {
-  margin-top: 2rem;
-}
-
-.feed-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.feed-header h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.btn-text {
-  background: transparent;
-  border: none;
-  font-size: 0.875rem;
-  cursor: pointer;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-
-.text-red { color: #ef4444; }
-.text-red:hover { background: rgba(239, 68, 68, 0.1); }
-
-.feed-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.feed-item {
-  border-left: 2px solid var(--color-border);
-  padding-left: 1rem;
-  position: relative;
-}
-
-.feed-item::before {
-  content: '';
-  position: absolute;
-  left: -5px;
-  top: 8px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-border-hover);
-}
-
-.feed-item-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.feed-info {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.bg-green { background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
-.bg-red { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
-
-.script-tag {
-  font-weight: 600;
-  font-size: 0.875rem;
-  white-space: nowrap;
-}
-
-.time {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
-
-.btn-outline-small {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-sub);
-  padding: 0.25rem 0.75rem;
-  border-radius: 99px;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-outline-small:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: rgba(16, 185, 129, 0.1);
-}
-
-.feed-args {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  font-size: 0.8125rem;
-  color: var(--color-text-sub);
-  margin-bottom: 0.75rem;
-}
-
-.feed-args code {
-  background: var(--color-surface-hover);
-  padding: 0.125rem 0.375rem;
-  border-radius: 4px;
-  font-family: ui-monospace, monospace;
-}
-
-.terminal-block {
-  background: var(--color-terminal-bg);
-  color: var(--color-terminal-text);
-  padding: 1rem;
-  border-radius: var(--radius-sm);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  max-height: 250px;
-  overflow-y: auto;
-}
-
-.terminal-block pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-.stdout { color: #e2e8f0; }
-.stderr { color: #fca5a5; margin-top: 0.5rem; }
-
-</style>

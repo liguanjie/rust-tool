@@ -86,6 +86,27 @@ describe('osvScanner API adapter', () => {
     await expect(checkOsvInstalled()).rejects.toThrow('项目路径无效')
   })
 
+  it('uses plain text when an error response is not JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('backend unavailable', { status: 503 })),
+    )
+
+    await expect(checkOsvInstalled()).rejects.toThrow('backend unavailable')
+  })
+
+  it('does not surface HTML fallback pages as API errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('<!doctype html><html><body>Not found</body></html>', { status: 404 }),
+      ),
+    )
+
+    await expect(checkOsvInstalled()).rejects.toThrow('OSV 操作失败')
+  })
+
   it('calls the Web diagnose endpoint with scan options', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(

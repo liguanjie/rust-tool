@@ -1,53 +1,58 @@
 <script setup lang="ts">
-import { Cable, ChevronRight, Shield, Terminal } from '@lucide/vue'
+import { ChevronRight } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import ToolShell from '../components/ToolShell.vue'
+import { useToolsStore } from '../stores/tools'
+
+const toolsStore = useToolsStore()
 </script>
 
 <template>
-  <ToolShell title="工具箱" description="选择要使用的本地工具。" eyebrow="工具箱">
-    <section class="api-card-grid">
-      <RouterLink class="api-entry-card" to="/toolbox/vless-to-mihomo">
-        <span class="service-icon">
-          <Cable class="h-5 w-5" aria-hidden="true" />
-        </span>
-        <span class="api-entry-copy">
-          <strong>VLESS 转 Mihomo</strong>
-          <small>转换 3x-ui VLESS 链接为 Clash Party/Mihomo YAML</small>
-        </span>
-        <span class="api-entry-meta">
-          <span class="status-pill status-pill--muted">本地转换</span>
-          <small>支持完整配置与节点片段</small>
-        </span>
-        <ChevronRight class="h-5 w-5 api-entry-arrow" aria-hidden="true" />
-      </RouterLink>
+  <ToolShell
+    title="RustTool"
+    description="面向本地开发、安全审计和自动化运维的桌面工具站。"
+    eyebrow="工作台"
+    fluid
+  >
+    <section class="toolbox-overview">
+      <div class="toolbox-overview-main">
+        <span class="eyebrow">工具矩阵</span>
+        <h3>把高频本地任务收在一个工作台里</h3>
+      </div>
+      <dl class="toolbox-overview-stats">
+        <div>
+          <dt>{{ toolsStore.tools.length }}</dt>
+          <dd>工具</dd>
+        </div>
+        <div>
+          <dt>0</dt>
+          <dd>云依赖</dd>
+        </div>
+        <div>
+          <dt>Web/Tauri</dt>
+          <dd>同源界面</dd>
+        </div>
+      </dl>
+    </section>
 
-      <RouterLink class="api-entry-card" to="/toolbox/codex">
-        <span class="service-icon">
-          <Terminal class="h-5 w-5" aria-hidden="true" />
+    <section class="toolbox-card-grid" aria-label="工具入口">
+      <RouterLink
+        v-for="tool in toolsStore.tools"
+        :key="tool.id"
+        class="toolbox-card"
+        :class="`toolbox-card--${tool.accent}`"
+        :to="tool.path"
+      >
+        <span class="service-icon toolbox-card-icon">
+          <component :is="tool.icon" class="h-5 w-5" aria-hidden="true" />
         </span>
-        <span class="api-entry-copy">
-          <strong>Codex 管理</strong>
-          <small>管理并运行 Codex 本地自动化脚本</small>
+        <span class="toolbox-card-copy">
+          <span class="status-pill status-pill--muted">{{ tool.badge }}</span>
+          <strong>{{ tool.name }}</strong>
+          <small>{{ tool.summary }}</small>
         </span>
-        <span class="api-entry-meta">
-          <span class="status-pill status-pill--muted">本地工具</span>
-          <small>支持参数输入与执行记录</small>
-        </span>
-        <ChevronRight class="h-5 w-5 api-entry-arrow" aria-hidden="true" />
-      </RouterLink>
-
-      <RouterLink class="api-entry-card" to="/toolbox/osv-scanner">
-        <span class="service-icon">
-          <Shield class="h-5 w-5" aria-hidden="true" />
-        </span>
-        <span class="api-entry-copy">
-          <strong>OSV 漏洞管理</strong>
-          <small>预览命令、扫描依赖漏洞并导出 JSON/HTML 报告</small>
-        </span>
-        <span class="api-entry-meta">
-          <span class="status-pill status-pill--muted">安全扫描</span>
-          <small>支持命令审计与忽略规则</small>
+        <span class="toolbox-card-signals">
+          <small v-for="signal in tool.signals" :key="signal">{{ signal }}</small>
         </span>
         <ChevronRight class="h-5 w-5 api-entry-arrow" aria-hidden="true" />
       </RouterLink>

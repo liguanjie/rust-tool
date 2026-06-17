@@ -1,14 +1,9 @@
+import { readJsonResponse } from './http'
+
 export type OsvCommandKind = 'scan' | 'export' | 'fix'
 export type OsvCommandStatus = 'succeeded' | 'failed'
 export type OsvReportFormat = 'json' | 'html'
 export type OsvSeverity = 'critical' | 'high' | 'medium' | 'low' | 'unknown'
-
-export interface ApiErrorResponse {
-  error?: {
-    code?: string
-    message?: string
-  }
-}
 
 export interface OsvInstallStatus {
   installed: boolean
@@ -337,17 +332,10 @@ async function fetchJson<T>(url: string, body?: unknown): Promise<T> {
   })
 
   if (!response.ok) {
-    let message = 'OSV 操作失败'
-    try {
-      const data = (await response.json()) as ApiErrorResponse
-      message = data.error?.message || message
-    } catch {
-      message = await response.text()
-    }
-    throw new Error(message)
+    return await readJsonResponse<T>(response, 'OSV 操作失败')
   }
 
-  return (await response.json()) as T
+  return await readJsonResponse<T>(response, 'OSV 操作失败')
 }
 
 function normalizeSettings(settings: Partial<OsvScannerSettings>): OsvScannerSettings {

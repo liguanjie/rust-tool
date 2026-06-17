@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import { Moon, PanelLeftClose, PanelLeftOpen } from '@lucide/vue'
 import { useToolsStore } from '../stores/tools'
 import { useThemeStore } from '../stores/theme'
 
 const toolsStore = useToolsStore()
 const themeStore = useThemeStore()
+const route = useRoute()
+
+const activeTool = computed(() =>
+  toolsStore.tools.find((tool) => route.path === tool.path || route.path.startsWith(`${tool.path}/`)),
+)
 </script>
 
 <template>
@@ -34,7 +40,12 @@ const themeStore = useThemeStore()
       </button>
     </div>
 
-    <nav class="mt-8 flex-1 grid gap-5 content-start" aria-label="工具导航">
+    <div v-show="!themeStore.isSidebarCollapsed" class="sidebar-context">
+      <span>当前区域</span>
+      <strong>{{ activeTool?.name || '工具箱' }}</strong>
+    </div>
+
+    <nav class="mt-5 flex-1 grid gap-5 content-start" aria-label="工具导航">
       <section v-for="group in toolsStore.groups" :key="group.id" class="nav-group">
         <h2 v-show="!themeStore.isSidebarCollapsed">{{ group.name }}</h2>
         <div class="grid gap-2">
@@ -45,13 +56,16 @@ const themeStore = useThemeStore()
             class="sidebar-item"
             active-class="sidebar-item--active"
             :class="{ 
-              'sidebar-item--active': tool.path === '/toolbox' && $route.path.startsWith('/toolbox'),
+              'sidebar-item--active': route.path === tool.path || route.path.startsWith(`${tool.path}/`),
               'sidebar-item--collapsed': themeStore.isSidebarCollapsed
             }"
             :title="tool.name"
           >
             <component :is="tool.icon" class="sidebar-item-icon" aria-hidden="true" />
-            <span v-show="!themeStore.isSidebarCollapsed">{{ tool.name }}</span>
+            <span v-show="!themeStore.isSidebarCollapsed" class="sidebar-item-copy">
+              <strong>{{ tool.name }}</strong>
+              <small>{{ tool.badge }}</small>
+            </span>
           </RouterLink>
         </div>
       </section>

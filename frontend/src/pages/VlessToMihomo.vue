@@ -1,281 +1,428 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { ExternalLink } from '@lucide/vue'
+import {
+  Cable,
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  FileCode2,
+  Loader2,
+  Network,
+  Route,
+} from '@lucide/vue'
+import type {
+  VlessOutputMode,
+  VlessTemplateMode,
+  VlessTransitGroupType,
+} from '../api/tools'
 import ResultPanel from '../components/ResultPanel.vue'
+import ToolShell from '../components/ToolShell.vue'
 import { useVlessToMihomoStore } from '../stores/vlessToMihomo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 
 const tool = useVlessToMihomoStore()
-const templateHints = {
-  full_rules: '规则集分流，覆盖广告、AI、媒体、Google、Telegram 与国内直连。',
-  standard: '本机、局域网、国内直连；其他走代理。',
-  minimal: '仅保留代理节点和兜底规则。',
-}
-const transitGroupHints = {
-  url_test: '刷新节奏：订阅节点 1 小时 > 节点测速 5 分钟 > 自动选择最优中转。',
-  fallback: '按顺序使用可用节点，当前节点不可用时自动切到下一个。',
-  select: '在 Clash Party 里手动指定中转节点，不自动切换。',
-}
-const selectedTemplateHint = computed(() => templateHints[tool.template])
-const selectedTransitGroupHint = computed(() => transitGroupHints[tool.transitGroupType])
+
+const outputModes: Array<{
+  value: VlessOutputMode
+  title: string
+  description: string
+}> = [
+  {
+    value: 'full_config',
+    title: '完整配置',
+    description: '生成可直接导入的 Mihomo YAML。',
+  },
+  {
+    value: 'proxy_only',
+    title: '节点片段',
+    description: '只输出 proxies 片段，适合合并到已有配置。',
+  },
+]
+
+const templateModes: Array<{
+  value: VlessTemplateMode
+  title: string
+  description: string
+}> = [
+  {
+    value: 'full_rules',
+    title: '多节点分流',
+    description: '覆盖 AI、媒体、Google、Telegram 与国内直连。',
+  },
+  {
+    value: 'standard',
+    title: '基础分流',
+    description: '本机、局域网、国内直连，其余走代理。',
+  },
+  {
+    value: 'minimal',
+    title: '最小配置',
+    description: '仅保留代理节点和兜底规则。',
+  },
+]
+
+const transitModes: Array<{
+  value: VlessTransitGroupType
+  title: string
+  description: string
+}> = [
+  {
+    value: 'url_test',
+    title: '自动测速',
+    description: '定时测速并选择更快的中转节点。',
+  },
+  {
+    value: 'fallback',
+    title: '故障切换',
+    description: '按顺序使用可用节点，异常时自动切换。',
+  },
+  {
+    value: 'select',
+    title: '手动选择',
+    description: '在客户端手动指定中转节点。',
+  },
+]
+
+const linkCount = computed(() => splitLines(tool.input).filter((line) => line.startsWith('vless://')).length)
+const directDomainCount = computed(() => splitLines(tool.directDomains).length)
+const transitProviderCount = computed(() => splitLines(tool.transitProviderUrl).length)
+const transitBypassCount = computed(() => splitLines(tool.transitBypassDomains).length)
+const outputModeLabel = computed(() =>
+  tool.mode === 'full_config' ? '完整配置' : '节点片段',
+)
+const resultStatus = computed(() => {
+  if (tool.loading) return '转换中'
+  if (tool.yaml) return '已生成'
+  return '待转换'
+})
+const resultStatusClass = computed(() => {
+  if (tool.loading) return 'status-pill status-pill--warn'
+  if (tool.yaml) return 'status-pill status-pill--good'
+  return 'status-pill status-pill--muted'
+})
+const transitStatus = computed(() => {
+  if (!tool.transitEnabled) return '未启用'
+  if (transitProviderCount.value > 1) return `${transitProviderCount.value} 个订阅`
+  if (transitProviderCount.value === 1) return '1 个订阅'
+  return '待配置'
+})
+const convertButtonLabel = computed(() => {
+  if (tool.loading) return '转换中'
+  if (tool.yaml) return '重新转换'
+  return '生成 YAML'
+})
 
 onMounted(() => {
   void tool.load()
 })
+
+function splitLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function optionClass(active: boolean) {
+  return {
+    'vless-choice': true,
+    'vless-choice--active': active,
+  }
+}
 </script>
 
 <template>
-  <div class="vless-tool-wrapper">
-    <div class="tool-grid">
-      <section class="input-panel vless-config-panel">
-        <section class="config-section">
-          <label class="field-label" for="vless-input">VLESS 链接</label>
-          <Textarea
-            id="vless-input"
-            v-model="tool.input"
-            class="min-h-[100px]"
-            spellcheck="false"
-            placeholder="每行一个 vless:// 链接&#10;vless://uuid@example.com:443?type=tcp&security=reality..."
-          />
-          <small class="field-hint">支持单条或多条 VLESS 链接；多条时会生成多个节点并加入同一份 Mihomo 配置。</small>
-        </section>
-
-        <section class="config-section">
-          <label class="field-control" for="download-name">
-            <span class="field-label">下载文件名</span>
-            <Input
-              id="download-name"
-              :model-value="tool.downloadName"
-              type="text"
-              placeholder="自动读取链接 # 后面的名称"
-              @update:model-value="(val) => tool.updateDownloadName(val as string)"
-            />
-          </label>
-
-          <div class="mode-row" role="radiogroup" aria-label="输出格式">
-            <label class="mode-option">
-              <input v-model="tool.mode" type="radio" value="full_config" />
-              <span>完整配置</span>
-            </label>
-            <label class="mode-option">
-              <input v-model="tool.mode" type="radio" value="proxy_only" />
-              <span>仅节点片段</span>
-            </label>
+  <ToolShell
+    title="VLESS 转 Mihomo"
+    description="把 3x-ui 节点转换成可导入、可审计、可复用的本地 Mihomo 配置。"
+    eyebrow="网络配置"
+    fluid
+  >
+    <div class="vless-workbench">
+      <section class="input-panel vless-status-panel">
+        <div class="vless-status-main">
+          <span class="service-icon">
+            <Cable class="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <span class="field-label">转换状态</span>
+            <strong>{{ resultStatus }}</strong>
+            <small>{{ tool.nodeAddress || '等待 VLESS 链接' }}</small>
           </div>
-        </section>
-
-        <section v-if="tool.mode === 'full_config'" class="config-section template-section">
-          <p class="field-label">配置模板</p>
-          <div class="template-options" role="radiogroup" aria-label="配置模板">
-            <label class="template-option">
-              <input v-model="tool.template" type="radio" value="full_rules" />
-              <span>
-                <strong>多节点分流模板</strong>
-              </span>
-            </label>
-            <label class="template-option">
-              <input v-model="tool.template" type="radio" value="standard" />
-              <span>
-                <strong>基础分流</strong>
-              </span>
-            </label>
-            <label class="template-option">
-              <input v-model="tool.template" type="radio" value="minimal" />
-              <span>
-                <strong>最小配置</strong>
-              </span>
-            </label>
+        </div>
+        <dl class="vless-status-metrics">
+          <div>
+            <dt>{{ linkCount }}</dt>
+            <dd>链接</dd>
           </div>
-          <div class="template-hint">
-            <strong>当前模板</strong>
-            <span>{{ selectedTemplateHint }}</span>
+          <div>
+            <dt>{{ outputModeLabel }}</dt>
+            <dd>输出</dd>
           </div>
-        </section>
-
-        <label v-if="tool.mode === 'full_config'" class="field-control route-field" for="direct-domains">
-          <span class="field-label">特殊直连域名</span>
-          <div class="route-hint" aria-label="特殊直连域名流量路线">
-            <strong>流量路线</strong>
-            <span>设备/浏览器</span>
-            <span>最终目标</span>
+          <div>
+            <dt>{{ transitStatus }}</dt>
+            <dd>中转</dd>
           </div>
-          <textarea
-            id="direct-domains"
-            v-model="tool.directDomains"
-            class="direct-domain-input"
-            spellcheck="false"
-            placeholder="github.com&#10;example.com"
-          />
-          <small class="field-hint">这些域名完全直连，不经过 3x-ui，也不经过中转 VPN。每行一个域名即可。</small>
-        </label>
-
-        <section class="transit-section" aria-labelledby="transit-provider-title">
-          <div class="section-divider">
-            <span>中转配置</span>
-          </div>
-
-          <label class="toggle-option">
-            <input v-model="tool.transitEnabled" type="checkbox" />
-            <span>
-              <strong id="transit-provider-title">启用 Proxy Provider 中转</strong>
-              <small>将任意 Clash/Mihomo 订阅作为中转组，3x-ui 节点会通过 dialer-proxy 先走该组。</small>
-            </span>
-          </label>
-
-          <div v-if="tool.transitEnabled" class="transit-fields">
-            <div class="transit-chain" aria-label="中转链路说明">
-              <strong>流量链路</strong>
-              <span>设备/浏览器</span>
-              <span>中转节点 (VPN)</span>
-              <span>终端节点 (3x-ui)</span>
-              <span>最终目标 (google.com)</span>
-            </div>
-
-            <label class="field-control config-section" for="transit-provider-url">
-              <span class="field-label">中转订阅地址</span>
-              <textarea
-                id="transit-provider-url"
-                v-model="tool.transitProviderUrl"
-                class="direct-domain-input transit-provider-url-input"
-                spellcheck="false"
-                placeholder="https://example.com/sub-1.yaml&#10;https://example.com/sub-2.yaml"
-              />
-              <small class="field-hint">支持一行一个 Clash/Mihomo 订阅；多行会生成多个 proxy-providers，并汇总到同一个中转组。</small>
-            </label>
-
-            <div class="config-section transit-two-col">
-              <label class="field-control" for="transit-provider-name">
-                <span class="field-label">Provider 名称</span>
-                <input
-                  id="transit-provider-name"
-                  v-model="tool.transitProviderName"
-                  class="text-input"
-                  type="text"
-                  placeholder="transit"
-                />
-              </label>
-
-              <label class="field-control" for="transit-group-name">
-                <span class="field-label">中转组名</span>
-                <input
-                  id="transit-group-name"
-                  v-model="tool.transitGroupName"
-                  class="text-input"
-                  type="text"
-                  placeholder="中转节点组"
-                />
-              </label>
-            </div>
-
-            <label class="field-control config-section" for="transit-provider-path">
-              <span class="field-label">Provider 缓存路径</span>
-              <input
-                id="transit-provider-path"
-                v-model="tool.transitProviderPath"
-                class="text-input"
-                type="text"
-                placeholder="./proxy_providers/transit.yaml"
-              />
-              <small class="field-hint">单个订阅时可自定义缓存路径；多个订阅会按 Provider 名称自动生成路径。</small>
-            </label>
-
-            <label class="field-control route-field" for="transit-bypass-domains">
-              <span class="field-label">仅走中转域名</span>
-              <div class="route-hint" aria-label="仅走中转域名流量路线">
-                <strong>流量路线</strong>
-                <span>设备/浏览器</span>
-                <span>中转节点 (VPN)</span>
-                <span>最终目标</span>
-              </div>
-              <textarea
-                id="transit-bypass-domains"
-                v-model="tool.transitBypassDomains"
-                class="direct-domain-input"
-                spellcheck="false"
-                placeholder="youtube.com&#10;netflix.com"
-              />
-              <small class="field-hint">这些域名不进 3x-ui，只走中转节点组。适合速度优先、无需纯净出口的网站。</small>
-            </label>
-
-            <div class="config-section">
-              <div class="mode-row" role="radiogroup" aria-label="中转组类型">
-                <label class="mode-option">
-                  <input v-model="tool.transitGroupType" type="radio" value="url_test" />
-                  <span>自动测速</span>
-                </label>
-                <label class="mode-option">
-                  <input v-model="tool.transitGroupType" type="radio" value="fallback" />
-                  <span>故障切换</span>
-                </label>
-                <label class="mode-option">
-                  <input v-model="tool.transitGroupType" type="radio" value="select" />
-                  <span>手动选择</span>
-                </label>
-              </div>
-
-              <div class="transit-mode-hint">
-                <strong>中转模式</strong>
-                <span>{{ selectedTransitGroupHint }}</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <Button class="w-full mt-4" size="lg" type="button" :disabled="!tool.canConvert" @click="tool.convert">
-          {{ tool.loading ? '转换中...' : '转换' }}
-        </Button>
-
-        <p v-if="tool.error" class="error-message">{{ tool.error }}</p>
+          <span :class="resultStatusClass">{{ resultStatus }}</span>
+        </dl>
       </section>
 
-      <div class="result-column">
-        <section class="guide-panel" aria-labelledby="clash-party-guide">
-          <h3 id="clash-party-guide">导入到 Clash Party</h3>
-          <ol>
-            <li>粘贴 3x-ui 生成的 vless:// 链接</li>
-            <li>转换并下载 YAML 文件</li>
-            <li>打开 Clash Party，将 YAML 作为本地配置导入</li>
-          </ol>
-          <p>这里生成的是本地配置文件，不是订阅服务。</p>
-          <div class="guide-links">
-            <a href="https://clashparty.org/" target="_blank" rel="noreferrer">
-              <span>Clash Party 官网</span>
-              <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
-            </a>
-            <a href="https://github.com/mihomo-party-org/clash-party" target="_blank" rel="noreferrer">
-              <span>GitHub 项目</span>
-              <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
-            </a>
+      <section class="tool-grid vless-grid">
+        <div class="input-panel vless-config-panel">
+          <section class="config-section">
+            <div class="vless-section-heading">
+              <div>
+                <span class="field-label">源链接</span>
+                <strong>VLESS 输入</strong>
+              </div>
+              <span class="status-pill status-pill--muted">{{ linkCount }} 个链接</span>
+            </div>
+            <Textarea
+              id="vless-input"
+              v-model="tool.input"
+              class="vless-link-input"
+              spellcheck="false"
+              placeholder="每行一个 vless:// 链接"
+            />
+            <div class="vless-mini-facts">
+              <span>
+                <CheckCircle2 class="h-4 w-4" aria-hidden="true" />
+                {{ tool.nodeAddress || '等待解析节点地址' }}
+              </span>
+              <span>
+                <FileCode2 class="h-4 w-4" aria-hidden="true" />
+                {{ tool.downloadFilename }}
+              </span>
+            </div>
+          </section>
+
+          <section class="config-section">
+            <div class="vless-section-heading">
+              <div>
+                <span class="field-label">输出策略</span>
+                <strong>配置形态</strong>
+              </div>
+              <span class="status-pill status-pill--muted">{{ outputModeLabel }}</span>
+            </div>
+            <label class="field-control" for="download-name">
+              <span class="field-label">文件名 / 节点名</span>
+              <Input
+                id="download-name"
+                :model-value="tool.downloadName"
+                type="text"
+                placeholder="mihomo"
+                @update:model-value="(val) => tool.updateDownloadName(val as string)"
+              />
+            </label>
+
+            <div class="vless-choice-grid" role="radiogroup" aria-label="输出格式">
+              <label
+                v-for="mode in outputModes"
+                :key="mode.value"
+                :class="optionClass(tool.mode === mode.value)"
+              >
+                <input v-model="tool.mode" type="radio" :value="mode.value" />
+                <span>
+                  <strong>{{ mode.title }}</strong>
+                  <small>{{ mode.description }}</small>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section v-if="tool.mode === 'full_config'" class="config-section">
+            <div class="vless-section-heading">
+              <div>
+                <span class="field-label">规则模板</span>
+                <strong>路由基线</strong>
+              </div>
+              <Route class="vless-heading-icon h-4 w-4" aria-hidden="true" />
+            </div>
+            <div class="vless-choice-grid vless-choice-grid--three" role="radiogroup" aria-label="配置模板">
+              <label
+                v-for="template in templateModes"
+                :key="template.value"
+                :class="optionClass(tool.template === template.value)"
+              >
+                <input v-model="tool.template" type="radio" :value="template.value" />
+                <span>
+                  <strong>{{ template.title }}</strong>
+                  <small>{{ template.description }}</small>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section v-if="tool.mode === 'full_config'" class="config-section">
+            <div class="vless-section-heading">
+              <div>
+                <span class="field-label">直连域名</span>
+                <strong>绕过代理</strong>
+              </div>
+              <span class="status-pill status-pill--muted">{{ directDomainCount }} 条</span>
+            </div>
+            <textarea
+              id="direct-domains"
+              v-model="tool.directDomains"
+              class="direct-domain-input"
+              spellcheck="false"
+              placeholder="github.com&#10;example.com"
+            />
+          </section>
+
+          <section class="transit-section" aria-labelledby="transit-provider-title">
+            <div class="vless-section-heading">
+              <div>
+                <span class="field-label">中转链路</span>
+                <strong id="transit-provider-title">Proxy Provider</strong>
+              </div>
+              <span :class="tool.transitEnabled ? 'status-pill status-pill--good' : 'status-pill status-pill--muted'">
+                {{ transitStatus }}
+              </span>
+            </div>
+
+            <label class="toggle-option toggle-option--card">
+              <input v-model="tool.transitEnabled" type="checkbox" />
+              <span>
+                <strong>启用中转</strong>
+                <small>通过 dialer-proxy 将终端节点接入指定中转组。</small>
+              </span>
+            </label>
+
+            <div v-if="tool.transitEnabled" class="transit-fields">
+              <div class="transit-chain" aria-label="中转链路">
+                <strong>链路</strong>
+                <span>设备</span>
+                <span>中转节点</span>
+                <span>3x-ui 节点</span>
+                <span>目标站点</span>
+              </div>
+
+              <label class="field-control" for="transit-provider-url">
+                <span class="field-label">中转订阅地址</span>
+                <textarea
+                  id="transit-provider-url"
+                  v-model="tool.transitProviderUrl"
+                  class="direct-domain-input transit-provider-url-input"
+                  spellcheck="false"
+                  placeholder="https://example.com/sub-1.yaml&#10;https://example.com/sub-2.yaml"
+                />
+              </label>
+
+              <div class="transit-two-col">
+                <label class="field-control" for="transit-provider-name">
+                  <span class="field-label">Provider 名称</span>
+                  <input
+                    id="transit-provider-name"
+                    v-model="tool.transitProviderName"
+                    class="text-input"
+                    type="text"
+                    placeholder="transit"
+                  />
+                </label>
+
+                <label class="field-control" for="transit-group-name">
+                  <span class="field-label">中转组名</span>
+                  <input
+                    id="transit-group-name"
+                    v-model="tool.transitGroupName"
+                    class="text-input"
+                    type="text"
+                    placeholder="中转节点组"
+                  />
+                </label>
+              </div>
+
+              <label class="field-control" for="transit-provider-path">
+                <span class="field-label">Provider 缓存路径</span>
+                <input
+                  id="transit-provider-path"
+                  v-model="tool.transitProviderPath"
+                  class="text-input"
+                  type="text"
+                  placeholder="./proxy_providers/transit.yaml"
+                />
+              </label>
+
+              <label class="field-control" for="transit-bypass-domains">
+                <span class="field-label">仅走中转域名</span>
+                <textarea
+                  id="transit-bypass-domains"
+                  v-model="tool.transitBypassDomains"
+                  class="direct-domain-input"
+                  spellcheck="false"
+                  placeholder="youtube.com&#10;netflix.com"
+                />
+                <small class="field-hint">{{ transitBypassCount }} 条中转直达规则</small>
+              </label>
+
+              <div class="vless-choice-grid vless-choice-grid--three" role="radiogroup" aria-label="中转组类型">
+                <label
+                  v-for="mode in transitModes"
+                  :key="mode.value"
+                  :class="optionClass(tool.transitGroupType === mode.value)"
+                >
+                  <input v-model="tool.transitGroupType" type="radio" :value="mode.value" />
+                  <span>
+                    <strong>{{ mode.title }}</strong>
+                    <small>{{ mode.description }}</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <div class="vless-primary-action">
+            <Button class="w-full" size="lg" type="button" :disabled="!tool.canConvert" @click="tool.convert">
+              <Loader2 v-if="tool.loading" class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+              <Download v-else class="mr-2 h-4 w-4" aria-hidden="true" />
+              {{ convertButtonLabel }}
+            </Button>
+            <small v-if="tool.savingSettings">正在保存配置</small>
           </div>
-        </section>
 
-        <ResultPanel
-          :yaml="tool.yaml"
-          :copied="tool.copied"
-          :filename="tool.downloadFilename"
-          :node-address="tool.nodeAddress"
-          @copied="tool.markCopied"
-        />
-      </div>
+          <p v-if="tool.error" class="error-message">{{ tool.error }}</p>
+        </div>
+
+        <div class="result-column vless-result-column">
+          <section class="guide-panel vless-import-panel" aria-labelledby="clash-party-resources">
+            <div>
+              <span class="field-label">导入目标</span>
+              <h3 id="clash-party-resources">Clash Party / Mihomo</h3>
+            </div>
+            <div class="vless-import-facts">
+              <span>
+                <Network class="h-4 w-4" aria-hidden="true" />
+                本地 YAML
+              </span>
+              <span>
+                <FileCode2 class="h-4 w-4" aria-hidden="true" />
+                {{ tool.downloadFilename }}
+              </span>
+            </div>
+            <div class="guide-links">
+              <a href="https://clashparty.org/" target="_blank" rel="noreferrer">
+                <span>Clash Party</span>
+                <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+              </a>
+              <a href="https://github.com/mihomo-party-org/clash-party" target="_blank" rel="noreferrer">
+                <span>GitHub</span>
+                <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+              </a>
+            </div>
+          </section>
+
+          <ResultPanel
+            :yaml="tool.yaml"
+            :copied="tool.copied"
+            :filename="tool.downloadFilename"
+            :node-address="tool.nodeAddress"
+            @copied="tool.markCopied"
+          />
+        </div>
+      </section>
     </div>
-  </div>
+  </ToolShell>
 </template>
-
-<style scoped>
-.vless-tool-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 2rem 3rem;
-}
-
-.tool-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  align-items: start;
-  flex: 1;
-}
-</style>
