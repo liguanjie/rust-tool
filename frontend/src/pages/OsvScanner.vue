@@ -27,7 +27,27 @@ const copiedCommandId = ref('')
 
 const selectedProjectName = computed(() => osv.activeProject?.name || '未选择项目')
 const canRunScan = computed(() => Boolean(osv.currentPreview && !osv.loading))
-const canRunExport = computed(() => Boolean(osv.currentExportPreview && !osv.exporting))
+const canPreviewExport = computed(() => Boolean(osv.hasCurrentScanResult && exportPath.value && !osv.exporting))
+const canRunExport = computed(() => Boolean(osv.currentExportPreview && osv.hasCurrentScanResult && !osv.exporting))
+const installVersionLine = computed(() => {
+  const version = osv.installStatus?.version || osv.installStatus?.message || '未读取安装状态'
+  return version.split('\n')[0]
+})
+const globalHealthLabel = computed(() => {
+  if (typeof osv.globalHealthScore !== 'number') return '未扫描'
+  if (osv.globalHealthScore >= 90) return '健康'
+  if (osv.globalHealthScore >= 70) return '可关注'
+  if (osv.globalHealthScore >= 40) return '风险较高'
+  return '高风险'
+})
+const globalHealthClass = computed(() => healthPillClass(osv.globalHealthScore))
+const latestScanLabel = computed(() => {
+  const latest = osv.projects
+    .map((project) => Number(project.lastScanned))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => b - a)[0]
+  return latest ? new Date(latest).toLocaleString() : '未扫描'
+})
 
 onMounted(() => {
   void osv.load()
@@ -106,6 +126,39 @@ function severityClass(severity: OsvSeverity) {
   return `osv-severity osv-severity--${severity}`
 }
 
+function healthPillClass(score?: number) {
+  if (typeof score !== 'number') return 'status-pill status-pill--muted'
+  if (score >= 90) return 'status-pill status-pill--good'
+  if (score >= 70) return 'status-pill status-pill--warn'
+  return 'status-pill status-pill--danger'
+}
+
+function projectHealthLabel(score?: number) {
+  if (typeof score !== 'number') return '未扫描'
+  return `${score}`
+}
+
+function formatRecordKind(kind: OsvCommandExecutionRecord['kind']) {
+  const labels: Record<OsvCommandExecutionRecord['kind'], string> = {
+    scan: '扫描',
+    export: '导出',
+    fix: '修复',
+  }
+  return labels[kind]
+}
+
+function formatRecordStatus(record: OsvCommandExecutionRecord) {
+  if (record.status === 'failed') return '失败'
+  if (record.exitCode && record.exitCode !== 0) return '已完成 · 有发现'
+  return '已完成'
+}
+
+function recordStatusClass(record: OsvCommandExecutionRecord) {
+  if (record.status === 'failed') return 'status-pill status-pill--danger'
+  if (record.exitCode && record.exitCode !== 0) return 'status-pill status-pill--warn'
+  return 'status-pill status-pill--good'
+}
+
 function formatCommandTime(record: OsvCommandExecutionRecord) {
   const millis = Number(record.finishedAt || record.startedAt)
   if (!Number.isFinite(millis) || millis <= 0) return '未知时间'
@@ -128,12 +181,23 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
           </span>
           <div>
             <strong>{{ osv.installStatus?.installed ? 'osv-scanner 已就绪' : '等待检测' }}</strong>
-            <small>{{ osv.installStatus?.version || osv.installStatus?.message || '未读取安装状态' }}</small>
+            <small>{{ installVersionLine }}</small>
           </div>
         </div>
-        <div class="osv-score">
-          <span>{{ osv.globalHealthScore ?? '--' }}</span>
-          <small>全局健康分</small>
+        <div class="osv-status-metrics">
+          <div class="osv-score">
+            <span>{{ osv.globalHealthScore ?? '--' }}</span>
+            <small>全局健康分</small>
+          </div>
+          <div class="osv-status-fact">
+            <strong>{{ osv.projects.length }}</strong>
+            <small>监控项目</small>
+          </div>
+          <div class="osv-status-fact">
+            <strong>{{ latestScanLabel }}</strong>
+            <small>最近扫描</small>
+          </div>
+          <span :class="globalHealthClass">{{ globalHealthLabel }}</span>
         </div>
         <Button type="button" variant="outline" size="sm" @click="osv.refreshInstallStatus">
           <RefreshCw class="mr-2 h-4 w-4" aria-hidden="true" />
@@ -178,7 +242,9 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
                   <strong>{{ project.name }}</strong>
                   <small>{{ project.path }}</small>
                 </span>
-                <span class="status-pill status-pill--muted">{{ project.healthScore ?? '--' }}</span>
+                <span :class="healthPillClass(project.healthScore)">
+                  {{ projectHealthLabel(project.healthScore) }}
+                </span>
                 <Trash2
                   class="h-4 w-4"
                   aria-label="移除项目"
@@ -287,6 +353,7 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
               <Button
                 type="button"
                 variant="outline"
+                :disabled="!canPreviewExport"
                 @click="osv.previewExport(exportFormat, exportPath)"
               >
                 <RefreshCw class="mr-2 h-4 w-4" aria-hidden="true" />
@@ -301,6 +368,7 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
                 导出
               </Button>
             </div>
+            <p v-if="!osv.hasCurrentScanResult" class="field-hint">请先完成当前项目扫描后再导出报告。</p>
             <div v-if="osv.currentExportPreview" class="osv-command-box">
               <code>{{ osv.currentExportPreview.displayCommand }}</code>
               <Button
@@ -326,8 +394,22 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
             <span class="field-label">扫描结果</span>
             <strong>{{ osv.latestResult.summary.message }}</strong>
           </div>
-          <span class="status-pill status-pill--muted">
+          <span :class="healthPillClass(osv.latestResult.summary.healthScore)">
             Health {{ osv.latestResult.summary.healthScore }}
+          </span>
+        </div>
+        <div class="osv-result-summary">
+          <span class="osv-severity osv-severity--critical">
+            Critical {{ osv.latestResult.summary.severityCounts.critical }}
+          </span>
+          <span class="osv-severity osv-severity--high">
+            High {{ osv.latestResult.summary.severityCounts.high }}
+          </span>
+          <span class="osv-severity osv-severity--medium">
+            Medium {{ osv.latestResult.summary.severityCounts.medium }}
+          </span>
+          <span class="osv-severity osv-severity--low">
+            Low {{ osv.latestResult.summary.severityCounts.low }}
           </span>
         </div>
 
@@ -368,7 +450,10 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
         <div v-if="osv.commandHistory.length" class="osv-history-list">
           <article v-for="record in osv.commandHistory.slice().reverse()" :key="record.id" class="osv-history-row">
             <div>
-              <strong>{{ record.kind }} · {{ record.status }}</strong>
+              <div class="osv-history-title">
+                <strong>{{ formatRecordKind(record.kind) }}</strong>
+                <span :class="recordStatusClass(record)">{{ formatRecordStatus(record) }}</span>
+              </div>
               <small>{{ formatCommandTime(record) }} · exit {{ record.exitCode ?? 'n/a' }}</small>
               <code>{{ record.displayCommand }}</code>
             </div>

@@ -43,6 +43,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
   const activeProject = computed(() =>
     projects.value.find((project) => project.path === activeProjectPath.value) ?? null,
   )
+  const hasCurrentScanResult = computed(() => Boolean(activeProjectPath.value && latestResult.value))
   const vulnerabilities = computed<OsvVulnerabilityFinding[]>(
     () => latestResult.value?.vulnerabilities ?? [],
   )
@@ -60,6 +61,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     try {
       const settings = await getOsvSettings()
       projects.value = settings.projects
+      activeProjectPath.value = settings.projects[0]?.path ?? ''
       autoScanSchedule.value = settings.autoScanSchedule
       commandHistory.value = settings.commandHistory
       await refreshInstallStatus()
@@ -74,6 +76,10 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     try {
       installStatus.value = await checkOsvInstalled()
     } catch (caught) {
+      installStatus.value = {
+        installed: false,
+        message: caught instanceof Error ? caught.message : '检测 osv-scanner 失败',
+      }
       error.value = caught instanceof Error ? caught.message : '检测 osv-scanner 失败'
     }
   }
@@ -178,6 +184,10 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       error.value = '请先选择项目'
       return
     }
+    if (!hasCurrentScanResult.value) {
+      error.value = '请先完成当前项目扫描后再导出报告'
+      return
+    }
     try {
       currentExportPreview.value = await previewOsvReportExportCommand({
         projectPath: activeProjectPath.value,
@@ -205,6 +215,11 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     notice.value = ''
     if (!activeProjectPath.value || !currentExportPreview.value) {
       error.value = '请先生成并确认导出命令'
+      return
+    }
+    if (!hasCurrentScanResult.value) {
+      currentExportPreview.value = null
+      error.value = '请先完成当前项目扫描后再导出报告'
       return
     }
 
@@ -284,6 +299,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     notice,
     activeProjectPath,
     activeProject,
+    hasCurrentScanResult,
     currentPreview,
     currentExportPreview,
     latestResult,

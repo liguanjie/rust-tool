@@ -56,6 +56,20 @@ describe('useOsvScannerStore', () => {
     expect(store.projects).toEqual([])
   })
 
+  it('selects the first saved project after loading settings', async () => {
+    api.getOsvSettings.mockResolvedValue({
+      projects: [{ name: 'saved-project', path: '/tmp/saved-project' }],
+      autoScanSchedule: 'none',
+      commandHistory: [],
+    })
+    const store = useOsvScannerStore()
+
+    await store.load()
+
+    expect(store.activeProjectPath).toBe('/tmp/saved-project')
+    expect(store.activeProject?.name).toBe('saved-project')
+  })
+
   it('adds a project and persists settings', async () => {
     const store = useOsvScannerStore()
     await store.load()
@@ -127,6 +141,17 @@ describe('useOsvScannerStore', () => {
     expect(store.latestResult).toBeNull()
     expect(store.currentPreview).toBeNull()
     expect(store.currentExportPreview).toBeNull()
+  })
+
+  it('requires a current scan result before export preview', async () => {
+    const store = useOsvScannerStore()
+    await store.load()
+    await store.addProject('/tmp/example-project')
+
+    await store.previewExport('json', '/private/tmp/report.json')
+
+    expect(api.previewOsvReportExportCommand).not.toHaveBeenCalled()
+    expect(store.error).toBe('请先完成当前项目扫描后再导出报告')
   })
 })
 
