@@ -57,7 +57,8 @@
 
 ### 技术选型 (Tech Stack)
 - **核心框架**: Tauri v2 (Desktop), Axum + Tokio (Rust Server), Clap (CLI)
-- **前端技术**: Vue 3 + Vite + TypeScript, Vue Router + Pinia, Tailwind CSS, Vitest
+- **前端技术**: Vue 3 + Vite + TypeScript, Vue Router + Pinia, Ant Design Vue, Vitest
+*(注：本项目的前端 UI 框架已全面迁移并只保留了 Ant Design Vue 模式，不再使用额外的自定义 CSS 库或 Tailwind 默认组件)*
 
 ### 目录结构 (Structure)
 ```text
