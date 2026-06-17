@@ -23,7 +23,7 @@ import type {
 
 const { token } = theme.useToken()
 
-const activeTab = ref('scan')
+const activeTab = ref('config')
 const route = useRoute()
 const router = useRouter()
 const osv = useOsvScannerStore()
@@ -232,13 +232,23 @@ const activeCollapse = ref(['scope'])
             <span class="font-mono text-sm font-semibold opacity-70">osv-scanner</span>
             <a-tag :color="scanCommandState === '执行中' ? 'processing' : 'default'">{{ scanCommandState }}</a-tag>
           </div>
-          <div class="flex gap-2">
-            <a-button size="small" :disabled="!canPreviewScan" @click="osv.previewScan()">
-              <template #icon><RefreshCw class="w-3 h-3 inline-block align-text-bottom mr-1" /></template>
+          <div class="flex gap-3">
+            <a-button 
+              class="btn-refresh" 
+              :disabled="!canPreviewScan" 
+              @click="osv.previewScan()"
+            >
+              <template #icon><RefreshCw class="w-3.5 h-3.5 inline-block align-text-bottom mr-1.5 icon-spin" /></template>
               手动刷新
             </a-button>
-            <a-button type="primary" size="small" :disabled="!canRunScan" :loading="osv.loading" @click="() => { activeTab = 'scan'; osv.runScan(); }">
-              <template #icon><Play v-if="!osv.loading" class="w-3 h-3 inline-block align-text-bottom mr-1" /></template>
+            <a-button 
+              type="primary" 
+              class="btn-scan" 
+              :disabled="!canRunScan" 
+              :loading="osv.loading" 
+              @click="() => { activeTab = 'scan'; osv.runScan(); }"
+            >
+              <template #icon><Play v-if="!osv.loading" class="w-3.5 h-3.5 inline-block align-text-bottom mr-1.5" /></template>
               执行扫描
             </a-button>
           </div>
@@ -267,24 +277,8 @@ const activeCollapse = ref(['scope'])
       </a-card>
 
       <!-- Tabs Content -->
+      <!-- Tabs Content -->
       <a-tabs v-model:activeKey="activeTab" type="card">
-        <a-tab-pane key="scan" tab="执行与结果">
-          <a-card :bordered="true" style="min-height: 300px; border-radius: 8px;">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-medium m-0">当前风险</h3>
-              <a-tag :color="osv.latestResult ? 'error' : 'default'">{{ currentRiskLabel }}</a-tag>
-            </div>
-            
-            <template v-if="osv.latestResult">
-              <p>发现 {{ osv.latestResult.summary.totalVulnerabilities }} 个漏洞。</p>
-            </template>
-            <div v-else class="text-center py-12 text-gray-400">
-              <Shield class="h-10 w-10 mx-auto mb-4 opacity-30" />
-              <p>暂无风险数据，请在上方执行扫描</p>
-            </div>
-          </a-card>
-        </a-tab-pane>
-        
         <a-tab-pane key="config" tab="扫描配置">
           <div class="flex flex-col gap-6">
             <a-card title="扫描预设" size="small" :bordered="true" style="border-radius: 8px;">
@@ -334,6 +328,23 @@ const activeCollapse = ref(['scope'])
           </div>
         </a-tab-pane>
 
+        <a-tab-pane key="scan" tab="执行与结果">
+          <a-card :bordered="true" style="min-height: 300px; border-radius: 8px;">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-medium m-0">当前风险</h3>
+              <a-tag :color="osv.latestResult ? 'error' : 'default'">{{ currentRiskLabel }}</a-tag>
+            </div>
+            
+            <template v-if="osv.latestResult">
+              <p>发现 {{ osv.latestResult.summary.totalVulnerabilities }} 个漏洞。</p>
+            </template>
+            <div v-else class="text-center py-12 text-gray-400">
+              <Shield class="h-10 w-10 mx-auto mb-4 opacity-30" />
+              <p>暂无风险数据，请在上方执行扫描</p>
+            </div>
+          </a-card>
+        </a-tab-pane>
+
         <a-tab-pane key="history" tab="历史记录">
           <a-card :bordered="true" style="min-height: 300px; border-radius: 8px;">
             <div class="text-center py-12 text-gray-400">
@@ -346,3 +357,60 @@ const activeCollapse = ref(['scope'])
     </div>
   </div>
 </template>
+
+<style scoped>
+.btn-refresh {
+  height: 32px;
+  padding: 4px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--ant-color-border);
+}
+.btn-refresh:hover:not(:disabled) {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+  transform: translateY(-1px);
+}
+.btn-refresh:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-refresh:hover:not(:disabled) .icon-spin {
+  transform: rotate(180deg);
+}
+.icon-spin {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-scan {
+  height: 32px;
+  padding: 4px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--ant-color-primary) 0%, #36cfc9 100%) !important;
+  border: none !important;
+  color: #fff !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 6px rgba(24, 144, 255, 0.25);
+}
+.btn-scan:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+  filter: brightness(1.06);
+}
+.btn-scan:active:not(:disabled) {
+  transform: translateY(0) scale(1);
+}
+.btn-scan:disabled {
+  background: var(--ant-color-bg-container-disabled) !important;
+  color: var(--ant-color-text-disabled) !important;
+  box-shadow: none;
+}
+</style>
