@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Toolbox from '../pages/Toolbox.vue'
+
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -14,22 +14,14 @@ export const router = createRouter({
       component: () => import('../pages/ToolboxDashboard.vue'),
     },
     {
-      path: '/toolbox',
-      name: 'toolbox',
-      component: Toolbox,
-      redirect: '/dashboard',
-      children: [
-        {
-          path: 'vless-to-mihomo',
-          name: 'vless-to-mihomo',
-          component: () => import('../pages/VlessToMihomo.vue'),
-        },
-        {
-          path: 'codex',
-          name: 'codex',
-          component: () => import('../pages/Codex.vue'),
-        },
-      ]
+      path: '/toolbox/vless-to-mihomo',
+      name: 'vless-to-mihomo',
+      component: () => import('../pages/VlessToMihomo.vue'),
+    },
+    {
+      path: '/toolbox/codex',
+      name: 'codex',
+      component: () => import('../pages/Codex.vue'),
     },
     {
       path: '/osv-scanner',
