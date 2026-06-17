@@ -376,10 +376,7 @@ pub fn scan_project(request: OsvScanRequest) -> Result<OsvScanResult, OsvScanner
     ensure_confirmed_command_matches(&request.command, &expected)?;
 
     let mut execution = execute_preview(&expected);
-    let stdout = execution
-        .stdout
-        .as_ref()
-        .ok_or_else(|| OsvScannerError::ScanFailed("osv-scanner 没有返回 JSON 输出".to_string()))?;
+    let stdout = require_json_stdout(&execution)?;
     let vulnerabilities = parse_osv_report(stdout)?;
     execution.success = true;
     let summary = build_scan_summary(&vulnerabilities);
@@ -750,6 +747,24 @@ fn execute_preview(preview: &OsvCommandPreview) -> CommandExecution {
             stderr: error.to_string().into_bytes(),
         },
     }
+}
+
+fn require_json_stdout(execution: &CommandExecution) -> Result<&[u8], OsvScannerError> {
+    let stdout = execution.stdout.as_deref().unwrap_or_default();
+    if !stdout.iter().all(u8::is_ascii_whitespace) {
+        return Ok(stdout);
+    }
+
+    let fallback = if execution.success {
+        "osv-scanner 没有返回 JSON 输出。"
+    } else {
+        "osv-scanner 执行失败，且没有返回 JSON 输出。"
+    };
+    Err(OsvScannerError::ScanFailed(
+        execution
+            .stderr_excerpt()
+            .unwrap_or_else(|| fallback.to_string()),
+    ))
 }
 
 fn parse_osv_report(stdout: &[u8]) -> Result<Vec<OsvVulnerabilityFinding>, OsvScannerError> {
@@ -1391,6 +1406,38 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(error, OsvScannerError::CommandRejected(_)));
+    }
+
+    #[test]
+    fn empty_scan_stdout_surfaces_stderr_as_scan_failure() {
+        let project = std::env::current_dir().unwrap();
+        let execution = CommandExecution {
+            preview: OsvCommandPreview {
+                kind: OsvCommandKind::Scan,
+                binary: "osv-scanner".to_string(),
+                working_dir: project.display().to_string(),
+                argv: vec!["osv-scanner".to_string(), "scan".to_string()],
+                display_command: "osv-scanner scan".to_string(),
+                locked_args: Vec::new(),
+                editable_options: OsvScanOptions::default_source_scan().into(),
+                warnings: Vec::new(),
+            },
+            project_path: project.display().to_string(),
+            started_at: "1".to_string(),
+            finished_at: "2".to_string(),
+            duration_ms: 1,
+            exit_code: Some(128),
+            success: false,
+            stdout: Some(Vec::new()),
+            stderr: b"No package sources found".to_vec(),
+        };
+
+        let error = require_json_stdout(&execution).unwrap_err();
+
+        assert!(matches!(
+            error,
+            OsvScannerError::ScanFailed(message) if message.contains("No package sources found")
+        ));
     }
 
     #[test]

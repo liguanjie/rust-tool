@@ -982,6 +982,10 @@ button:disabled {
     @apply min-w-[260px] flex-1;
   }
 
+  .osv-workspace-panel {
+    @apply grid gap-3;
+  }
+
   .osv-project-list,
   .osv-vulnerability-list,
   .osv-history-list {
@@ -1042,7 +1046,55 @@ button:disabled {
     @apply grid gap-2 rounded-lg p-3;
   }
 
-  .osv-result-summary,
+  .osv-result-workspace {
+    background:
+      linear-gradient(180deg, rgba(16, 185, 129, 0.035), rgba(15, 23, 42, 0.2)),
+      rgba(15, 23, 42, 0.28);
+  }
+
+  .osv-result-summary-grid {
+    @apply mb-3 grid grid-cols-2 gap-2;
+  }
+
+  .osv-result-summary-grid > div {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    @apply grid min-h-[62px] place-items-center rounded-lg px-3 py-2 text-center;
+  }
+
+  .osv-result-summary-grid strong {
+    color: var(--text-title);
+    @apply text-2xl font-black leading-none;
+  }
+
+  .osv-result-summary-grid small {
+    color: var(--text-muted);
+    @apply text-xs font-semibold;
+  }
+
+  .osv-result-actions {
+    background: rgba(5, 10, 15, 0.35);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    @apply mb-3 grid gap-3 rounded-lg p-3;
+  }
+
+  .osv-empty-result {
+    background: var(--bg-input);
+    border: 1px dashed var(--border-card);
+    color: var(--text-muted);
+    @apply m-0 grid gap-1 rounded-lg px-4 py-6 text-center text-sm leading-6;
+  }
+
+  .osv-empty-result strong {
+    color: var(--text-title);
+    @apply text-base;
+  }
+
+  .osv-empty-result small {
+    color: var(--text-muted);
+    @apply text-xs;
+  }
+
   .osv-history-title {
     @apply mb-3 flex flex-wrap items-center gap-2;
   }
@@ -1118,6 +1170,10 @@ button:disabled {
 
     .osv-command-box {
       @apply grid grid-cols-1;
+    }
+
+    .osv-result-summary-grid {
+      @apply grid-cols-1;
     }
 
     .osv-command-box button {

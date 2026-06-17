@@ -13,7 +13,12 @@ import {
 } from '@lucide/vue'
 import ToolShell from '../components/ToolShell.vue'
 import { useOsvScannerStore } from '../stores/osvScanner'
-import type { OsvCommandExecutionRecord, OsvReportFormat, OsvSeverity } from '../api/osvScanner'
+import type {
+  OsvCommandExecutionRecord,
+  OsvReportFormat,
+  OsvSeverity,
+  OsvVulnerabilityFinding,
+} from '../api/osvScanner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -41,6 +46,20 @@ const globalHealthLabel = computed(() => {
   return '高风险'
 })
 const globalHealthClass = computed(() => healthPillClass(osv.globalHealthScore))
+const prioritizedVulnerabilities = computed(() =>
+  [...osv.vulnerabilities].sort(
+    (left, right) => severityRank(left.severity) - severityRank(right.severity),
+  ),
+)
+const currentRiskLabel = computed(() => {
+  const summary = osv.latestResult?.summary
+  if (!summary) return '等待扫描'
+  if (summary.totalVulnerabilities === 0) return '暂未发现已知漏洞'
+  if (summary.severityCounts.critical > 0) return '优先处理 Critical'
+  if (summary.severityCounts.high > 0) return '优先处理 High'
+  return '存在中低风险'
+})
+const currentRiskClass = computed(() => healthPillClass(osv.latestResult?.summary.healthScore))
 const latestScanLabel = computed(() => {
   const latest = osv.projects
     .map((project) => Number(project.lastScanned))
@@ -126,6 +145,17 @@ function severityClass(severity: OsvSeverity) {
   return `osv-severity osv-severity--${severity}`
 }
 
+function severityRank(severity: OsvSeverity) {
+  const ranks: Record<OsvSeverity, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+    unknown: 4,
+  }
+  return ranks[severity]
+}
+
 function healthPillClass(score?: number) {
   if (typeof score !== 'number') return 'status-pill status-pill--muted'
   if (score >= 90) return 'status-pill status-pill--good'
@@ -136,6 +166,15 @@ function healthPillClass(score?: number) {
 function projectHealthLabel(score?: number) {
   if (typeof score !== 'number') return '未扫描'
   return `${score}`
+}
+
+function findingPackageLabel(finding: OsvVulnerabilityFinding) {
+  const version = finding.package.version ? ` ${finding.package.version}` : ''
+  return `${finding.package.name}${version}`
+}
+
+function findingFixLabel(finding: OsvVulnerabilityFinding) {
+  return finding.fixedVersions.length ? finding.fixedVersions.join(', ') : '暂无直接修复版本'
 }
 
 function formatRecordKind(kind: OsvCommandExecutionRecord['kind']) {
@@ -285,7 +324,7 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
           </section>
         </div>
 
-        <div class="input-panel">
+        <div class="input-panel osv-workspace-panel">
           <section class="config-section">
             <div class="osv-panel-heading">
               <div>
@@ -318,68 +357,138 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
             </div>
           </section>
 
-          <section class="config-section">
-            <div class="section-divider">
-              <span>报告导出</span>
+          <section class="config-section osv-result-workspace">
+            <div class="osv-panel-heading">
+              <div>
+                <span class="field-label">当前风险</span>
+                <strong>{{ currentRiskLabel }}</strong>
+              </div>
+              <span :class="currentRiskClass">
+                {{ osv.latestResult ? `Health ${osv.latestResult.summary.healthScore}` : '未扫描' }}
+              </span>
             </div>
-            <div class="mode-row" role="radiogroup" aria-label="报告格式">
-              <label class="mode-option">
-                <input v-model="exportFormat" type="radio" value="json" />
-                <span><FileJson class="h-4 w-4" aria-hidden="true" />JSON</span>
-              </label>
-              <label class="mode-option">
-                <input v-model="exportFormat" type="radio" value="html" />
-                <span><FileText class="h-4 w-4" aria-hidden="true" />HTML</span>
-              </label>
-            </div>
-            <label class="field-control" for="osv-export-path">
-              <span class="field-label">导出路径</span>
-              <Input
-                id="osv-export-path"
-                :model-value="exportPath"
-                type="text"
-                placeholder="/private/tmp/rusttool-osv-report.json"
-                @update:model-value="updateExportPath"
-              />
-            </label>
-            <div class="osv-inline-controls">
-              <Button
-                type="button"
-                variant="outline"
-                @click="resetExportPath"
-              >
-                重置路径
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                :disabled="!canPreviewExport"
-                @click="osv.previewExport(exportFormat, exportPath)"
-              >
-                <RefreshCw class="mr-2 h-4 w-4" aria-hidden="true" />
-                预览导出
-              </Button>
-              <Button
-                type="button"
-                :disabled="!canRunExport"
-                @click="osv.runExport(exportFormat, exportPath)"
-              >
-                <Download class="mr-2 h-4 w-4" aria-hidden="true" />
-                导出
-              </Button>
-            </div>
-            <p v-if="!osv.hasCurrentScanResult" class="field-hint">请先完成当前项目扫描后再导出报告。</p>
-            <div v-if="osv.currentExportPreview" class="osv-command-box">
-              <code>{{ osv.currentExportPreview.displayCommand }}</code>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label="复制导出命令"
-                @click="copyText(osv.currentExportPreview.displayCommand, 'export')"
-              >
-                <Copy class="h-4 w-4" aria-hidden="true" />
-              </Button>
+
+            <template v-if="osv.latestResult">
+              <div class="osv-result-summary-grid">
+                <div>
+                  <strong>{{ osv.latestResult.summary.totalVulnerabilities }}</strong>
+                  <small>漏洞总数</small>
+                </div>
+                <span class="osv-severity osv-severity--critical">
+                  Critical {{ osv.latestResult.summary.severityCounts.critical }}
+                </span>
+                <span class="osv-severity osv-severity--high">
+                  High {{ osv.latestResult.summary.severityCounts.high }}
+                </span>
+                <span class="osv-severity osv-severity--medium">
+                  Medium {{ osv.latestResult.summary.severityCounts.medium }}
+                </span>
+                <span class="osv-severity osv-severity--low">
+                  Low {{ osv.latestResult.summary.severityCounts.low }}
+                </span>
+              </div>
+
+              <div class="osv-result-actions">
+                <div class="mode-row" role="radiogroup" aria-label="报告格式">
+                  <label class="mode-option">
+                    <input v-model="exportFormat" type="radio" value="json" />
+                    <span><FileJson class="h-4 w-4" aria-hidden="true" />JSON</span>
+                  </label>
+                  <label class="mode-option">
+                    <input v-model="exportFormat" type="radio" value="html" />
+                    <span><FileText class="h-4 w-4" aria-hidden="true" />HTML</span>
+                  </label>
+                </div>
+                <label class="field-control" for="osv-export-path">
+                  <span class="field-label">导出路径</span>
+                  <Input
+                    id="osv-export-path"
+                    :model-value="exportPath"
+                    type="text"
+                    placeholder="/private/tmp/rusttool-osv-report.json"
+                    @update:model-value="updateExportPath"
+                  />
+                </label>
+                <div class="osv-inline-controls">
+                  <Button type="button" variant="outline" @click="resetExportPath">
+                    重置路径
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    :disabled="!canPreviewExport"
+                    @click="osv.previewExport(exportFormat, exportPath)"
+                  >
+                    <RefreshCw class="mr-2 h-4 w-4" aria-hidden="true" />
+                    预览导出
+                  </Button>
+                  <Button
+                    type="button"
+                    :disabled="!canRunExport"
+                    @click="osv.runExport(exportFormat, exportPath)"
+                  >
+                    <Download class="mr-2 h-4 w-4" aria-hidden="true" />
+                    导出
+                  </Button>
+                </div>
+                <div v-if="osv.currentExportPreview" class="osv-command-box">
+                  <code>{{ osv.currentExportPreview.displayCommand }}</code>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label="复制导出命令"
+                    @click="copyText(osv.currentExportPreview.displayCommand, 'export')"
+                  >
+                    <Copy class="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+
+              <div v-if="prioritizedVulnerabilities.length" class="osv-vulnerability-list">
+                <article
+                  v-for="finding in prioritizedVulnerabilities"
+                  :key="finding.id"
+                  class="osv-vulnerability-row"
+                >
+                  <header>
+                    <span :class="severityClass(finding.severity)">{{ severityLabel(finding.severity) }}</span>
+                    <strong>{{ finding.id }}</strong>
+                    <small>{{ findingPackageLabel(finding) }}</small>
+                  </header>
+                  <p>{{ finding.summary || finding.details || '暂无摘要' }}</p>
+                  <small>Fixed: {{ findingFixLabel(finding) }}</small>
+                  <div class="osv-ignore-row">
+                    <Input
+                      v-model="ignoreReasons[finding.id]"
+                      type="text"
+                      placeholder="忽略原因"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      aria-label="复制漏洞 ID"
+                      @click="copyText(finding.id, finding.id)"
+                    >
+                      <Copy class="mr-2 h-4 w-4" aria-hidden="true" />
+                      复制 ID
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      @click="osv.ignoreFinding(finding, ignoreReasons[finding.id] || '')"
+                    >
+                      忽略
+                    </Button>
+                  </div>
+                </article>
+              </div>
+              <p v-else class="osv-empty-result">未发现已知漏洞。</p>
+            </template>
+
+            <div v-else class="osv-empty-result">
+              <strong>等待扫描结果</strong>
+              <small>当前项目还没有完成扫描。</small>
             </div>
           </section>
         </div>
@@ -387,61 +496,6 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
 
       <p v-if="osv.error" class="status-banner status-banner--error">{{ osv.error }}</p>
       <p v-else-if="osv.notice" class="status-banner">{{ osv.notice }}</p>
-
-      <section v-if="osv.latestResult" class="input-panel">
-        <div class="osv-panel-heading">
-          <div>
-            <span class="field-label">扫描结果</span>
-            <strong>{{ osv.latestResult.summary.message }}</strong>
-          </div>
-          <span :class="healthPillClass(osv.latestResult.summary.healthScore)">
-            Health {{ osv.latestResult.summary.healthScore }}
-          </span>
-        </div>
-        <div class="osv-result-summary">
-          <span class="osv-severity osv-severity--critical">
-            Critical {{ osv.latestResult.summary.severityCounts.critical }}
-          </span>
-          <span class="osv-severity osv-severity--high">
-            High {{ osv.latestResult.summary.severityCounts.high }}
-          </span>
-          <span class="osv-severity osv-severity--medium">
-            Medium {{ osv.latestResult.summary.severityCounts.medium }}
-          </span>
-          <span class="osv-severity osv-severity--low">
-            Low {{ osv.latestResult.summary.severityCounts.low }}
-          </span>
-        </div>
-
-        <div v-if="osv.vulnerabilities.length" class="osv-vulnerability-list">
-          <article v-for="finding in osv.vulnerabilities" :key="finding.id" class="osv-vulnerability-row">
-            <header>
-              <span :class="severityClass(finding.severity)">{{ severityLabel(finding.severity) }}</span>
-              <strong>{{ finding.id }}</strong>
-              <small>{{ finding.package.name }} {{ finding.package.version || '' }}</small>
-            </header>
-            <p>{{ finding.summary || finding.details || '暂无摘要' }}</p>
-            <small v-if="finding.fixedVersions.length">
-              Fixed: {{ finding.fixedVersions.join(', ') }}
-            </small>
-            <div class="osv-ignore-row">
-              <Input
-                v-model="ignoreReasons[finding.id]"
-                type="text"
-                placeholder="忽略原因"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                @click="osv.ignoreFinding(finding, ignoreReasons[finding.id] || '')"
-              >
-                忽略
-              </Button>
-            </div>
-          </article>
-        </div>
-        <p v-else class="field-hint">未发现漏洞。</p>
-      </section>
 
       <section class="input-panel">
         <div class="section-divider">
