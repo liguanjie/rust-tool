@@ -108,6 +108,8 @@ describe('useOsvScannerStore', () => {
     expect(store.projects[0].healthScore).toBe(90)
     expect(store.commandHistory).toHaveLength(1)
     expect(store.commandHistory[0].id).toBe('scan-1')
+    expect(store.operation.status).toBe('succeeded')
+    expect(store.operation.command).toBe('osv-scanner scan source --format json .')
   })
 
   it('invalidates existing command previews', async () => {
@@ -177,6 +179,24 @@ describe('useOsvScannerStore', () => {
     expect(api.previewOsvScanCommand).not.toHaveBeenCalled()
     expect(store.currentPreview).toBeNull()
     expect(store.error).toContain('指定的 lockfile 不存在')
+    expect(store.operation.status).toBe('failed')
+  })
+
+  it('keeps a visible operation record after preview and allows dismissal', async () => {
+    const store = useOsvScannerStore()
+    await store.load()
+    await store.addProject('/tmp/example-project')
+    api.previewOsvScanCommand.mockResolvedValue(scanPreview())
+
+    await store.previewScan()
+
+    expect(store.operation.status).toBe('succeeded')
+    expect(store.operation.message).toContain('扫描命令已生成')
+    expect(store.operation.command).toContain('osv-scanner scan')
+
+    store.dismissOperation()
+
+    expect(store.operation.status).toBe('idle')
   })
 })
 

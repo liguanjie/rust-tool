@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
+  AlertTriangle,
   ChevronDown,
+  CheckCircle2,
+  Clock3,
   Copy,
   Download,
   FileJson,
   FileText,
   FolderPlus,
+  Loader2,
   Play,
   RefreshCw,
   SearchCheck,
   Shield,
   SlidersHorizontal,
   Trash2,
+  X,
 } from '@lucide/vue'
 import ToolShell from '../components/ToolShell.vue'
 import { useOsvScannerStore } from '../stores/osvScanner'
@@ -34,11 +39,50 @@ const exportPathEdited = ref(false)
 const ignoreReasons = ref<Record<string, string>>({})
 const copiedCommandId = ref('')
 const advancedOpen = ref(false)
+const now = ref(Date.now())
+let operationTimer: number | undefined
+
+type ScanProfileId = 'standard' | 'audit' | 'offline'
+
+const scanProfiles: Array<{
+  id: ScanProfileId
+  name: string
+  label: string
+  description: string
+}> = [
+  {
+    id: 'standard',
+    name: '日常扫描',
+    label: '推荐',
+    description: '递归扫描项目包源，保留低噪声输出。',
+  },
+  {
+    id: 'audit',
+    name: '完整审计',
+    label: '覆盖更广',
+    description: '纳入忽略路径、Git 根和完整包清单。',
+  },
+  {
+    id: 'offline',
+    name: '离线复核',
+    label: '无网络',
+    description: '使用本地漏洞库，适合受限网络环境。',
+  },
+]
 
 const selectedProjectName = computed(() => osv.activeProject?.name || '未选择项目')
-const canRunScan = computed(() => Boolean(osv.currentPreview && !osv.loading))
-const canPreviewExport = computed(() => Boolean(osv.hasCurrentScanResult && exportPath.value && !osv.exporting))
-const canRunExport = computed(() => Boolean(osv.currentExportPreview && osv.hasCurrentScanResult && !osv.exporting))
+const canPreviewScan = computed(() =>
+  Boolean(osv.activeProjectPath && !osv.loading && !osv.exporting && !osv.diagnosing),
+)
+const canRunScan = computed(() =>
+  Boolean(osv.currentPreview && !osv.loading && !osv.exporting && !osv.diagnosing),
+)
+const canPreviewExport = computed(() =>
+  Boolean(osv.hasCurrentScanResult && exportPath.value && !osv.loading && !osv.exporting),
+)
+const canRunExport = computed(() =>
+  Boolean(osv.currentExportPreview && osv.hasCurrentScanResult && !osv.loading && !osv.exporting),
+)
 const installVersionLine = computed(() => {
   const version = osv.installStatus?.version || osv.installStatus?.message || '未读取安装状态'
   return version.split('\n')[0]
@@ -84,6 +128,59 @@ const diagnosticSummaryClass = computed(() => {
   }
   return 'status-pill status-pill--good'
 })
+const scanCommandState = computed(() => {
+  if (osv.loading) return '执行中'
+  if (osv.diagnostic && !osv.diagnostic.canScan) return '诊断阻断'
+  if (osv.currentPreview) return '已预览'
+  if (osv.diagnosing) return '诊断中'
+  return '待预览'
+})
+const scanCommandStateClass = computed(() => {
+  if (osv.loading) return 'status-pill status-pill--warn'
+  if (osv.diagnostic && !osv.diagnostic.canScan) return 'status-pill status-pill--danger'
+  if (osv.currentPreview) return 'status-pill status-pill--good'
+  return 'status-pill status-pill--muted'
+})
+const operationStatusLabel = computed(() => {
+  if (osv.operation.status === 'running') return '进行中'
+  if (osv.operation.status === 'succeeded') return '已完成'
+  if (osv.operation.status === 'failed') return '失败'
+  return '空闲'
+})
+const operationStatusClass = computed(() => {
+  if (osv.operation.status === 'running') return 'status-pill status-pill--warn'
+  if (osv.operation.status === 'succeeded') return 'status-pill status-pill--good'
+  if (osv.operation.status === 'failed') return 'status-pill status-pill--danger'
+  return 'status-pill status-pill--muted'
+})
+const operationElapsedLabel = computed(() => {
+  if (!osv.operation.startedAt) return ''
+  const finishedAt = osv.operation.finishedAt || now.value
+  const seconds = Math.max(0, Math.round((finishedAt - osv.operation.startedAt) / 1000))
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+})
+const activeScanProfile = computed<ScanProfileId | ''>(() => {
+  const current = osv.options
+  if (current.offline || current.offlineVulnerabilities) return 'offline'
+  if (current.noIgnore && current.includeGitRoot && current.allVulns && current.allPackages) {
+    return 'audit'
+  }
+  if (
+    current.recursive
+    && !current.noIgnore
+    && !current.includeGitRoot
+    && !current.allowNoLockfiles
+    && !current.allPackages
+    && !current.allVulns
+    && !current.offline
+    && !current.offlineVulnerabilities
+    && !current.noResolve
+  ) {
+    return 'standard'
+  }
+  return ''
+})
 const lockfilesText = computed({
   get: () => osv.options.lockfiles.join('\n'),
   set: (value) => {
@@ -112,6 +209,13 @@ const latestScanLabel = computed(() => {
 
 onMounted(() => {
   void osv.load()
+  operationTimer = window.setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (operationTimer) window.clearInterval(operationTimer)
 })
 
 watch(
@@ -240,6 +344,57 @@ function splitLines(value: string) {
     .filter(Boolean)
 }
 
+function applyScanProfile(profileId: ScanProfileId) {
+  if (profileId === 'standard') {
+    Object.assign(osv.options, {
+      recursive: true,
+      noIgnore: false,
+      includeGitRoot: false,
+      allowNoLockfiles: false,
+      allPackages: false,
+      allVulns: false,
+      offline: false,
+      offlineVulnerabilities: false,
+      noResolve: false,
+    })
+  }
+
+  if (profileId === 'audit') {
+    Object.assign(osv.options, {
+      recursive: true,
+      noIgnore: true,
+      includeGitRoot: true,
+      allowNoLockfiles: false,
+      allPackages: true,
+      allVulns: true,
+      offline: false,
+      offlineVulnerabilities: false,
+      noResolve: false,
+    })
+  }
+
+  if (profileId === 'offline') {
+    Object.assign(osv.options, {
+      recursive: true,
+      noIgnore: false,
+      includeGitRoot: false,
+      allowNoLockfiles: false,
+      allPackages: false,
+      allVulns: true,
+      offline: true,
+      offlineVulnerabilities: true,
+      noResolve: false,
+    })
+  }
+}
+
+function scanProfileClass(profileId: ScanProfileId) {
+  return {
+    'osv-profile-option': true,
+    'osv-profile-option--active': activeScanProfile.value === profileId,
+  }
+}
+
 function formatRecordKind(kind: OsvCommandExecutionRecord['kind']) {
   const labels: Record<OsvCommandExecutionRecord['kind'], string> = {
     scan: '扫描',
@@ -305,6 +460,44 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
           <RefreshCw class="mr-2 h-4 w-4" aria-hidden="true" />
           刷新
         </Button>
+      </section>
+
+      <section
+        v-if="osv.operation.status !== 'idle'"
+        class="input-panel osv-task-panel"
+        :class="`osv-task-panel--${osv.operation.status}`"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="osv-task-icon" aria-hidden="true">
+          <Loader2 v-if="osv.operation.status === 'running'" class="h-5 w-5 animate-spin" />
+          <CheckCircle2 v-else-if="osv.operation.status === 'succeeded'" class="h-5 w-5" />
+          <AlertTriangle v-else class="h-5 w-5" />
+        </div>
+        <div class="osv-task-copy">
+          <span class="field-label">当前任务</span>
+          <strong>{{ osv.operation.title }}</strong>
+          <small>{{ osv.operation.message }}</small>
+          <code v-if="osv.operation.command">{{ osv.operation.command }}</code>
+        </div>
+        <div class="osv-task-meta">
+          <span :class="operationStatusClass">{{ operationStatusLabel }}</span>
+          <small v-if="operationElapsedLabel">
+            <Clock3 class="h-3.5 w-3.5" aria-hidden="true" />
+            {{ operationElapsedLabel }}
+          </small>
+          <Button
+            v-if="osv.operation.status !== 'running'"
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="关闭任务反馈"
+            @click="osv.dismissOperation()"
+          >
+            <X class="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+        <div v-if="osv.operation.status === 'running'" class="osv-task-progress" aria-hidden="true" />
       </section>
 
       <section class="tool-grid">
@@ -410,20 +603,40 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
             <div class="section-divider">
               <span>扫描参数</span>
             </div>
-            <label class="toggle-option">
-              <input v-model="osv.options.recursive" type="checkbox" />
-              <span>
-                <strong>递归扫描</strong>
-                <small>--recursive</small>
-              </span>
-            </label>
-            <label class="toggle-option">
-              <input v-model="osv.options.allVulns" type="checkbox" />
-              <span>
-                <strong>显示全部漏洞</strong>
-                <small>--all-vulns</small>
-              </span>
-            </label>
+
+            <div class="osv-profile-grid" role="group" aria-label="扫描预设">
+              <button
+                v-for="profile in scanProfiles"
+                :key="profile.id"
+                type="button"
+                :class="scanProfileClass(profile.id)"
+                @click="applyScanProfile(profile.id)"
+              >
+                <span>
+                  <strong>{{ profile.name }}</strong>
+                  <small>{{ profile.description }}</small>
+                </span>
+                <em>{{ profile.label }}</em>
+              </button>
+            </div>
+
+            <div class="osv-option-grid">
+              <label class="toggle-option toggle-option--card">
+                <input v-model="osv.options.recursive" type="checkbox" />
+                <span>
+                  <strong>扫描子目录</strong>
+                  <small><code>--recursive</code> 覆盖 monorepo 与多语言项目。</small>
+                </span>
+              </label>
+              <label class="toggle-option toggle-option--card">
+                <input v-model="osv.options.allVulns" type="checkbox" />
+                <span>
+                  <strong>显示完整漏洞列表</strong>
+                  <small><code>--all-vulns</code> 适合审计，噪声会更高。</small>
+                </span>
+              </label>
+            </div>
+
             <label class="field-control" for="osv-config-path">
               <span class="field-label">配置文件</span>
               <Input
@@ -432,6 +645,7 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
                 type="text"
                 placeholder="/path/to/osv-scanner.toml"
               />
+              <small class="field-hint">留空时使用项目内默认配置；填入路径后会在扫描前诊断是否存在。</small>
             </label>
             <button
               type="button"
@@ -446,86 +660,122 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
               </span>
               <ChevronDown class="h-4 w-4" aria-hidden="true" />
             </button>
-            <div v-if="advancedOpen" class="osv-advanced-grid">
-              <label class="toggle-option">
-                <input v-model="osv.options.noIgnore" type="checkbox" />
-                <span>
-                  <strong>忽略 .gitignore</strong>
-                  <small>--no-ignore</small>
-                </span>
-              </label>
-              <label class="toggle-option">
-                <input v-model="osv.options.includeGitRoot" type="checkbox" />
-                <span>
-                  <strong>包含 Git 根</strong>
-                  <small>--include-git-root</small>
-                </span>
-              </label>
-              <label class="toggle-option">
-                <input v-model="osv.options.allowNoLockfiles" type="checkbox" />
-                <span>
-                  <strong>允许无锁文件</strong>
-                  <small>--allow-no-lockfiles</small>
-                </span>
-              </label>
-              <label class="toggle-option">
-                <input v-model="osv.options.allPackages" type="checkbox" />
-                <span>
-                  <strong>输出全部包</strong>
-                  <small>--all-packages</small>
-                </span>
-              </label>
-              <label class="toggle-option">
-                <input v-model="osv.options.offline" type="checkbox" />
-                <span>
-                  <strong>离线模式</strong>
-                  <small>--offline</small>
-                </span>
-              </label>
-              <label class="toggle-option">
-                <input v-model="osv.options.offlineVulnerabilities" type="checkbox" />
-                <span>
-                  <strong>离线漏洞库</strong>
-                  <small>--offline-vulnerabilities</small>
-                </span>
-              </label>
-              <label class="toggle-option">
-                <input v-model="osv.options.noResolve" type="checkbox" />
-                <span>
-                  <strong>不解析传递依赖</strong>
-                  <small>--no-resolve</small>
-                </span>
-              </label>
-              <label class="field-control" for="osv-lockfiles">
-                <span class="field-label">指定 lockfile</span>
-                <textarea
-                  id="osv-lockfiles"
-                  v-model="lockfilesText"
-                  class="text-input osv-textarea"
-                  spellcheck="false"
-                  placeholder="Cargo.lock&#10;package-lock.json"
-                />
-              </label>
-              <label class="field-control" for="osv-excludes">
-                <span class="field-label">排除路径</span>
-                <textarea
-                  id="osv-excludes"
-                  v-model="excludesText"
-                  class="text-input osv-textarea"
-                  spellcheck="false"
-                  placeholder="node_modules&#10;dist"
-                />
-              </label>
-              <label class="field-control" for="osv-advanced-args">
-                <span class="field-label">额外 allowlist 参数</span>
-                <textarea
-                  id="osv-advanced-args"
-                  v-model="advancedArgsText"
-                  class="text-input osv-textarea"
-                  spellcheck="false"
-                  placeholder="--offline-vulnerabilities"
-                />
-              </label>
+            <div v-if="advancedOpen" class="osv-advanced-groups">
+              <div class="osv-advanced-block">
+                <header>
+                  <strong>扫描范围</strong>
+                  <small>决定哪些目录会进入扫描。</small>
+                </header>
+                <div class="osv-option-grid">
+                  <label class="toggle-option toggle-option--card">
+                    <input v-model="osv.options.noIgnore" type="checkbox" />
+                    <span>
+                      <strong>纳入忽略路径</strong>
+                      <small><code>--no-ignore</code> 包含 .gitignore 中的路径。</small>
+                    </span>
+                  </label>
+                  <label class="toggle-option toggle-option--card">
+                    <input v-model="osv.options.includeGitRoot" type="checkbox" />
+                    <span>
+                      <strong>包含 Git 根目录</strong>
+                      <small><code>--include-git-root</code> 适合从子目录发起扫描。</small>
+                    </span>
+                  </label>
+                </div>
+                <label class="field-control" for="osv-excludes">
+                  <span class="field-label">排除路径</span>
+                  <textarea
+                    id="osv-excludes"
+                    v-model="excludesText"
+                    class="text-input osv-textarea"
+                    spellcheck="false"
+                    placeholder="node_modules&#10;dist"
+                  />
+                  <small class="field-hint">每行一个相对路径，适合跳过构建产物或大型缓存目录。</small>
+                </label>
+              </div>
+
+              <div class="osv-advanced-block">
+                <header>
+                  <strong>包解析</strong>
+                  <small>影响锁文件、依赖图和结果完整度。</small>
+                </header>
+                <div class="osv-option-grid">
+                  <label class="toggle-option toggle-option--card">
+                    <input v-model="osv.options.allowNoLockfiles" type="checkbox" />
+                    <span>
+                      <strong>允许无锁文件项目</strong>
+                      <small><code>--allow-no-lockfiles</code> 结果可信度可能降低。</small>
+                    </span>
+                  </label>
+                  <label class="toggle-option toggle-option--card">
+                    <input v-model="osv.options.allPackages" type="checkbox" />
+                    <span>
+                      <strong>输出全部包</strong>
+                      <small><code>--all-packages</code> 用于包清单盘点。</small>
+                    </span>
+                  </label>
+                  <label class="toggle-option toggle-option--card">
+                    <input v-model="osv.options.noResolve" type="checkbox" />
+                    <span>
+                      <strong>跳过传递依赖解析</strong>
+                      <small><code>--no-resolve</code> 更快，但覆盖更窄。</small>
+                    </span>
+                  </label>
+                </div>
+                <label class="field-control" for="osv-lockfiles">
+                  <span class="field-label">指定 lockfile</span>
+                  <textarea
+                    id="osv-lockfiles"
+                    v-model="lockfilesText"
+                    class="text-input osv-textarea"
+                    spellcheck="false"
+                    placeholder="Cargo.lock&#10;package-lock.json"
+                  />
+                  <small class="field-hint">每行一个相对路径；填写后诊断会检查路径是否存在。</small>
+                </label>
+              </div>
+
+              <div class="osv-advanced-block">
+                <header>
+                  <strong>网络与数据源</strong>
+                  <small>用于网络受限或离线复核。</small>
+                </header>
+                <div class="osv-option-grid">
+                  <label class="toggle-option toggle-option--card">
+                    <input v-model="osv.options.offline" type="checkbox" />
+                    <span>
+                      <strong>离线执行</strong>
+                      <small><code>--offline</code> 不访问外部网络。</small>
+                    </span>
+                  </label>
+                  <label class="toggle-option toggle-option--card">
+                    <input v-model="osv.options.offlineVulnerabilities" type="checkbox" />
+                    <span>
+                      <strong>使用本地漏洞库</strong>
+                      <small><code>--offline-vulnerabilities</code> 需要预置 OSV 数据库。</small>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="osv-advanced-block">
+                <header>
+                  <strong>扩展参数</strong>
+                  <small>仅接受后端 allowlist 中的安全参数。</small>
+                </header>
+                <label class="field-control" for="osv-advanced-args">
+                  <span class="field-label">额外 allowlist 参数</span>
+                  <textarea
+                    id="osv-advanced-args"
+                    v-model="advancedArgsText"
+                    class="text-input osv-textarea"
+                    spellcheck="false"
+                    placeholder="--offline-vulnerabilities"
+                  />
+                  <small class="field-hint">每行一个参数，生成命令前会由核心层校验。</small>
+                </label>
+              </div>
             </div>
           </section>
         </div>
@@ -538,13 +788,20 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
                 <strong>{{ selectedProjectName }}</strong>
               </div>
               <div class="osv-inline-controls">
-                <Button type="button" variant="outline" @click="osv.previewScan()">
+                <span :class="scanCommandStateClass">{{ scanCommandState }}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  :disabled="!canPreviewScan"
+                  @click="osv.previewScan()"
+                >
                   <RefreshCw class="mr-2 h-4 w-4" aria-hidden="true" />
-                  预览
+                  预览命令
                 </Button>
                 <Button type="button" :disabled="!canRunScan" @click="osv.runScan">
-                  <Play class="mr-2 h-4 w-4" aria-hidden="true" />
-                  {{ osv.loading ? '扫描中' : '执行' }}
+                  <Loader2 v-if="osv.loading" class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  <Play v-else class="mr-2 h-4 w-4" aria-hidden="true" />
+                  {{ osv.loading ? '扫描中' : '执行扫描' }}
                 </Button>
               </div>
             </div>
@@ -560,6 +817,14 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
               >
                 <Copy class="h-4 w-4" aria-hidden="true" />
               </Button>
+            </div>
+            <div v-else class="osv-command-empty">
+              <strong>命令尚未生成</strong>
+              <small>配置变更后需要重新预览，执行按钮才会启用。</small>
+            </div>
+            <div v-if="osv.currentPreview?.warnings.length" class="osv-command-warnings">
+              <AlertTriangle class="h-4 w-4" aria-hidden="true" />
+              <span>{{ osv.currentPreview.warnings.join(' ') }}</span>
             </div>
           </section>
 
@@ -633,8 +898,9 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
                     :disabled="!canRunExport"
                     @click="osv.runExport(exportFormat, exportPath)"
                   >
-                    <Download class="mr-2 h-4 w-4" aria-hidden="true" />
-                    导出
+                    <Loader2 v-if="osv.exporting" class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                    <Download v-else class="mr-2 h-4 w-4" aria-hidden="true" />
+                    {{ osv.exporting ? '导出中' : '导出' }}
                   </Button>
                 </div>
                 <div v-if="osv.currentExportPreview" class="osv-command-box">
@@ -730,6 +996,17 @@ function formatCommandTime(record: OsvCommandExecutionRecord) {
         </div>
         <p v-else class="field-hint">暂无命令历史。</p>
       </section>
+
+      <div v-if="osv.loading || osv.exporting" class="osv-run-overlay" role="status" aria-live="assertive">
+        <div class="osv-run-dialog">
+          <Loader2 class="h-6 w-6 animate-spin" aria-hidden="true" />
+          <div>
+            <strong>{{ osv.operation.title }}</strong>
+            <small>{{ osv.operation.message }}</small>
+          </div>
+          <code v-if="osv.operation.command">{{ osv.operation.command }}</code>
+        </div>
+      </div>
     </div>
   </ToolShell>
 </template>

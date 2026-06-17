@@ -968,6 +968,93 @@ button:disabled {
     @apply mt-1 text-xs font-semibold;
   }
 
+  .osv-task-panel {
+    @apply relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 overflow-hidden;
+  }
+
+  .osv-task-panel--running {
+    background:
+      linear-gradient(90deg, rgba(245, 158, 11, 0.06), rgba(16, 185, 129, 0.025)),
+      var(--bg-card);
+  }
+
+  .osv-task-panel--succeeded {
+    background:
+      linear-gradient(90deg, rgba(16, 185, 129, 0.07), rgba(16, 185, 129, 0.018)),
+      var(--bg-card);
+  }
+
+  .osv-task-panel--failed {
+    background:
+      linear-gradient(90deg, rgba(239, 68, 68, 0.075), rgba(15, 23, 42, 0.18)),
+      var(--bg-card);
+  }
+
+  .osv-task-icon {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-icon);
+    @apply grid h-10 w-10 place-items-center rounded-lg;
+  }
+
+  .osv-task-panel--failed .osv-task-icon {
+    @apply text-red-300;
+  }
+
+  .osv-task-panel--running .osv-task-icon {
+    @apply text-amber-300;
+  }
+
+  .osv-task-copy {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .osv-task-copy .field-label {
+    @apply mb-0;
+  }
+
+  .osv-task-copy strong {
+    color: var(--text-title);
+    @apply text-sm font-black;
+  }
+
+  .osv-task-copy small {
+    color: var(--text-subtitle);
+    @apply text-xs leading-5;
+  }
+
+  .osv-task-copy code {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-input-color);
+    @apply mt-1 max-h-20 overflow-auto break-all rounded-lg px-3 py-2 text-xs leading-5;
+  }
+
+  .osv-task-meta {
+    @apply flex shrink-0 items-center gap-2;
+  }
+
+  .osv-task-meta small {
+    color: var(--text-muted);
+    @apply inline-flex items-center gap-1 text-xs font-bold;
+  }
+
+  .osv-task-progress {
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.55), transparent);
+    animation: osv-progress-slide 1.4s ease-in-out infinite;
+    @apply absolute bottom-0 left-0 h-px w-1/2;
+  }
+
+  @keyframes osv-progress-slide {
+    from {
+      transform: translateX(-100%);
+    }
+
+    to {
+      transform: translateX(220%);
+    }
+  }
+
   .osv-inline-controls {
     @apply min-w-0;
   }
@@ -984,6 +1071,66 @@ button:disabled {
 
   .osv-workspace-panel {
     @apply grid gap-3;
+  }
+
+  .osv-profile-grid {
+    @apply grid grid-cols-3 gap-2 max-[920px]:grid-cols-1;
+  }
+
+  .osv-profile-option {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-base);
+    @apply flex min-h-[88px] w-full items-start justify-between gap-3 rounded-lg p-3 text-left transition;
+  }
+
+  .osv-profile-option:hover,
+  .osv-profile-option--active {
+    @apply border-emerald-500/35 bg-emerald-500/[0.04];
+  }
+
+  .osv-profile-option--active {
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.18);
+  }
+
+  .osv-profile-option span {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .osv-profile-option strong {
+    color: var(--text-title);
+    @apply text-sm font-black;
+  }
+
+  .osv-profile-option small {
+    color: var(--text-muted);
+    @apply text-xs leading-5;
+  }
+
+  .osv-profile-option em {
+    background: var(--bg-pill-good);
+    border: 1px solid var(--border-pill-good);
+    color: var(--text-pill-good);
+    @apply shrink-0 rounded-full px-2 py-1 text-[11px] font-black not-italic;
+  }
+
+  .osv-option-grid {
+    @apply grid grid-cols-2 gap-2 max-[720px]:grid-cols-1;
+  }
+
+  .toggle-option--card {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    @apply min-h-[72px] rounded-lg p-3 transition;
+  }
+
+  .toggle-option--card:hover {
+    @apply border-emerald-500/25 bg-emerald-500/[0.025];
+  }
+
+  .toggle-option code {
+    color: #6ee7b7;
+    @apply font-mono font-bold;
   }
 
   .osv-source-list {
@@ -1067,8 +1214,32 @@ button:disabled {
     @apply rotate-180;
   }
 
-  .osv-advanced-grid {
-    @apply grid gap-3;
+  .osv-advanced-groups {
+    @apply grid gap-5;
+  }
+
+  .osv-advanced-block {
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    @apply grid gap-3 pt-4;
+  }
+
+  .osv-advanced-block:first-child {
+    border-top: 0;
+    @apply pt-0;
+  }
+
+  .osv-advanced-block header {
+    @apply grid gap-1;
+  }
+
+  .osv-advanced-block header strong {
+    color: var(--text-title);
+    @apply text-sm font-black;
+  }
+
+  .osv-advanced-block header small {
+    color: var(--text-muted);
+    @apply text-xs leading-5;
   }
 
   .osv-textarea {
@@ -1118,6 +1289,71 @@ button:disabled {
     border: 1px solid var(--border-input);
     color: var(--text-input-color);
     @apply flex min-w-0 items-start justify-between gap-3 rounded-lg p-3 text-xs leading-6;
+  }
+
+  .osv-command-empty,
+  .osv-command-warnings {
+    background: var(--bg-input);
+    border: 1px dashed var(--border-card);
+    @apply mt-3 rounded-lg px-3 py-2.5;
+  }
+
+  .osv-command-empty {
+    @apply grid gap-1;
+  }
+
+  .osv-command-empty strong {
+    color: var(--text-title);
+    @apply text-sm;
+  }
+
+  .osv-command-empty small {
+    color: var(--text-muted);
+    @apply text-xs leading-5;
+  }
+
+  .osv-command-warnings {
+    color: #fbbf24;
+    @apply flex items-start gap-2 text-xs leading-5;
+  }
+
+  .osv-run-overlay {
+    background: rgba(5, 10, 15, 0.52);
+    backdrop-filter: blur(5px);
+    @apply fixed inset-0 z-40 grid place-items-center px-5;
+  }
+
+  .osv-run-dialog {
+    width: min(560px, 100%);
+    background:
+      linear-gradient(180deg, rgba(16, 185, 129, 0.08), rgba(15, 23, 42, 0.96)),
+      var(--bg-card);
+    border: 1px solid var(--hover-border-card);
+    box-shadow: var(--hover-shadow-card);
+    color: var(--text-base);
+    @apply grid gap-3 rounded-xl p-5 text-center;
+  }
+
+  .osv-run-dialog > svg {
+    color: var(--text-eyebrow);
+    @apply mx-auto;
+  }
+
+  .osv-run-dialog strong {
+    color: var(--text-title);
+    @apply block text-base font-black;
+  }
+
+  .osv-run-dialog small {
+    color: var(--text-subtitle);
+    @apply mt-1 block text-sm leading-6;
+  }
+
+  .osv-run-dialog code {
+    background: var(--bg-input);
+    border: 1px solid var(--border-card);
+    color: var(--text-input-color);
+    @apply max-h-28 overflow-auto break-all rounded-lg px-3 py-2 text-left text-xs leading-5;
   }
 
   .status-banner {
@@ -1257,8 +1493,13 @@ button:disabled {
 
     .osv-project-row,
     .osv-history-row,
-    .osv-diagnostic-item {
+    .osv-diagnostic-item,
+    .osv-task-panel {
       @apply grid grid-cols-1 items-start;
+    }
+
+    .osv-task-meta {
+      @apply w-full justify-between;
     }
 
     .osv-command-box {

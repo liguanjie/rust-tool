@@ -25,6 +25,37 @@ import {
 
 const COMMAND_HISTORY_LIMIT = 50
 
+type OsvOperationKind =
+  | 'idle'
+  | 'diagnose'
+  | 'preview-scan'
+  | 'scan'
+  | 'preview-export'
+  | 'export'
+  | 'ignore'
+
+type OsvOperationStatus = 'idle' | 'running' | 'succeeded' | 'failed'
+
+interface OsvOperationState {
+  kind: OsvOperationKind
+  status: OsvOperationStatus
+  title: string
+  message: string
+  detail?: string
+  command?: string
+  startedAt?: number
+  finishedAt?: number
+}
+
+function idleOperation(): OsvOperationState {
+  return {
+    kind: 'idle',
+    status: 'idle',
+    title: '',
+    message: '',
+  }
+}
+
 export const useOsvScannerStore = defineStore('osv-scanner', () => {
   const projects = ref<OsvProjectSettings[]>([])
   const autoScanSchedule = ref('none')
@@ -43,6 +74,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
   const diagnostic = ref<OsvProjectDiagnostic | null>(null)
   const diagnosing = ref(false)
   const options = ref<OsvScanOptions>(defaultOsvScanOptions())
+  const operation = ref<OsvOperationState>(idleOperation())
 
   const activeProject = computed(() =>
     projects.value.find((project) => project.path === activeProjectPath.value) ?? null,
@@ -69,7 +101,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       autoScanSchedule.value = settings.autoScanSchedule
       commandHistory.value = settings.commandHistory
       await refreshInstallStatus()
-      if (activeProjectPath.value) await diagnoseActiveProject()
+      if (activeProjectPath.value) await diagnoseActiveProject(activeProjectPath.value, { quiet: true })
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '加载 OSV 配置失败'
     } finally {
@@ -135,13 +167,16 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     if (changed) {
       latestResult.value = null
       diagnostic.value = null
-      void diagnoseActiveProject(path)
+      void diagnoseActiveProject(path, { quiet: true })
     }
     notice.value = ''
     error.value = ''
   }
 
-  async function diagnoseActiveProject(path = activeProjectPath.value) {
+  async function diagnoseActiveProject(
+    path = activeProjectPath.value,
+    settings: { quiet?: boolean } = {},
+  ) {
     error.value = ''
     if (!path) {
       diagnostic.value = null
@@ -149,14 +184,30 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     }
 
     diagnosing.value = true
+    if (!settings.quiet) {
+      startOperation(
+        'diagnose',
+        '扫描诊断中',
+        '正在识别项目包源、配置文件和会阻断扫描的参数。',
+        { detail: path },
+      )
+    }
     try {
       diagnostic.value = await diagnoseOsvProject({
         projectPath: path,
         options: options.value,
       })
+      if (!settings.quiet) {
+        const sourceCount = diagnostic.value.packageSources.length
+        const message = diagnostic.value.canScan
+          ? `诊断完成，发现 ${sourceCount} 个包源。`
+          : '诊断完成，但存在需要先处理的阻断项。'
+        completeOperation(message, diagnostic.value.projectPath)
+      }
     } catch (caught) {
       diagnostic.value = null
       error.value = caught instanceof Error ? caught.message : '扫描诊断失败'
+      if (!settings.quiet) failOperation(error.value)
     } finally {
       diagnosing.value = false
     }
@@ -171,20 +222,31 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     }
 
     try {
-      await diagnoseActiveProject(path)
+      startOperation(
+        'preview-scan',
+        '生成扫描命令',
+        '正在校验当前配置，并生成执行前可确认的命令。',
+        { detail: path },
+      )
+      await diagnoseActiveProject(path, { quiet: true })
       if (diagnostic.value && !diagnostic.value.canScan) {
         currentPreview.value = null
         const blocking = diagnostic.value.messages.find((message) => message.level === 'error')
         error.value = [blocking?.message, blocking?.suggestion].filter(Boolean).join(' ')
+        failOperation(error.value || '诊断未通过，扫描命令未生成。')
         return
       }
       currentPreview.value = await previewOsvScanCommand({
         projectPath: path,
         options: options.value,
       })
+      completeOperation('扫描命令已生成，执行前仍可复制和核对。', currentPreview.value.workingDir, {
+        command: currentPreview.value.displayCommand,
+      })
     } catch (caught) {
       currentPreview.value = null
       error.value = caught instanceof Error ? caught.message : '生成扫描命令失败'
+      failOperation(error.value)
     }
   }
 
@@ -198,6 +260,10 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
 
     loading.value = true
     scanningPath.value = activeProjectPath.value
+    startOperation('scan', '扫描执行中', 'osv-scanner 正在分析依赖包源和漏洞数据。', {
+      detail: activeProjectPath.value,
+      command: currentPreview.value.displayCommand,
+    })
     try {
       const result = await scanOsvProject({
         projectPath: activeProjectPath.value,
@@ -208,9 +274,13 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       appendHistory(result.command)
       updateProjectAfterScan(activeProjectPath.value, result.summary.healthScore)
       notice.value = result.summary.message
+      completeOperation(result.summary.message, result.command.summary, {
+        command: result.command.displayCommand,
+      })
       await persistSettings()
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '扫描失败'
+      failOperation(error.value, currentPreview.value.displayCommand)
     } finally {
       loading.value = false
       scanningPath.value = ''
@@ -229,15 +299,25 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       return
     }
     try {
+      startOperation(
+        'preview-export',
+        '生成导出命令',
+        `正在生成 ${format.toUpperCase()} 报告导出命令。`,
+        { detail: outputPath },
+      )
       currentExportPreview.value = await previewOsvReportExportCommand({
         projectPath: activeProjectPath.value,
         options: options.value,
         format,
         outputPath,
       })
+      completeOperation('导出命令已生成，执行前仍可复制和核对。', outputPath, {
+        command: currentExportPreview.value.displayCommand,
+      })
     } catch (caught) {
       currentExportPreview.value = null
       error.value = caught instanceof Error ? caught.message : '生成导出命令失败'
+      failOperation(error.value)
     }
   }
 
@@ -264,6 +344,10 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     }
 
     exporting.value = true
+    startOperation('export', '报告导出中', `正在写入 ${format.toUpperCase()} 报告。`, {
+      detail: outputPath,
+      command: currentExportPreview.value.displayCommand,
+    })
     try {
       const result = await exportOsvReport({
         projectPath: activeProjectPath.value,
@@ -274,9 +358,13 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       })
       appendHistory(result.command)
       notice.value = `已导出 ${result.format.toUpperCase()} 报告：${result.outputPath}`
+      completeOperation(notice.value, result.outputPath, {
+        command: result.command.displayCommand,
+      })
       await persistSettings()
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '导出失败'
+      failOperation(error.value, currentExportPreview.value.displayCommand)
     } finally {
       exporting.value = false
     }
@@ -291,14 +379,19 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     }
 
     try {
+      startOperation('ignore', '写入忽略规则', `正在记录 ${finding.id} 的忽略原因。`, {
+        detail: finding.package.name,
+      })
       const result = await ignoreOsvVulnerability({
         projectPath: activeProjectPath.value,
         vulnerabilityId: finding.id,
         reason,
       })
       notice.value = result.message
+      completeOperation(result.message, result.configPath)
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '写入忽略规则失败'
+      failOperation(error.value)
     }
   }
 
@@ -317,10 +410,63 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
   function invalidateCommandPreviews() {
     invalidateScanPreview()
     invalidateExportPreview()
+    clearSettledOperation()
   }
 
   function clearDiagnostic() {
     diagnostic.value = null
+  }
+
+  function startOperation(
+    kind: Exclude<OsvOperationKind, 'idle'>,
+    title: string,
+    message: string,
+    metadata: Pick<OsvOperationState, 'detail' | 'command'> = {},
+  ) {
+    operation.value = {
+      kind,
+      status: 'running',
+      title,
+      message,
+      detail: metadata.detail,
+      command: metadata.command,
+      startedAt: Date.now(),
+    }
+  }
+
+  function completeOperation(
+    message: string,
+    detail?: string,
+    metadata: Pick<OsvOperationState, 'command'> = {},
+  ) {
+    operation.value = {
+      ...operation.value,
+      status: 'succeeded',
+      message,
+      detail: detail ?? operation.value.detail,
+      command: metadata.command ?? operation.value.command,
+      finishedAt: Date.now(),
+    }
+  }
+
+  function failOperation(message: string, command?: string) {
+    operation.value = {
+      ...operation.value,
+      status: 'failed',
+      message,
+      command: command ?? operation.value.command,
+      finishedAt: Date.now(),
+    }
+  }
+
+  function dismissOperation() {
+    if (operation.value.status === 'running') return
+    operation.value = idleOperation()
+  }
+
+  function clearSettledOperation() {
+    if (operation.value.status === 'running') return
+    operation.value = idleOperation()
   }
 
   function updateProjectAfterScan(path: string, healthScore: number) {
@@ -349,6 +495,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     latestResult,
     diagnostic,
     diagnosing,
+    operation,
     vulnerabilities,
     options,
     globalHealthScore,
@@ -368,6 +515,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     invalidateExportPreview,
     invalidateCommandPreviews,
     clearDiagnostic,
+    dismissOperation,
   }
 })
 
