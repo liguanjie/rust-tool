@@ -4,7 +4,6 @@ import type { Component } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   Box,
-  Cable,
   CheckCircle2,
   Circle,
   Copy,
@@ -28,8 +27,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { message, theme } from 'ant-design-vue'
 
 const { token } = theme.useToken()
-
-const VlessToMihomo = defineAsyncComponent(() => import('./VlessToMihomo.vue'))
 
 interface ScriptInfo {
   name: string
@@ -67,12 +64,6 @@ const SCRIPT_DICT: Record<string, ScriptMeta> = {
     desc: '为目标项目注入团队规范与核心自动化能力。',
     icon: Package,
     badge: '批量安装',
-  },
-  '@tool:vless': {
-    title: 'VLESS 转 Mihomo',
-    desc: '将 3x-ui VLESS 链接转换为 Clash Party/Mihomo YAML。',
-    icon: Cable,
-    badge: '内置工具',
   },
 }
 
@@ -149,10 +140,6 @@ const filteredScripts = computed(() => {
 
 const filteredLocalScripts = computed(() =>
   filteredScripts.value.filter((script) => script.path !== 'internal'),
-)
-
-const filteredInternalScripts = computed(() =>
-  filteredScripts.value.filter((script) => script.path === 'internal'),
 )
 
 const filteredHistory = computed(() => {
@@ -263,7 +250,7 @@ async function fetchScripts() {
 
     const installScripts = backendScripts.filter((script) => script.name.endsWith('install-to-project.sh'))
     const normalScripts = backendScripts.filter((script) => !script.name.endsWith('install-to-project.sh'))
-    const merged = [...normalScripts, { name: '@tool:vless', path: 'internal' }]
+    const merged = [...normalScripts]
 
     if (installScripts.length > 0) {
       merged.push({
@@ -280,7 +267,7 @@ async function fetchScripts() {
     scripts.value = merged
   } catch (caught) {
     errorMsg.value = caught instanceof Error ? caught.message : '获取脚本列表失败'
-    scripts.value = [{ name: '@tool:vless', path: 'internal' }]
+    scripts.value = []
   }
 }
 
@@ -497,44 +484,12 @@ function taskCardClass(script: ScriptInfo) {
             </a-list>
           </div>
 
-          <div v-if="filteredInternalScripts.length" style="margin-top: 16px;">
-            <div style="font-weight: bold; margin-bottom: 8px;">内置工具</div>
-            <a-list :data-source="filteredInternalScripts" size="small" bordered>
-              <template #renderItem="{ item }">
-                <a-list-item @click="selectScript(item)" :style="{ cursor: 'pointer', background: selectedScript?.name === item.name ? token.controlItemBgActive : 'transparent' }">
-                  <a-list-item-meta :description="getScriptMeta(item.name).desc">
-                    <template #title>
-                      {{ getScriptMeta(item.name).title }}
-                    </template>
-                    <template #avatar>
-                      <component :is="getScriptMeta(item.name).icon" class="h-5 w-5" />
-                    </template>
-                  </a-list-item-meta>
-                </a-list-item>
-              </template>
-            </a-list>
-          </div>
+
         </a-card>
       </a-col>
 
       <a-col :span="16">
-        <template v-if="selectedScript && selectedScript.name === '@tool:vless'">
-           <a-alert
-              message="VLESS 转 Mihomo 已有独立工作台"
-              description="你可以在这里继续使用，也可以打开独立工具页获得完整页面空间。"
-              type="info"
-              show-icon
-              style="margin-bottom: 16px;"
-            >
-              <template #action>
-                 <a-button type="primary" size="small" @click="$router.push('/toolbox/vless-to-mihomo')">去独立工具页</a-button>
-              </template>
-            </a-alert>
-            <div :style="{ background: token.colorBgContainer, padding: '16px', borderRadius: '8px', border: `1px solid ${token.colorBorderSecondary}` }">
-               <VlessToMihomo />
-            </div>
-        </template>
-        <template v-else-if="!selectedScript">
+        <template v-if="!selectedScript">
           <a-card>
             <a-empty description="先选任务，再调参数，最后执行" />
           </a-card>
