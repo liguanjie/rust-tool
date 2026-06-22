@@ -178,6 +178,7 @@ export interface OsvIgnoreResult {
 }
 
 const OSV_SETTINGS_STORAGE_KEY = 'rusttool:osv-scanner:settings'
+const OSV_LATEST_SCAN_RESULTS_STORAGE_KEY = 'rusttool:osv-scanner:latest-results'
 const COMMAND_HISTORY_LIMIT = 50
 
 export function defaultOsvScanOptions(): OsvScanOptions {
@@ -289,6 +290,66 @@ export async function scanOsvProject(request: OsvScanRequest): Promise<OsvScanRe
   return await fetchJson<OsvScanResult>('/api/tools/osv-scanner/scan', request)
 }
 
+export async function getOsvLatestScanResult(projectPath: string): Promise<OsvScanResult | null> {
+  const normalizedProjectPath = projectPath.trim()
+  if (!normalizedProjectPath) return null
+
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    return await tauriCore.invoke<OsvScanResult | null>('get_osv_latest_scan_result', {
+      projectPath: normalizedProjectPath,
+    })
+  }
+
+  return readLatestScanResults()[normalizedProjectPath] ?? null
+}
+
+export async function saveOsvLatestScanResult(result: OsvScanResult): Promise<void> {
+  const normalizedProjectPath = result.projectPath.trim()
+  if (!normalizedProjectPath) {
+    throw new Error('项目路径不能为空')
+  }
+
+  const normalizedResult = {
+    ...result,
+    projectPath: normalizedProjectPath,
+  }
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    await tauriCore.invoke<void>('save_osv_latest_scan_result', {
+      result: normalizedResult,
+    })
+    return
+  }
+
+  const latestResults = readLatestScanResults()
+  latestResults[normalizedProjectPath] = normalizedResult
+  window.localStorage.setItem(
+    OSV_LATEST_SCAN_RESULTS_STORAGE_KEY,
+    JSON.stringify(latestResults),
+  )
+}
+
+export async function deleteOsvLatestScanResult(projectPath: string): Promise<void> {
+  const normalizedProjectPath = projectPath.trim()
+  if (!normalizedProjectPath) return
+
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    await tauriCore.invoke<void>('delete_osv_latest_scan_result', {
+      projectPath: normalizedProjectPath,
+    })
+    return
+  }
+
+  const latestResults = readLatestScanResults()
+  delete latestResults[normalizedProjectPath]
+  window.localStorage.setItem(
+    OSV_LATEST_SCAN_RESULTS_STORAGE_KEY,
+    JSON.stringify(latestResults),
+  )
+}
+
 export async function previewOsvReportExportCommand(
   request: OsvReportExportCommandRequest,
 ): Promise<OsvCommandPreview> {
@@ -347,6 +408,34 @@ function normalizeSettings(settings: Partial<OsvScannerSettings>): OsvScannerSet
       Array.isArray(settings.commandHistory) ? settings.commandHistory : defaults.commandHistory,
     ),
   }
+}
+
+function readLatestScanResults(): Record<string, OsvScanResult> {
+  const raw = window.localStorage.getItem(OSV_LATEST_SCAN_RESULTS_STORAGE_KEY)
+  if (!raw) return {}
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, OsvScanResult] => isOsvScanResult(entry[1]),
+      ),
+    )
+  } catch {
+    return {}
+  }
+}
+
+function isOsvScanResult(value: unknown): value is OsvScanResult {
+  if (!value || typeof value !== 'object') return false
+  const result = value as Partial<OsvScanResult>
+  return (
+    typeof result.projectPath === 'string'
+    && Array.isArray(result.vulnerabilities)
+    && Boolean(result.summary)
+    && Boolean(result.command)
+  )
 }
 
 function trimHistory(history: OsvCommandExecutionRecord[]): OsvCommandExecutionRecord[] {

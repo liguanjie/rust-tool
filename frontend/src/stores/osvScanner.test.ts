@@ -7,6 +7,9 @@ const api = vi.hoisted(() => ({
   checkOsvInstalled: vi.fn(),
   getOsvSettings: vi.fn(),
   saveOsvSettings: vi.fn(),
+  getOsvLatestScanResult: vi.fn(),
+  saveOsvLatestScanResult: vi.fn(),
+  deleteOsvLatestScanResult: vi.fn(),
   diagnoseOsvProject: vi.fn(),
   previewOsvScanCommand: vi.fn(),
   scanOsvProject: vi.fn(),
@@ -22,6 +25,9 @@ vi.mock('../api/osvScanner', async (importOriginal) => {
     checkOsvInstalled: api.checkOsvInstalled,
     getOsvSettings: api.getOsvSettings,
     saveOsvSettings: api.saveOsvSettings,
+    getOsvLatestScanResult: api.getOsvLatestScanResult,
+    saveOsvLatestScanResult: api.saveOsvLatestScanResult,
+    deleteOsvLatestScanResult: api.deleteOsvLatestScanResult,
     diagnoseOsvProject: api.diagnoseOsvProject,
     previewOsvScanCommand: api.previewOsvScanCommand,
     scanOsvProject: api.scanOsvProject,
@@ -41,6 +47,9 @@ describe('useOsvScannerStore', () => {
       commandHistory: [],
     })
     api.saveOsvSettings.mockImplementation(async (settings) => settings)
+    api.getOsvLatestScanResult.mockResolvedValue(null)
+    api.saveOsvLatestScanResult.mockResolvedValue(undefined)
+    api.deleteOsvLatestScanResult.mockResolvedValue(undefined)
     api.diagnoseOsvProject.mockResolvedValue(projectDiagnostic())
     api.checkOsvInstalled.mockResolvedValue({
       installed: true,
@@ -71,6 +80,21 @@ describe('useOsvScannerStore', () => {
 
     expect(store.activeProjectPath).toBe('/tmp/saved-project')
     expect(store.activeProject?.name).toBe('saved-project')
+  })
+
+  it('restores the saved latest scan result for the first loaded project', async () => {
+    api.getOsvSettings.mockResolvedValue({
+      projects: [{ name: 'saved-project', path: '/tmp/example-project' }],
+      autoScanSchedule: 'none',
+      commandHistory: [],
+    })
+    api.getOsvLatestScanResult.mockResolvedValue(scanResult())
+    const store = useOsvScannerStore()
+
+    await store.load()
+
+    expect(api.getOsvLatestScanResult).toHaveBeenCalledWith('/tmp/example-project')
+    expect(store.latestResult?.summary.healthScore).toBe(90)
   })
 
   it('adds a project and persists settings', async () => {
@@ -108,8 +132,19 @@ describe('useOsvScannerStore', () => {
     expect(store.projects[0].healthScore).toBe(90)
     expect(store.commandHistory).toHaveLength(1)
     expect(store.commandHistory[0].id).toBe('scan-1')
+    expect(api.saveOsvLatestScanResult).toHaveBeenCalledWith(scanResult())
     expect(store.operation.status).toBe('succeeded')
     expect(store.operation.command).toBe('osv-scanner scan source --format json .')
+  })
+
+  it('deletes the saved latest scan result when removing a project', async () => {
+    const store = useOsvScannerStore()
+    await store.load()
+    await store.addProject('/tmp/example-project')
+
+    await store.removeProject('/tmp/example-project')
+
+    expect(api.deleteOsvLatestScanResult).toHaveBeenCalledWith('/tmp/example-project')
   })
 
   it('invalidates existing command previews', async () => {

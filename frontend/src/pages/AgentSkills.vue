@@ -25,6 +25,12 @@ import {
 } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, theme } from 'ant-design-vue'
+import {
+  clearAgentSkillHistory,
+  listAgentSkillHistory,
+  saveAgentSkillHistoryRecord,
+  type AgentSkillHistoryRecord,
+} from '../api/agentSkillHistory'
 
 const { token } = theme.useToken()
 
@@ -38,17 +44,6 @@ interface ExecutionResult {
   stderr: string
   exit_code: number
   success: boolean
-}
-
-interface HistoryRecord {
-  id: string
-  timestamp: number
-  scriptName: string
-  args: string
-  exit_code: number
-  success: boolean
-  stdout: string
-  stderr: string
 }
 
 interface ScriptMeta {
@@ -118,7 +113,7 @@ const projectDir = ref('')
 const projectSkill = ref('general')
 const isRunning = ref(false)
 const errorMsg = ref('')
-const executionHistory = ref<HistoryRecord[]>([])
+const executionHistory = ref<AgentSkillHistoryRecord[]>([])
 const historySearchQuery = ref('')
 
 watch(selectedScript, (newVal) => {
@@ -188,24 +183,17 @@ const runStateClass = computed(() => {
 })
 
 onMounted(() => {
-  const savedHistory = localStorage.getItem('rusttool:codex:history')
-  if (savedHistory) {
-    try {
-      executionHistory.value = JSON.parse(savedHistory)
-    } catch (error) {
-      console.error('历史解析失败', error)
-    }
-  }
+  void loadExecutionHistory()
   void fetchScripts()
 })
 
-watch(
-  executionHistory,
-  (newHistory) => {
-    localStorage.setItem('rusttool:codex:history', JSON.stringify(newHistory))
-  },
-  { deep: true },
-)
+async function loadExecutionHistory() {
+  try {
+    executionHistory.value = await listAgentSkillHistory()
+  } catch (caught) {
+    errorMsg.value = caught instanceof Error ? caught.message : '加载执行记录失败'
+  }
+}
 
 async function pickDirectory(targetRef: 'dir' | 'projectDir') {
   try {
@@ -277,7 +265,7 @@ function selectScript(script: ScriptInfo) {
   errorMsg.value = ''
 }
 
-async function rerunHistory(record: HistoryRecord) {
+async function rerunHistory(record: AgentSkillHistoryRecord) {
   const targetScript = scripts.value.find((script) => script.name === record.scriptName)
   if (targetScript) {
     selectedScript.value = targetScript
@@ -370,10 +358,7 @@ async function runScript(forceArgs?: string) {
       }
     }
 
-    executionHistory.value = executionHistory.value.filter(
-      (record) => !(record.scriptName === selectedScript.value!.name && record.args === finalArgs),
-    )
-    executionHistory.value.unshift({
+    executionHistory.value = await saveAgentSkillHistoryRecord({
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       scriptName: selectedScript.value.name,
@@ -383,9 +368,6 @@ async function runScript(forceArgs?: string) {
       stdout: resData.stdout,
       stderr: resData.stderr,
     })
-    if (executionHistory.value.length > 50) {
-      executionHistory.value = executionHistory.value.slice(0, 50)
-    }
   } catch (caught) {
     errorMsg.value = caught instanceof Error ? caught.message : '执行失败'
   } finally {
@@ -393,8 +375,13 @@ async function runScript(forceArgs?: string) {
   }
 }
 
-function clearHistory() {
-  executionHistory.value = []
+async function clearHistory() {
+  try {
+    await clearAgentSkillHistory()
+    executionHistory.value = []
+  } catch (caught) {
+    errorMsg.value = caught instanceof Error ? caught.message : '清空执行记录失败'
+  }
 }
 
 function formatTime(timestamp: number) {

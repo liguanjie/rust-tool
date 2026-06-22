@@ -3,12 +3,15 @@ import { defineStore } from 'pinia'
 import {
   checkOsvInstalled,
   defaultOsvScanOptions,
+  deleteOsvLatestScanResult,
   diagnoseOsvProject,
   exportOsvReport,
+  getOsvLatestScanResult,
   getOsvSettings,
   ignoreOsvVulnerability,
   previewOsvReportExportCommand,
   previewOsvScanCommand,
+  saveOsvLatestScanResult,
   saveOsvSettings,
   scanOsvProject,
   suggestOsvReportPath,
@@ -79,7 +82,9 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
   const activeProject = computed(() =>
     projects.value.find((project) => project.path === activeProjectPath.value) ?? null,
   )
-  const hasCurrentScanResult = computed(() => Boolean(activeProjectPath.value && latestResult.value))
+  const hasCurrentScanResult = computed(() =>
+    Boolean(activeProjectPath.value && latestResult.value?.projectPath === activeProjectPath.value),
+  )
   const vulnerabilities = computed<OsvVulnerabilityFinding[]>(
     () => latestResult.value?.vulnerabilities ?? [],
   )
@@ -101,7 +106,10 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       autoScanSchedule.value = settings.autoScanSchedule
       commandHistory.value = settings.commandHistory
       await refreshInstallStatus()
-      if (activeProjectPath.value) await diagnoseActiveProject(activeProjectPath.value, { quiet: true })
+      if (activeProjectPath.value) {
+        await restoreLatestScanResult(activeProjectPath.value)
+        await diagnoseActiveProject(activeProjectPath.value, { quiet: true })
+      }
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '加载 OSV 配置失败'
     } finally {
@@ -157,6 +165,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       diagnostic.value = null
     }
     await persistSettings()
+    await deleteLatestScanResult(path)
     if (activeProjectPath.value) await diagnoseActiveProject()
   }
 
@@ -167,6 +176,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
     if (changed) {
       latestResult.value = null
       diagnostic.value = null
+      void restoreLatestScanResult(path)
       void diagnoseActiveProject(path, { quiet: true })
     }
     notice.value = ''
@@ -273,6 +283,7 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
       latestResult.value = result
       appendHistory(result.command)
       updateProjectAfterScan(activeProjectPath.value, result.summary.healthScore)
+      await saveOsvLatestScanResult(result)
       notice.value = result.summary.message
       completeOperation(result.summary.message, result.command.summary, {
         command: result.command.displayCommand,
@@ -397,6 +408,33 @@ export const useOsvScannerStore = defineStore('osv-scanner', () => {
 
   function appendHistory(record: OsvCommandExecutionRecord) {
     commandHistory.value = [...commandHistory.value, record].slice(-COMMAND_HISTORY_LIMIT)
+  }
+
+  async function restoreLatestScanResult(path: string) {
+    if (!path) {
+      latestResult.value = null
+      return
+    }
+
+    try {
+      const result = await getOsvLatestScanResult(path)
+      if (activeProjectPath.value === path) {
+        latestResult.value = result
+      }
+    } catch (caught) {
+      if (activeProjectPath.value === path) {
+        latestResult.value = null
+        error.value = caught instanceof Error ? caught.message : '恢复最近扫描结果失败'
+      }
+    }
+  }
+
+  async function deleteLatestScanResult(path: string) {
+    try {
+      await deleteOsvLatestScanResult(path)
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : '删除最近扫描结果失败'
+    }
   }
 
   function invalidateScanPreview() {

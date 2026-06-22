@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import type { Component } from 'vue'
-import { BookOpen, Cable, Shield, Terminal, LayoutDashboard } from 'lucide-vue-next'
+import { Cable, LayoutDashboard, Settings, Shield, Terminal } from 'lucide-vue-next'
 
 export interface ToolItem {
   id: string
@@ -37,6 +37,17 @@ export const useToolsStore = defineStore('tools', () => {
       signals: ['本地执行', '记录追溯', '参数化'],
       accent: 'emerald',
       icon: Terminal,
+    },
+    {
+      id: 'program-settings',
+      name: '程序配置',
+      path: '/program-settings',
+      description: '管理数据库位置与本机运行配置',
+      badge: '系统设置',
+      summary: 'SQLite 路径、默认位置、配置边界',
+      signals: ['本机配置', 'SQLite', '路径管理'],
+      accent: 'amber',
+      icon: Settings,
     },
     {
       id: 'vless-to-mihomo',

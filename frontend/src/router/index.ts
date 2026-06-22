@@ -24,6 +24,11 @@ export const router = createRouter({
       component: () => import('../pages/AgentSkills.vue'),
     },
     {
+      path: '/program-settings',
+      name: 'program-settings',
+      component: () => import('../pages/ProgramSettings.vue'),
+    },
+    {
       path: '/osv-scanner',
       component: () => import('../pages/osv-scanner/OsvLayout.vue'),
       children: [
@@ -46,6 +51,10 @@ export const router = createRouter({
     {
       path: '/tools/osv-scanner',
       redirect: '/osv-scanner',
+    },
+    {
+      path: '/settings',
+      redirect: '/program-settings',
     },
     {
       path: '/:catchAll(.*)',

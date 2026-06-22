@@ -2,11 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   checkOsvInstalled,
   defaultOsvScanOptions,
+  deleteOsvLatestScanResult,
   diagnoseOsvProject,
+  getOsvLatestScanResult,
   previewOsvScanCommand,
+  saveOsvLatestScanResult,
   saveOsvSettings,
   suggestOsvReportPath,
   type OsvCommandExecutionRecord,
+  type OsvScanResult,
 } from './osvScanner'
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -158,6 +162,29 @@ describe('osvScanner API adapter', () => {
 
     expect(path).toMatch(/^\/private\/tmp\/My-Project-osv-report-\d+\.html$/)
   })
+
+  it('persists the latest full Web scan result per project', async () => {
+    await saveOsvLatestScanResult(scanResult('/tmp/project-a', 90, 'scan-a'))
+    await saveOsvLatestScanResult(scanResult('/tmp/project-b', 40, 'scan-b'))
+    await saveOsvLatestScanResult(scanResult('/tmp/project-a', 60, 'scan-a-new'))
+
+    const projectA = await getOsvLatestScanResult('/tmp/project-a')
+    const projectB = await getOsvLatestScanResult('/tmp/project-b')
+
+    expect(projectA?.summary.healthScore).toBe(60)
+    expect(projectA?.command.id).toBe('scan-a-new')
+    expect(projectB?.summary.healthScore).toBe(40)
+  })
+
+  it('deletes a Web latest scan result without affecting other projects', async () => {
+    await saveOsvLatestScanResult(scanResult('/tmp/project-a', 90, 'scan-a'))
+    await saveOsvLatestScanResult(scanResult('/tmp/project-b', 40, 'scan-b'))
+
+    await deleteOsvLatestScanResult('/tmp/project-a')
+
+    await expect(getOsvLatestScanResult('/tmp/project-a')).resolves.toBeNull()
+    expect(await getOsvLatestScanResult('/tmp/project-b')).not.toBeNull()
+  })
 })
 
 function commandRecord(id: string): OsvCommandExecutionRecord {
@@ -174,5 +201,39 @@ function commandRecord(id: string): OsvCommandExecutionRecord {
     exitCode: 0,
     status: 'succeeded',
     summary: 'ok',
+  }
+}
+
+function scanResult(projectPath: string, healthScore: number, commandId: string): OsvScanResult {
+  return {
+    projectPath,
+    vulnerabilities: [],
+    summary: {
+      totalVulnerabilities: 0,
+      severityCounts: {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        unknown: 0,
+      },
+      highestSeverity: 'unknown',
+      healthScore,
+      message: '未发现已知漏洞。',
+    },
+    command: {
+      id: commandId,
+      kind: 'scan',
+      projectPath,
+      workingDir: projectPath,
+      argv: ['osv-scanner', 'scan', 'source', '--format', 'json', '.'],
+      displayCommand: 'osv-scanner scan source --format json .',
+      startedAt: '1',
+      finishedAt: '2',
+      durationMs: 1,
+      exitCode: 0,
+      status: 'succeeded',
+      summary: 'ok',
+    },
   }
 }
