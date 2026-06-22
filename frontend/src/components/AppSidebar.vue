@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useToolsStore } from '../stores/tools'
 import { useThemeStore } from '../stores/theme'
@@ -10,6 +10,9 @@ const router = useRouter()
 const route = useRoute()
 
 const selectedKeys = ref<string[]>([])
+const footerToolIds = new Set(['program-settings'])
+const primaryTools = computed(() => toolsStore.tools.filter(tool => !footerToolIds.has(tool.id)))
+const footerTools = computed(() => toolsStore.tools.filter(tool => footerToolIds.has(tool.id)))
 
 watch(
   () => route.path,
@@ -33,9 +36,9 @@ const onMenuClick = ({ key }: { key: string }) => {
 </script>
 
 <template>
-  <a-layout-sider 
-    v-model:collapsed="themeStore.isSidebarCollapsed" 
-    collapsible 
+  <a-layout-sider
+    v-model:collapsed="themeStore.isSidebarCollapsed"
+    collapsible
     :theme="themeStore.isDarkMode ? 'dark' : 'light'"
     :style="{ borderRight: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0' }"
   >
@@ -43,14 +46,33 @@ const onMenuClick = ({ key }: { key: string }) => {
       <span v-if="!themeStore.isSidebarCollapsed">RustTool</span>
       <span v-else>RT</span>
     </div>
-    
+
     <a-menu
       v-model:selectedKeys="selectedKeys"
+      class="sidebar-menu sidebar-menu-primary"
       mode="inline"
       :style="{ borderRight: 0 }"
       @click="onMenuClick"
     >
-      <a-menu-item v-for="tool in toolsStore.tools" :key="tool.id">
+      <a-menu-item v-for="tool in primaryTools" :key="tool.id">
+        <template #icon>
+          <component :is="tool.icon" style="width: 16px; height: 16px;" />
+        </template>
+        {{ tool.name }}
+      </a-menu-item>
+    </a-menu>
+
+    <a-menu
+      v-model:selectedKeys="selectedKeys"
+      class="sidebar-menu sidebar-menu-footer"
+      mode="inline"
+      :style="{
+        borderRight: 0,
+        borderTop: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0'
+      }"
+      @click="onMenuClick"
+    >
+      <a-menu-item v-for="tool in footerTools" :key="tool.id">
         <template #icon>
           <component :is="tool.icon" style="width: 16px; height: 16px;" />
         </template>
@@ -59,3 +81,20 @@ const onMenuClick = ({ key }: { key: string }) => {
     </a-menu>
   </a-layout-sider>
 </template>
+
+<style scoped>
+.sidebar-menu {
+  border-inline-end: 0;
+}
+
+.sidebar-menu-primary {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.sidebar-menu-footer {
+  flex: 0 0 auto;
+}
+</style>
