@@ -13,6 +13,7 @@ const selectedKeys = ref<string[]>([])
 const footerToolIds = new Set(['program-settings'])
 const primaryTools = computed(() => toolsStore.tools.filter(tool => !footerToolIds.has(tool.id)))
 const footerTools = computed(() => toolsStore.tools.filter(tool => footerToolIds.has(tool.id)))
+const appVersion = __APP_VERSION__
 
 watch(
   () => route.path,
@@ -42,9 +43,12 @@ const onMenuClick = ({ key }: { key: string }) => {
     :theme="themeStore.isDarkMode ? 'dark' : 'light'"
     :style="{ borderRight: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0' }"
   >
-    <div :style="{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px', borderBottom: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0' }">
-      <span v-if="!themeStore.isSidebarCollapsed">RustTool</span>
-      <span v-else>RT</span>
+    <div
+      class="sidebar-brand"
+      :style="{ borderBottom: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0' }"
+    >
+      <span class="sidebar-brand-title">{{ themeStore.isSidebarCollapsed ? 'RT' : 'RustTool' }}</span>
+      <span class="sidebar-brand-version">v{{ appVersion }}</span>
     </div>
 
     <a-menu
@@ -66,10 +70,7 @@ const onMenuClick = ({ key }: { key: string }) => {
       v-model:selectedKeys="selectedKeys"
       class="sidebar-menu sidebar-menu-footer"
       mode="inline"
-      :style="{
-        borderRight: 0,
-        borderTop: themeStore.isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0'
-      }"
+      :style="{ borderRight: 0 }"
       @click="onMenuClick"
     >
       <a-menu-item v-for="tool in footerTools" :key="tool.id">
@@ -87,6 +88,30 @@ const onMenuClick = ({ key }: { key: string }) => {
   border-inline-end: 0;
 }
 
+.sidebar-brand {
+  display: flex;
+  flex: 0 0 auto;
+  height: 80px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  line-height: 1;
+}
+
+.sidebar-brand-title {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.sidebar-brand-version {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
 .sidebar-menu-primary {
   flex: 1;
   min-height: 0;
@@ -96,5 +121,13 @@ const onMenuClick = ({ key }: { key: string }) => {
 
 .sidebar-menu-footer {
   flex: 0 0 auto;
+}
+
+:global(.ant-layout-sider-dark) .sidebar-brand-title {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:global(.ant-layout-sider-dark) .sidebar-brand-version {
+  color: rgba(255, 255, 255, 0.45);
 }
 </style>

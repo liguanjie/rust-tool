@@ -3253,7 +3253,7 @@ dependencies = [
 
 [[package]]
 name = "rust_tool_cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "rust_tool_core",
@@ -3261,7 +3261,7 @@ dependencies = [
 
 [[package]]
 name = "rust_tool_core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "md-5",
@@ -3280,7 +3280,7 @@ dependencies = [
 
 [[package]]
 name = "rust_tool_desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rust_tool_core",
  "serde",
@@ -3293,7 +3293,7 @@ dependencies = [
 
 [[package]]
 name = "rust_tool_server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "clap",
