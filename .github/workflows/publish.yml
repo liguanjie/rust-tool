@@ -7,7 +7,23 @@ on:
   workflow_dispatch:
 
 jobs:
+  prepare-master-latest:
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Move master-latest tag
+        run: |
+          git tag -f master-latest "${GITHUB_SHA}"
+          git push origin refs/tags/master-latest --force
+
   release:
+    needs: prepare-master-latest
+    if: always() && (github.event_name == 'push' || needs.prepare-master-latest.result == 'success')
     permissions:
       contents: write
     strategy:
@@ -40,12 +56,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
         working-directory: frontend
-
-      - name: Move master-latest tag
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git tag -f master-latest "${GITHUB_SHA}"
-          git push origin refs/tags/master-latest --force
 
       - name: Build & Package master-latest App
         if: github.event_name == 'workflow_dispatch'
