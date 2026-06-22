@@ -16,10 +16,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Move master-latest tag
+      - name: Recreate master-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          gh release delete master-latest --yes --cleanup-tag || true
           git tag -f master-latest "${GITHUB_SHA}"
           git push origin refs/tags/master-latest --force
+          gh release create master-latest \
+            --verify-tag \
+            --title "RustTool master-latest" \
+            --notes "Preview build generated from the latest master branch commit." \
+            --prerelease
 
   release:
     needs: prepare-master-latest

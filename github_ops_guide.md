@@ -26,7 +26,7 @@
 
 我们在工作流中配置了 `workflow_dispatch`，这允许您在不发布正式版本 Tag 的情况下，随时手动启动打包任务，非常适合测试编译或给同事提供临时版本。
 
-手动触发时，工作流会把 `master-latest` 标签移动到当前分支提交，并将安装包上传到 `master-latest` 预发布 Release。这样 Release 页面中的源码包和安装包会指向同一个构建提交，不会混入正式版本 `v0.1.0`、`v0.1.1` 等 Release。
+手动触发时，工作流会重建 `master-latest` 预发布 Release，把 `master-latest` 标签移动到当前分支提交，并将安装包上传到这个预发布版本。这样 Release 页面中的源码包和安装包会指向同一个构建提交，不会混入正式版本 `v0.1.0`、`v0.1.1` 等 Release。
 
 ### 📌 操作步骤：
 1. 进入 GitHub 仓库主页，点击顶部菜单栏的 **Actions** 标签页。
@@ -44,7 +44,7 @@
 
 ## 3. 如何获取手动编译好的安装包 (Download master-latest)
 
-构建成功后，工作流会自动创建或更新一个名为 **RustTool master-latest** 的 **Pre-release (预发布)**，其中包含从当前分支打包出来的文件。
+构建成功后，工作流会自动重建一个名为 **RustTool master-latest** 的 **Pre-release (预发布)**，其中包含从当前分支打包出来的文件。
 
 ### 📌 获取步骤：
 1. 任务运行完毕（显示绿色勾号）后，返回仓库主页。
