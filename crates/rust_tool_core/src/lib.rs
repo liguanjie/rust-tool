@@ -24,6 +24,7 @@ pub use storage::{
     DatabaseRecordCount, DatabaseStorageDiagnostics, OsvProjectRecord, StorageDatabase,
     StorageError,
 };
+pub use tools::finalshell_password::{decode_finalshell_password, FinalShellPasswordError};
 pub use tools::osv_scanner::{
     apply_fix, build_export_command, build_scan_command, check_osv_scanner_installed,
     diagnose_project, export_report, ignore_vulnerability, scan_project, OsvCommandEditableOptions,

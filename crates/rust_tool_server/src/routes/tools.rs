@@ -1,7 +1,8 @@
 use axum::{http::StatusCode, Json};
 use rust_tool_core::{
-    convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
-    TransitProviderOptions, TransitProxyOptions,
+    convert_vless_to_yaml, decode_finalshell_password as decode_finalshell_password_in_core,
+    ConvertOptions, OutputMode, TemplateMode, TransitGroupType, TransitProviderOptions,
+    TransitProxyOptions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +63,18 @@ pub struct VlessToMihomoResponse {
     yaml: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinalShellPasswordDecodeRequest {
+    encrypted_password: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinalShellPasswordDecodeResponse {
+    password: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: ErrorBody,
@@ -108,6 +121,24 @@ pub async fn vless_to_mihomo(
             }),
         )
     })
+}
+
+pub async fn decode_finalshell_password(
+    Json(request): Json<FinalShellPasswordDecodeRequest>,
+) -> Result<Json<FinalShellPasswordDecodeResponse>, (StatusCode, Json<ErrorResponse>)> {
+    decode_finalshell_password_in_core(&request.encrypted_password)
+        .map(|password| Json(FinalShellPasswordDecodeResponse { password }))
+        .map_err(|error| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ErrorBody {
+                        code: "invalid_finalshell_password",
+                        message: error.to_string(),
+                    },
+                }),
+            )
+        })
 }
 
 impl From<VlessTransitProxyRequest> for TransitProxyOptions {

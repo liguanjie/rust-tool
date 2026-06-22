@@ -5,6 +5,7 @@ use rust_tool_core::{
     clear_agent_execution_history as clear_agent_execution_history_in_db,
     clear_osv_command_history as clear_osv_command_history_in_db, convert_vless_to_yaml,
     database_file_stats, database_storage_diagnostics,
+    decode_finalshell_password as decode_finalshell_password_in_core,
     delete_osv_latest_scan_result as delete_osv_latest_scan_result_in_db, diagnose_project,
     export_report, get_osv_latest_scan_result as get_osv_latest_scan_result_from_db,
     ignore_vulnerability, initialize_database, list_agent_execution_history,
@@ -97,6 +98,18 @@ struct ConvertVlessRequest {
 #[derive(Debug, Serialize)]
 struct ConvertVlessResponse {
     yaml: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalShellPasswordDecodeRequest {
+    encrypted_password: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalShellPasswordDecodeResponse {
+    password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -248,6 +261,15 @@ fn convert_vless_to_mihomo(request: ConvertVlessRequest) -> Result<ConvertVlessR
     )
     .map(|yaml| ConvertVlessResponse { yaml })
     .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn decode_finalshell_password(
+    request: FinalShellPasswordDecodeRequest,
+) -> Result<FinalShellPasswordDecodeResponse, String> {
+    decode_finalshell_password_in_core(&request.encrypted_password)
+        .map(|password| FinalShellPasswordDecodeResponse { password })
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -567,6 +589,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             convert_vless_to_mihomo,
+            decode_finalshell_password,
             save_yaml_file,
             get_program_settings,
             save_program_settings,

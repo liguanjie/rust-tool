@@ -32,6 +32,10 @@ pub fn build_app_with_state(state: AppState) -> Router {
         .route("/api/health", get(health::health))
         .route("/api/tools/vless-to-mihomo", post(tools::vless_to_mihomo))
         .route(
+            "/api/tools/finalshell-password/decode",
+            post(tools::decode_finalshell_password),
+        )
+        .route(
             "/api/tools/osv-scanner/install-status",
             get(osv_scanner::install_status),
         )
@@ -65,7 +69,10 @@ pub fn build_app_with_state(state: AppState) -> Router {
             post(clash_party::switch_node),
         )
         .route("/api/workbench/scripts", get(workbench::get_scripts))
-        .route("/api/workbench/scripts/execute", post(workbench::run_script))
+        .route(
+            "/api/workbench/scripts/execute",
+            post(workbench::run_script),
+        )
         .fallback(static_files::serve_static)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
@@ -110,6 +117,37 @@ mod tests {
         let value: Value = serde_json::from_slice(&body).unwrap();
         assert!(value.get("installed").and_then(Value::as_bool).is_some());
         assert!(value.get("message").and_then(Value::as_str).is_some());
+    }
+
+    #[tokio::test]
+    async fn finalshell_password_decode_route_returns_plaintext() {
+        let (status, value) = post_osv_json(
+            "/api/tools/finalshell-password/decode",
+            json!({
+                "encryptedPassword": "eGANOUNaAUlE5cPFQXrtPfyej430A+k2ruM2JPtvU/I="
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            value.get("password").and_then(Value::as_str),
+            Some("Ben1993YYDSchina855!@#")
+        );
+    }
+
+    #[tokio::test]
+    async fn finalshell_password_decode_route_uses_standard_error_shape() {
+        let (status, value) = post_osv_json(
+            "/api/tools/finalshell-password/decode",
+            json!({
+                "encryptedPassword": "not a base64 value"
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(error_code(&value), Some("invalid_finalshell_password"));
     }
 
     #[tokio::test]
@@ -244,7 +282,10 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(0)
         );
-        assert!(scan.get("command").and_then(|command| command.get("argv")).is_some());
+        assert!(scan
+            .get("command")
+            .and_then(|command| command.get("argv"))
+            .is_some());
 
         fs::remove_dir_all(root).unwrap();
     }

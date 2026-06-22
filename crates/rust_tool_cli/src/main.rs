@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use rust_tool_core::{
-    convert_vless_to_yaml, ConvertOptions, OutputMode, TemplateMode, TransitGroupType,
-    TransitProxyOptions,
+    convert_vless_to_yaml, decode_finalshell_password, ConvertOptions, OutputMode, TemplateMode,
+    TransitGroupType, TransitProxyOptions,
 };
 use std::fmt;
 use std::fs;
@@ -49,6 +49,14 @@ enum Commands {
         proxy_only: bool,
         #[arg(short, long, help = "Write YAML to a file")]
         output: Option<PathBuf>,
+    },
+    #[command(
+        name = "decode-finalshell-password",
+        about = "Decode an encrypted FinalShell password"
+    )]
+    DecodeFinalshellPassword {
+        #[arg(help = "The encrypted FinalShell password text")]
+        encrypted_password: String,
     },
 }
 
@@ -159,6 +167,11 @@ fn run() -> Result<(), String> {
             } else {
                 print!("{yaml}");
             }
+        }
+        Commands::DecodeFinalshellPassword { encrypted_password } => {
+            let password = decode_finalshell_password(&encrypted_password)
+                .map_err(|error| error.to_string())?;
+            println!("{password}");
         }
     }
 

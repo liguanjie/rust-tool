@@ -34,6 +34,14 @@ export interface ConvertVlessResponse {
   yaml: string
 }
 
+export interface DecodeFinalShellPasswordRequest {
+  encryptedPassword: string
+}
+
+export interface DecodeFinalShellPasswordResponse {
+  password: string
+}
+
 export interface VlessToolSettings {
   input: string
   mode: VlessOutputMode
@@ -88,6 +96,28 @@ export async function convertVlessToMihomo(
   })
 
   return await readJsonResponse<ConvertVlessResponse>(response, '转换失败')
+}
+
+export async function decodeFinalShellPassword(
+  payload: DecodeFinalShellPasswordRequest,
+): Promise<DecodeFinalShellPasswordResponse> {
+  const tauriCore = await import('@tauri-apps/api/core')
+  if (tauriCore.isTauri()) {
+    const { invoke } = tauriCore
+    return await invoke<DecodeFinalShellPasswordResponse>('decode_finalshell_password', {
+      request: payload,
+    })
+  }
+
+  const response = await fetch('/api/tools/finalshell-password/decode', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  return await readJsonResponse<DecodeFinalShellPasswordResponse>(response, '解密失败')
 }
 
 export async function getVlessToolSettings(): Promise<VlessToolSettings> {

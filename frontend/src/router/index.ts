@@ -19,6 +19,11 @@ export const router = createRouter({
       component: () => import('../pages/VlessToMihomo.vue'),
     },
     {
+      path: '/toolbox/finalshell-password',
+      name: 'finalshell-password-decoder',
+      component: () => import('../pages/FinalShellPasswordDecoder.vue'),
+    },
+    {
       path: '/agent-skills',
       name: 'agent-skills',
       component: () => import('../pages/AgentSkills.vue'),
@@ -47,6 +52,10 @@ export const router = createRouter({
     {
       path: '/tools/vless-to-mihomo',
       redirect: '/toolbox/vless-to-mihomo',
+    },
+    {
+      path: '/tools/finalshell-password',
+      redirect: '/toolbox/finalshell-password',
     },
     {
       path: '/tools/osv-scanner',

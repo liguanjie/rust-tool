@@ -3263,6 +3263,8 @@ dependencies = [
 name = "rust_tool_core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "md-5",
  "percent-encoding",
  "reqwest 0.12.28",
  "serde",
@@ -3273,6 +3275,7 @@ dependencies = [
  "tokio",
  "toml_edit 0.25.11+spec-1.1.0",
  "url",
+ "zeroize",
 ]
 
 [[package]]

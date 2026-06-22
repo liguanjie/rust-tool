@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { ArrowRight, Cable, Settings, Shield, Terminal } from 'lucide-vue-next'
+import { ArrowRight, Cable, KeyRound, Settings, Shield, Terminal } from 'lucide-vue-next'
 import { theme } from 'ant-design-vue'
 
 const { token } = theme.useToken()
@@ -10,12 +10,12 @@ const appGroups = [
   {
     id: 'automation',
     title: '开发与自动化',
-    description: '本地脚本、技能编排和项目构建入口。',
+    description: '沉淀脚本入口、AI 技能和可复用的本地构建流程。',
     apps: [
       {
         id: 'agent-skills',
         title: 'AI 技能',
-        description: '集中管理本地执行脚本和自动化 AI 技能，驱动底层项目构建。',
+        description: '管理本地技能与执行脚本，让常用自动化流程可检索、可复用。',
         icon: Terminal,
         color: '#1890ff',
         route: '/agent-skills',
@@ -23,40 +23,48 @@ const appGroups = [
     ],
   },
   {
-    id: 'operations',
-    title: '配置与运维',
-    description: '管理本机运行设置与常用配置转换。',
-    apps: [
-      {
-        id: 'program-settings',
-        title: '程序配置',
-        description: '管理 SQLite 数据库存放位置和本机运行配置。',
-        icon: Settings,
-        color: '#faad14',
-        route: '/program-settings',
-      },
-      {
-        id: 'vless',
-        title: 'VLESS 转 Mihomo',
-        description: '将 3x-ui VLESS 链接转换为 Clash Party/Mihomo 标准 YAML 格式。',
-        icon: Cable,
-        color: '#52c41a',
-        route: '/toolbox/vless-to-mihomo',
-      },
-    ],
-  },
-  {
     id: 'security',
-    title: '安全与审计',
-    description: '面向依赖风险、供应链安全和审计留痕。',
+    title: '安全与网络',
+    description: '集中处理依赖风险、节点配置和本机凭据核验。',
     apps: [
       {
         id: 'osv',
         title: 'OSV 漏洞扫描',
-        description: '分析当前工作区中的依赖漏洞，提升应用与供应链安全性。',
+        description: '扫描项目依赖漏洞，生成风险概览和后续修复依据。',
         icon: Shield,
         color: '#f5222d',
         route: '/osv-scanner',
+      },
+      {
+        id: 'vless',
+        title: 'VLESS 转 Mihomo',
+        description: '把 VLESS 节点链接转换为 Mihomo YAML，便于客户端导入与复核。',
+        icon: Cable,
+        color: '#52c41a',
+        route: '/toolbox/vless-to-mihomo',
+      },
+      {
+        id: 'finalshell-password',
+        title: 'FinalShell 密码解密',
+        description: '解密 FinalShell 保存的密码字段，辅助凭据迁移和本机核验。',
+        icon: KeyRound,
+        color: '#722ed1',
+        route: '/toolbox/finalshell-password',
+      },
+    ],
+  },
+  {
+    id: 'operations',
+    title: '配置与运维',
+    description: '维护程序运行环境、数据存储位置和本机级设置。',
+    apps: [
+      {
+        id: 'program-settings',
+        title: '程序配置',
+        description: '调整 SQLite 数据目录、维护数据库状态和本机运行参数。',
+        icon: Settings,
+        color: '#faad14',
+        route: '/program-settings',
       },
     ],
   },
@@ -74,7 +82,7 @@ const openApp = (route: string) => {
         工作台
       </h1>
       <p :style="{ fontSize: '16px', color: token.colorTextSecondary, margin: 0 }">
-        面向本地开发、安全审计和自动化运维的桌面工具站。
+        汇集开发自动化、运行配置、安全审计和凭据核验的本地工具站。
       </p>
     </div>
 
