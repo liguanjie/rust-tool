@@ -58,9 +58,7 @@ pub async fn preview_export(
 pub async fn export(
     Json(request): Json<OsvReportExportRequest>,
 ) -> Result<Json<OsvReportExportResult>, (StatusCode, Json<ErrorResponse>)> {
-    export_report(request)
-        .map(Json)
-        .map_err(osv_error_response)
+    export_report(request).map(Json).map_err(osv_error_response)
 }
 
 pub async fn ignore(

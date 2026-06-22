@@ -1270,7 +1270,11 @@ impl TransitProxyOptions {
     }
 
     fn has_provider_url(&self) -> bool {
-        self.provider_url.is_some() || self.providers.iter().any(|provider| provider.provider_url.is_some())
+        self.provider_url.is_some()
+            || self
+                .providers
+                .iter()
+                .any(|provider| provider.provider_url.is_some())
     }
 }
 

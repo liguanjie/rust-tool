@@ -253,10 +253,26 @@ async function fetchScripts() {
       return a.name.localeCompare(b.name)
     })
     scripts.value = merged
+    selectOnlyAvailableScript(merged)
   } catch (caught) {
     errorMsg.value = caught instanceof Error ? caught.message : '获取脚本列表失败'
     scripts.value = []
   }
+}
+
+function selectOnlyAvailableScript(scriptList: ScriptInfo[]) {
+  const localScripts = scriptList.filter((script) => script.path !== 'internal')
+  if (localScripts.length !== 1) return
+
+  const onlyScript = localScripts[0]
+  if (
+    selectedScript.value?.name === onlyScript.name &&
+    selectedScript.value?.path === onlyScript.path
+  ) {
+    return
+  }
+
+  selectScript(onlyScript)
 }
 
 function selectScript(script: ScriptInfo) {
@@ -277,7 +293,7 @@ async function rerunHistory(record: AgentSkillHistoryRecord) {
       scriptArgs.value = record.args
     }
 
-    const mainScroll = document.querySelector('.codex-main-panel')
+    const mainScroll = document.querySelector('.app-content, .codex-main-panel')
     if (mainScroll) {
       mainScroll.scrollTo({ top: 0, behavior: 'smooth' })
     } else {
@@ -403,7 +419,7 @@ function taskCardClass(script: ScriptInfo) {
 </script>
 
 <template>
-  <div style="padding: 24px; max-width: 1200px; margin: 0 auto;">
+  <div class="agent-skills-page">
     <a-page-header
       title="AI 技能"
       sub-title="集中管理本地脚本、执行参数和可追溯历史。"
@@ -415,9 +431,9 @@ function taskCardClass(script: ScriptInfo) {
     </a-page-header>
 
 
-    <a-row :gutter="24">
-      <a-col :span="8">
-        <a-card title="任务目录" size="small" style="margin-bottom: 24px;">
+    <div class="agent-skills-grid">
+      <section class="agent-skills-column">
+        <a-card title="任务目录" size="small">
           <template #extra>
             <a-button type="link" size="small" @click="pickDirectory('dir')">选择目录</a-button>
           </template>
@@ -448,19 +464,17 @@ function taskCardClass(script: ScriptInfo) {
               </template>
             </a-list>
           </div>
-
-
         </a-card>
-      </a-col>
+      </section>
 
-      <a-col :span="16">
+      <section class="agent-skills-column">
         <template v-if="!selectedScript">
           <a-card>
             <a-empty description="先选任务，再调参数，最后执行" />
           </a-card>
         </template>
         <template v-else>
-          <a-card title="任务配置" style="margin-bottom: 24px;">
+          <a-card title="任务配置">
             <template #extra>
               <a-tag :color="isRunning ? 'orange' : 'green'">{{ runStateLabel }}</a-tag>
             </template>
@@ -476,7 +490,7 @@ function taskCardClass(script: ScriptInfo) {
                  </a-form-item>
                  <a-form-item label="项目类型">
                     <a-row :gutter="16">
-                      <a-col :span="12" v-for="option in projectSkillOptions" :key="option.value" style="margin-bottom: 16px;">
+                      <a-col :xs="24" :sm="12" v-for="option in projectSkillOptions" :key="option.value" style="margin-bottom: 16px;">
                         <a-card size="small" hoverable @click="projectSkill = option.value" :style="{ borderColor: projectSkill === option.value ? token.colorPrimary : undefined }">
                           <a-card-meta :title="option.title" :description="option.desc">
                             <template #avatar><component :is="option.icon" class="h-5 w-5" /></template>
@@ -509,50 +523,138 @@ function taskCardClass(script: ScriptInfo) {
             </a-button>
             <div v-if="errorMsg" style="color: red; margin-top: 16px;">{{ errorMsg }}</div>
           </a-card>
-
-          <a-card title="执行记录">
-            <template #extra>
-              <a-popconfirm title="确认清空执行记录？" @confirm="clearHistory" ok-text="确认清空" ok-type="danger">
-                 <a-button type="link" danger size="small">清空</a-button>
-              </a-popconfirm>
-            </template>
-            <div style="margin-bottom: 16px;">
-              <a-input v-model:value="historySearchQuery" placeholder="搜索参数、输出或脚本">
-                 <template #prefix><Search class="h-4 w-4" :style="{ color: token.colorTextTertiary }"/></template>
-              </a-input>
-            </div>
-            <a-list :data-source="filteredHistory" size="small" item-layout="vertical" bordered>
-              <template #renderItem="{ item: record }">
-                <a-list-item>
-                  <template #extra>
-                    <a-button type="link" size="small" @click="rerunHistory(record)">复用参数</a-button>
-                  </template>
-                  <a-list-item-meta>
-                    <template #title>
-                       <a-tag :color="record.success ? 'success' : 'error'">{{ record.success ? '成功' : '失败' }}</a-tag>
-                       {{ getScriptMeta(record.scriptName).title }}
-                    </template>
-                    <template #description>
-                      {{ formatTime(record.timestamp) }} · exit {{ record.exit_code }}
-                    </template>
-                  </a-list-item-meta>
-                  <div v-if="record.args" style="margin-bottom: 8px;">
-                    <a-typography-text type="secondary">参数: </a-typography-text>
-                    <a-typography-text code>{{ record.args }}</a-typography-text>
-                  </div>
-                  <div v-if="record.stdout || record.stderr" style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">
-                    <pre v-if="record.stdout" style="margin: 0; font-family: monospace; white-space: pre-wrap;">{{ record.stdout }}</pre>
-                    <pre v-if="record.stderr" style="margin: 0; font-family: monospace; color: #f48771; white-space: pre-wrap;">{{ record.stderr }}</pre>
-                  </div>
-                </a-list-item>
-              </template>
-              <template #empty>
-                <a-empty description="暂无执行记录" />
-              </template>
-            </a-list>
-          </a-card>
         </template>
-      </a-col>
-    </a-row>
+      </section>
+
+      <section class="agent-skills-column agent-skills-history">
+        <a-card title="执行记录" class="agent-skills-history-card">
+          <template #extra>
+            <a-popconfirm title="确认清空执行记录？" @confirm="clearHistory" ok-text="确认清空" ok-type="danger">
+               <a-button type="link" danger size="small">清空</a-button>
+            </a-popconfirm>
+          </template>
+          <div style="margin-bottom: 16px;">
+            <a-input v-model:value="historySearchQuery" placeholder="搜索参数、输出或脚本">
+               <template #prefix><Search class="h-4 w-4" :style="{ color: token.colorTextTertiary }"/></template>
+            </a-input>
+          </div>
+          <a-list :data-source="filteredHistory" size="small" item-layout="vertical" bordered>
+            <template #renderItem="{ item: record }">
+              <a-list-item>
+                <template #extra>
+                  <a-button type="link" size="small" @click="rerunHistory(record)">复用参数</a-button>
+                </template>
+                <a-list-item-meta>
+                  <template #title>
+                     <a-tag :color="record.success ? 'success' : 'error'">{{ record.success ? '成功' : '失败' }}</a-tag>
+                     {{ getScriptMeta(record.scriptName).title }}
+                  </template>
+                  <template #description>
+                    {{ formatTime(record.timestamp) }} · exit {{ record.exit_code }}
+                  </template>
+                </a-list-item-meta>
+                <div v-if="record.args" style="margin-bottom: 8px;">
+                  <a-typography-text type="secondary">参数: </a-typography-text>
+                  <a-typography-text code class="agent-skills-args">{{ record.args }}</a-typography-text>
+                </div>
+                <div v-if="record.stdout || record.stderr" class="agent-skills-output">
+                  <pre v-if="record.stdout" class="agent-skills-output-text">{{ record.stdout }}</pre>
+                  <pre v-if="record.stderr" class="agent-skills-output-text agent-skills-output-text--error">{{ record.stderr }}</pre>
+                </div>
+              </a-list-item>
+            </template>
+            <template #empty>
+              <a-empty description="暂无执行记录" />
+            </template>
+          </a-list>
+        </a-card>
+      </section>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.agent-skills-page {
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+.agent-skills-grid {
+  display: grid;
+  grid-template-columns: clamp(280px, 18vw, 340px) clamp(440px, 29vw, 560px) minmax(520px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.agent-skills-column {
+  min-width: 0;
+}
+
+.agent-skills-history {
+  position: sticky;
+  top: 0;
+}
+
+.agent-skills-history-card {
+  overflow: hidden;
+}
+
+.agent-skills-history-card :deep(.ant-card-body) {
+  max-height: calc(100vh - 188px);
+  overflow-y: auto;
+}
+
+.agent-skills-args {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.agent-skills-output {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 6px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-size: 12px;
+}
+
+.agent-skills-output-text {
+  margin: 0;
+  font-family: monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.agent-skills-output-text--error {
+  color: #f48771;
+}
+
+@media (max-width: 1480px) {
+  .agent-skills-grid {
+    grid-template-columns: minmax(260px, 0.85fr) minmax(420px, 1.15fr);
+  }
+
+  .agent-skills-history {
+    grid-column: 1 / -1;
+    position: static;
+  }
+
+  .agent-skills-history-card :deep(.ant-card-body) {
+    max-height: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .agent-skills-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-skills-history {
+    grid-column: auto;
+  }
+}
+</style>

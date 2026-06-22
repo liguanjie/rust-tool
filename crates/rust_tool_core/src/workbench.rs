@@ -17,8 +17,13 @@ pub struct ExecutionResult {
     pub success: bool,
 }
 
-fn walk_dir_recursive(dir: &Path, base_dir: &Path, scripts: &mut Vec<ScriptInfo>) -> Result<(), String> {
-    let entries = fs::read_dir(dir).map_err(|e| format!("Failed to read directory {:?}: {}", dir, e))?;
+fn walk_dir_recursive(
+    dir: &Path,
+    base_dir: &Path,
+    scripts: &mut Vec<ScriptInfo>,
+) -> Result<(), String> {
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("Failed to read directory {:?}: {}", dir, e))?;
 
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
@@ -65,12 +70,14 @@ pub fn execute_script(script_path: &str, args: Vec<String>) -> Result<ExecutionR
 
     let mut cmd = Command::new("bash");
     cmd.arg(script_path);
-    
+
     for arg in args {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().map_err(|e| format!("Failed to execute script: {}", e))?;
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to execute script: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
