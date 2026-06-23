@@ -7,15 +7,16 @@ use rust_tool_core::{
     database_file_stats, database_storage_diagnostics,
     decode_finalshell_password as decode_finalshell_password_in_core,
     delete_osv_latest_scan_result as delete_osv_latest_scan_result_in_db, diagnose_project,
-    export_report, get_osv_latest_scan_result as get_osv_latest_scan_result_from_db,
-    ignore_vulnerability, initialize_database, list_agent_execution_history,
-    list_osv_command_history, list_osv_projects, replace_osv_command_history, replace_osv_projects,
-    restore_database_file,
+    export_report, get_agent_skills_settings as get_agent_skills_settings_from_db,
+    get_osv_latest_scan_result as get_osv_latest_scan_result_from_db, ignore_vulnerability,
+    initialize_database, list_agent_execution_history, list_osv_command_history, list_osv_projects,
+    replace_osv_command_history, replace_osv_projects, restore_database_file,
     save_agent_execution_history_record as save_agent_execution_history_record_in_db,
+    save_agent_skills_settings as save_agent_skills_settings_in_db,
     save_osv_latest_scan_result as save_osv_latest_scan_result_in_db, scan_project,
-    vacuum_database, AgentExecutionHistoryRecord, ConvertOptions, DatabaseFileStats,
-    DatabaseHealth, DatabaseStorageDiagnostics, OsvCommandExecutionRecord, OsvCommandPreview,
-    OsvIgnoreRequest, OsvIgnoreResult, OsvInstallStatus, OsvProjectDiagnostic,
+    vacuum_database, AgentExecutionHistoryRecord, AgentSkillsSettings, ConvertOptions,
+    DatabaseFileStats, DatabaseHealth, DatabaseStorageDiagnostics, OsvCommandExecutionRecord,
+    OsvCommandPreview, OsvIgnoreRequest, OsvIgnoreResult, OsvInstallStatus, OsvProjectDiagnostic,
     OsvProjectDiagnosticRequest, OsvProjectRecord, OsvReportExportCommandRequest,
     OsvReportExportRequest, OsvReportExportResult, OsvScanCommandRequest, OsvScanRequest,
     OsvScanResult, OutputMode, StorageDatabase, TemplateMode, TransitGroupType,
@@ -485,6 +486,25 @@ async fn clear_agent_execution_history(app: tauri::AppHandle) -> Result<(), Stri
 }
 
 #[tauri::command]
+async fn get_agent_skills_settings(app: tauri::AppHandle) -> Result<AgentSkillsSettings, String> {
+    let database = initialize_app_database(&app).await?;
+    get_agent_skills_settings_from_db(&database)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn save_agent_skills_settings(
+    app: tauri::AppHandle,
+    settings: AgentSkillsSettings,
+) -> Result<AgentSkillsSettings, String> {
+    let database = initialize_app_database(&app).await?;
+    save_agent_skills_settings_in_db(&database, settings)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn get_osv_latest_scan_result(
     app: tauri::AppHandle,
     project_path: String,
@@ -602,6 +622,8 @@ pub fn run() {
             get_agent_execution_history,
             save_agent_execution_history_record,
             clear_agent_execution_history,
+            get_agent_skills_settings,
+            save_agent_skills_settings,
             get_osv_latest_scan_result,
             save_osv_latest_scan_result,
             delete_osv_latest_scan_result,

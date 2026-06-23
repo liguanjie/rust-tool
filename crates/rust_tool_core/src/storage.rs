@@ -96,6 +96,12 @@ pub struct AgentExecutionHistoryRecord {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
+pub struct AgentSkillsSettings {
+    pub script_dir: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
 pub struct OsvProjectRecord {
     pub name: String,
     pub path: String,
@@ -449,6 +455,53 @@ pub async fn clear_osv_command_history(database: &StorageDatabase) -> Result<(),
         .await?;
 
     Ok(())
+}
+
+pub async fn get_agent_skills_settings(
+    database: &StorageDatabase,
+) -> Result<AgentSkillsSettings, StorageError> {
+    let Some(row) = sqlx::query(
+        r#"
+        SELECT settings_json
+        FROM tool_settings
+        WHERE tool_key = ?
+        "#,
+    )
+    .bind(AGENT_SKILLS_TOOL_KEY)
+    .fetch_optional(database.pool())
+    .await?
+    else {
+        return Ok(AgentSkillsSettings::default());
+    };
+
+    let settings_json: String = row.try_get("settings_json")?;
+    Ok(normalize_agent_skills_settings(serde_json::from_str(
+        &settings_json,
+    )?))
+}
+
+pub async fn save_agent_skills_settings(
+    database: &StorageDatabase,
+    settings: AgentSkillsSettings,
+) -> Result<AgentSkillsSettings, StorageError> {
+    let settings = normalize_agent_skills_settings(settings);
+    let settings_json = serde_json::to_string(&settings)?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO tool_settings (tool_key, settings_json, updated_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ON CONFLICT(tool_key) DO UPDATE SET
+            settings_json = excluded.settings_json,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(AGENT_SKILLS_TOOL_KEY)
+    .bind(settings_json)
+    .execute(database.pool())
+    .await?;
+
+    Ok(settings)
 }
 
 pub async fn save_osv_latest_scan_result(
@@ -844,6 +897,13 @@ fn history_limit_i64(limit: usize) -> i64 {
     i64::try_from(limit).unwrap_or(i64::MAX)
 }
 
+const AGENT_SKILLS_TOOL_KEY: &str = "agentSkills";
+
+fn normalize_agent_skills_settings(mut settings: AgentSkillsSettings) -> AgentSkillsSettings {
+    settings.script_dir = settings.script_dir.trim().to_string();
+    settings
+}
+
 fn trim_osv_command_history_records(history: &mut Vec<OsvCommandExecutionRecord>, limit: usize) {
     if history.len() > limit {
         let keep_from = history.len() - limit;
@@ -1215,6 +1275,31 @@ mod tests {
         let history = list_agent_execution_history(&database, 50).await.unwrap();
 
         assert!(history.is_empty());
+
+        cleanup_database_files(&path);
+    }
+
+    #[tokio::test]
+    async fn agent_skills_settings_are_saved_and_loaded() {
+        let path = unique_database_path();
+        let database = initialize_database(&path).await.unwrap();
+
+        let initial_settings = get_agent_skills_settings(&database).await.unwrap();
+
+        assert_eq!(initial_settings, AgentSkillsSettings::default());
+
+        let saved_settings = save_agent_skills_settings(
+            &database,
+            AgentSkillsSettings {
+                script_dir: "  /Users/alice/work/99_codex  ".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+        let loaded_settings = get_agent_skills_settings(&database).await.unwrap();
+
+        assert_eq!(saved_settings.script_dir, "/Users/alice/work/99_codex");
+        assert_eq!(loaded_settings, saved_settings);
 
         cleanup_database_files(&path);
     }

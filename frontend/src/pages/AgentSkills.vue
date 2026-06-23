@@ -24,13 +24,17 @@ import {
   XCircle,
 } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message, theme } from 'ant-design-vue'
+import { theme } from 'ant-design-vue'
 import {
   clearAgentSkillHistory,
   listAgentSkillHistory,
   saveAgentSkillHistoryRecord,
   type AgentSkillHistoryRecord,
 } from '../api/agentSkillHistory'
+import {
+  getAgentSkillsSettings,
+  saveAgentSkillsSettings,
+} from '../api/agentSkillsSettings'
 
 const { token } = theme.useToken()
 
@@ -61,6 +65,8 @@ const SCRIPT_DICT: Record<string, ScriptMeta> = {
     badge: '批量安装',
   },
 }
+
+const DEFAULT_AGENT_SKILLS_DIR = '/Users/ben/work/99_codex'
 
 const projectSkillOptions: Array<{
   value: string
@@ -110,7 +116,7 @@ function isInstallToProjectScript(scriptName: string) {
   )
 }
 
-const dir = ref('/Users/ben/work/99_codex')
+const dir = ref(DEFAULT_AGENT_SKILLS_DIR)
 const scripts = ref<ScriptInfo[]>([])
 const selectedScript = ref<ScriptInfo | null>(null)
 const bundleSelection = ref<string[]>([])
@@ -191,14 +197,28 @@ const runStateClass = computed(() => {
 
 onMounted(() => {
   void loadExecutionHistory()
-  void fetchScripts()
+  void initializeScripts()
 })
+
+async function initializeScripts() {
+  await loadAgentSkillsSettings()
+  await fetchScripts()
+}
 
 async function loadExecutionHistory() {
   try {
     executionHistory.value = await listAgentSkillHistory()
   } catch (caught) {
     errorMsg.value = caught instanceof Error ? caught.message : '加载执行记录失败'
+  }
+}
+
+async function loadAgentSkillsSettings() {
+  try {
+    const settings = await getAgentSkillsSettings()
+    dir.value = settings.scriptDir || DEFAULT_AGENT_SKILLS_DIR
+  } catch (caught) {
+    errorMsg.value = caught instanceof Error ? caught.message : '加载技能目录配置失败'
   }
 }
 
@@ -212,7 +232,8 @@ async function pickDirectory(targetRef: 'dir' | 'projectDir') {
       if (selected && typeof selected === 'string') {
         if (targetRef === 'dir') {
           dir.value = selected
-          void fetchScripts()
+          await saveAgentSkillsSettings({ scriptDir: selected })
+          await fetchScripts()
         }
         if (targetRef === 'projectDir') projectDir.value = selected
       }

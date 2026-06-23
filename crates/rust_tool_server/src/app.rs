@@ -70,6 +70,11 @@ pub fn build_app_with_state(state: AppState) -> Router {
         )
         .route("/api/workbench/scripts", get(workbench::get_scripts))
         .route(
+            "/api/workbench/settings/agent-skills",
+            get(workbench::get_agent_skills_settings_route)
+                .post(workbench::save_agent_skills_settings_route),
+        )
+        .route(
             "/api/workbench/scripts/execute",
             post(workbench::run_script),
         )

@@ -16,13 +16,13 @@ pub use clash_party::{
 pub use storage::{
     backup_database, check_database_health, clear_agent_execution_history,
     clear_osv_command_history, database_file_stats, database_storage_diagnostics,
-    delete_osv_latest_scan_result, get_osv_latest_scan_result, initialize_database,
-    list_agent_execution_history, list_osv_command_history, list_osv_projects,
+    delete_osv_latest_scan_result, get_agent_skills_settings, get_osv_latest_scan_result,
+    initialize_database, list_agent_execution_history, list_osv_command_history, list_osv_projects,
     replace_osv_command_history, replace_osv_projects, restore_database_file,
-    save_agent_execution_history_record, save_osv_latest_scan_result, vacuum_database,
-    AgentExecutionHistoryRecord, DatabaseFileStats, DatabaseHealth, DatabaseHealthStatus,
-    DatabaseRecordCount, DatabaseStorageDiagnostics, OsvProjectRecord, StorageDatabase,
-    StorageError,
+    save_agent_execution_history_record, save_agent_skills_settings, save_osv_latest_scan_result,
+    vacuum_database, AgentExecutionHistoryRecord, AgentSkillsSettings, DatabaseFileStats,
+    DatabaseHealth, DatabaseHealthStatus, DatabaseRecordCount, DatabaseStorageDiagnostics,
+    OsvProjectRecord, StorageDatabase, StorageError,
 };
 pub use tools::finalshell_password::{decode_finalshell_password, FinalShellPasswordError};
 pub use tools::osv_scanner::{
