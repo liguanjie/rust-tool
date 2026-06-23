@@ -103,6 +103,13 @@ function getScriptMeta(scriptName: string): ScriptMeta {
   }
 }
 
+function isInstallToProjectScript(scriptName: string) {
+  return (
+    scriptName.endsWith('install-to-project.sh') ||
+    scriptName.endsWith('install-to-project.ps1')
+  )
+}
+
 const dir = ref('/Users/ben/work/99_codex')
 const scripts = ref<ScriptInfo[]>([])
 const selectedScript = ref<ScriptInfo | null>(null)
@@ -236,8 +243,12 @@ async function fetchScripts() {
       }
     }
 
-    const installScripts = backendScripts.filter((script) => script.name.endsWith('install-to-project.sh'))
-    const normalScripts = backendScripts.filter((script) => !script.name.endsWith('install-to-project.sh'))
+    const installScripts = backendScripts.filter((script) =>
+      isInstallToProjectScript(script.name),
+    )
+    const normalScripts = backendScripts.filter(
+      (script) => !isInstallToProjectScript(script.name),
+    )
     const merged = [...normalScripts]
 
     if (installScripts.length > 0) {
